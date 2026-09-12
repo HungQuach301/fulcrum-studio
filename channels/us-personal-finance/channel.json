@@ -41,7 +41,7 @@
     ]
   },
   "ttsVoiceId": "cedar",
-  "googleAccount": "<ĐIỀN — tài khoản RIÊNG của kênh, không dùng tài khoản cá nhân>",
+  "googleAccount": "hungqv301@gmail.com",
   "providers": {
     "llm": "openai",
     "llmVerifier": "anthropic",
