@@ -1,7 +1,7 @@
 # Đặc tả sản xuất
 
-Pipeline gồm **bốn khối**, tổng **25 stage** (S01–S19, trong đó S05 tách S05b và S09 tách
-S09a/S09b, S11 tách S11b, S15 tách S15b, S16 tách S16b, S17 tách S17b, S18 tách S18b). Bốn khối tương ứng bốn workflow, không phải 25 workflow — ranh giới artifact vẫn
+Pipeline gồm **bốn khối**, tổng **26 stage** (S01–S19, trong đó S05, S09, S11, S15, S16,
+S17, S18 có stage phụ). Bốn khối tương ứng bốn workflow, không phải 25 workflow — ranh giới artifact vẫn
 giữ nguyên từng stage. Bốn khối gọi nhau bằng `workflow_dispatch` có tham số `episodeId`,
 không bằng sự kiện push. Xem quyết định D-12.
 
