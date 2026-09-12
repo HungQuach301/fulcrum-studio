@@ -1,0 +1,130 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "asset-policy.schema.json",
+  "title": "Genre Asset Policy",
+  "description": "Luật dùng asset của một thể loại. Mọi khối đều đóng: một khoá lạ ở đây nghĩa là một luật không ai thực thi.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "genre",
+    "version",
+    "generatedImages",
+    "stockAssets",
+    "music",
+    "charts",
+    "fonts"
+  ],
+  "properties": {
+    "$schemaRef": {
+      "type": "string"
+    },
+    "genre": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "version": {
+      "type": "string"
+    },
+    "generatedImages": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowed",
+        "mustNotContainTextOrNumbers",
+        "provenanceRequired",
+        "provenanceFields"
+      ],
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "mustNotContainTextOrNumbers": {
+          "type": "boolean"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "provenanceRequired": {
+          "type": "boolean"
+        },
+        "provenanceFields": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "stockAssets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowed",
+        "maxShareOfScenes",
+        "queryRule",
+        "licenseLedgerRequired"
+      ],
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "maxShareOfScenes": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "queryRule": {
+          "type": "string"
+        },
+        "licenseLedgerRequired": {
+          "type": "boolean"
+        }
+      }
+    },
+    "music": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commercialLicenseRequired",
+        "ledgerRequired"
+      ],
+      "properties": {
+        "commercialLicenseRequired": {
+          "type": "boolean"
+        },
+        "ledgerRequired": {
+          "type": "boolean"
+        }
+      }
+    },
+    "charts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "renderedAsDom",
+        "neverAsImage"
+      ],
+      "properties": {
+        "renderedAsDom": {
+          "type": "boolean"
+        },
+        "neverAsImage": {
+          "type": "boolean"
+        }
+      }
+    },
+    "fonts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mustBeInTokenTable"
+      ],
+      "properties": {
+        "mustBeInTokenTable": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

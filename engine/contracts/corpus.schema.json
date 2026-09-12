@@ -1,0 +1,141 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "corpus.schema.json",
+  "title": "Competitor Corpus Snapshot",
+  "description": "Corpus đối thủ. CHỈ metadata: API của nền tảng không cho tải phụ đề video người khác. Mọi kết luận mới lạ rút ra từ đây phải khai giới hạn này.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "channel",
+    "collectedAt",
+    "queries",
+    "coverage",
+    "videos"
+  ],
+  "properties": {
+    "channel": {
+      "type": "string"
+    },
+    "collectedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "queries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "q",
+          "regionCode",
+          "language",
+          "resultCount"
+        ],
+        "properties": {
+          "q": {
+            "type": "string"
+          },
+          "regionCode": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string"
+          },
+          "resultCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "videoCount",
+        "oldestPublishedAt",
+        "newestPublishedAt",
+        "contentLevel"
+      ],
+      "properties": {
+        "videoCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "oldestPublishedAt": {
+          "type": "string",
+          "format": "date"
+        },
+        "newestPublishedAt": {
+          "type": "string",
+          "format": "date"
+        },
+        "contentLevel": {
+          "type": "string",
+          "enum": [
+            "metadata-only",
+            "metadata-plus-owned-captions"
+          ],
+          "description": "metadata-only là mặc định và là mức duy nhất khả thi cho video của người khác."
+        },
+        "knownBias": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Ví dụ: thiên về kênh lớn, thiên về video mới, chỉ một vùng và một ngôn ngữ."
+        }
+      }
+    },
+    "videos": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "videoId",
+          "title",
+          "publishedAt",
+          "viewCount",
+          "channelId"
+        ],
+        "properties": {
+          "videoId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "durationSec": {
+            "type": "integer"
+          },
+          "viewCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "channelId": {
+            "type": "string"
+          },
+          "channelSubscriberCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "viewsPerDayOfAge": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Đại lượng THAY THẾ cho nhu cầu, chịu thiên lệch bởi độ lớn kênh, tuổi video và quảng bá. Không phải phép đo nhu cầu."
+          }
+        }
+      }
+    }
+  }
+}

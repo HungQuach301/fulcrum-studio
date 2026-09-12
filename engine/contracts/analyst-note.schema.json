@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "analyst-note.schema.json",
+  "title": "Analyst's Note",
+  "description": "Ghi chú phân tích đăng kèm tập, soạn từ cụm bình luận. KHÔNG lưu bình luận thô hay tên người dùng — chỉ tóm tắt cụm và số đếm.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "episodeId",
+    "generatedAt",
+    "clusters",
+    "draft",
+    "approvedBy"
+  ],
+  "properties": {
+    "episodeId": {
+      "type": "string"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "clusters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "theme",
+          "count",
+          "kind"
+        ],
+        "properties": {
+          "theme": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "question",
+              "correction",
+              "edge-case",
+              "off-topic"
+            ]
+          },
+          "claimIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "draft": {
+      "type": "string",
+      "minLength": 50
+    },
+    "correctionNeeded": {
+      "type": "boolean",
+      "description": "True thì kích hoạt quy trình đính chính, không chỉ trả lời bình luận."
+    },
+    "approvedBy": {
+      "type": "string",
+      "enum": [
+        "human",
+        "machine-tier2",
+        "machine-tier3"
+      ]
+    },
+    "complianceChecked": {
+      "type": "boolean",
+      "description": "Trả lời bình luận tài chính chạm ranh giới tư vấn. Phải qua kiểm nội dung, không chỉ lọc từ cấm."
+    }
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "novelty-check.schema.json",
+  "title": "Novelty Check Result",
+  "description": "Kết quả kiểm mới lạ của một thesis trong phạm vi corpus. KHÔNG chứng minh 'chưa ai công bố' — chỉ chứng minh 'không thấy trong corpus đã kiểm'.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "thesisId",
+    "corpusRef",
+    "checkedAt",
+    "similarCount",
+    "contradictingCount",
+    "unansweredMatch",
+    "verdict",
+    "method",
+    "limitation"
+  ],
+  "properties": {
+    "thesisId": {
+      "type": "string"
+    },
+    "corpusRef": {
+      "type": "string"
+    },
+    "checkedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "method": {
+      "type": "string",
+      "enum": [
+        "embedding-metadata",
+        "keyword-metadata"
+      ],
+      "description": "Cả hai đều chỉ dùng tiêu đề và mô tả. Kiểm mới lạ trên metadata là phép kiểm yếu."
+    },
+    "similarCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Video nói CÙNG chiều với thesis."
+    },
+    "contradictingCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Video nói NGƯỢC chiều. Bằng 0 KHÔNG chứng minh mới lạ: cả corpus có thể đã đồng ý với thesis."
+    },
+    "unansweredMatch": {
+      "type": "boolean",
+      "description": "Có video đặt đúng câu hỏi này mà không trả lời bằng số không."
+    },
+    "nearestExamples": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "videoId",
+          "relation"
+        ],
+        "properties": {
+          "videoId": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string",
+            "enum": [
+              "similar",
+              "contradicting",
+              "unanswered-question"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "novel-in-corpus",
+        "incremental",
+        "duplicate",
+        "insufficient-corpus"
+      ]
+    },
+    "limitation": {
+      "type": "string",
+      "minLength": 20,
+      "description": "Câu mô tả phạm vi corpus và điều kết quả này KHÔNG chứng minh. Bắt buộc, và được dùng nguyên văn khi trình ở Gate 1."
+    }
+  }
+}

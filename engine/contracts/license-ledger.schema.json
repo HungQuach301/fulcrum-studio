@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "license-ledger.schema.json",
+  "title": "Asset License Ledger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "episodeId",
+    "entries"
+  ],
+  "properties": {
+    "episodeId": {
+      "type": "string"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "assetId",
+          "kind",
+          "source",
+          "acquiredAt",
+          "commercialUse",
+          "evidencePath"
+        ],
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "image-generated",
+              "image-stock",
+              "music",
+              "sfx",
+              "font",
+              "data-visual"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "acquiredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "licenseId": {
+            "type": "string"
+          },
+          "licenseTerms": {
+            "type": "string"
+          },
+          "commercialUse": {
+            "type": "boolean",
+            "description": "False thì asset không được dùng. Không có trạng thái 'chắc là được'."
+          },
+          "attributionRequired": {
+            "type": "boolean"
+          },
+          "attributionText": {
+            "type": "string"
+          },
+          "sublicensableToClient": {
+            "type": "boolean",
+            "description": "Quan trọng cho hướng thương mại hoá bán năng lực sản xuất."
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "seed": {
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "model": {
+            "type": "string"
+          },
+          "reproducible": {
+            "type": "boolean",
+            "description": "False nghĩa là asset này phải được LƯU BỀN VỮNG, không thể sinh lại từ prompt và seed."
+          },
+          "evidencePath": {
+            "type": "string",
+            "description": "Đường dẫn tới bản lưu giấy phép. Link tới trang web của nhà cung cấp KHÔNG đủ: trang có thể đổi."
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "orchestrator-log.schema.json",
+  "title": "Orchestrator Decision Log Line",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ts",
+    "runId",
+    "action",
+    "variables",
+    "decision"
+  ],
+  "properties": {
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "runId": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "open-episode",
+        "dispatch-block",
+        "apply-tier",
+        "alert",
+        "demote-tier",
+        "no-op"
+      ]
+    },
+    "variables": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bankAvailable",
+        "variationVerdict",
+        "monthCostUsd",
+        "cumulativeCostUsd",
+        "worstStageFpy",
+        "wipCount"
+      ],
+      "properties": {
+        "bankAvailable": {
+          "type": "integer"
+        },
+        "variationVerdict": {
+          "type": "string"
+        },
+        "monthCostUsd": {
+          "type": "number"
+        },
+        "cumulativeCostUsd": {
+          "type": "number"
+        },
+        "worstStageFpy": {
+          "type": "number"
+        },
+        "wipCount": {
+          "type": "integer"
+        }
+      }
+    },
+    "decision": {
+      "type": "string"
+    },
+    "blockingVariable": {
+      "type": "string",
+      "description": "Bắt buộc khi action = no-op. Biến nào chặn."
+    },
+    "dispatchedWorkflow": {
+      "type": "string"
+    },
+    "episodeId": {
+      "type": "string"
+    }
+  }
+}

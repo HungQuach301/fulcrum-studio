@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "metrics.schema.json",
+  "title": "Episode Metrics",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["episodeId", "checkpoint", "measuredAt", "aggregate"],
+  "properties": {
+    "episodeId": { "type": "string" },
+    "checkpoint": { "type": "string", "enum": ["48h", "7d", "28d"] },
+    "measuredAt": { "type": "string", "format": "date-time" },
+    "aggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["views", "impressions", "ctr", "avgViewDurationSec"],
+      "properties": {
+        "views": { "type": "integer", "minimum": 0 },
+        "impressions": { "type": "integer", "minimum": 0 },
+        "ctr": { "type": "number", "minimum": 0 },
+        "avgViewDurationSec": { "type": "number", "minimum": 0 },
+        "retention30s": { "type": "number" },
+        "subsGained": { "type": "integer" },
+        "watchHours": { "type": "number", "minimum": 0 },
+        "rpm": { "type": "number", "minimum": 0 }
+      }
+    },
+    "retentionCurve": {
+      "type": "array",
+      "description": "Đường cong giữ chân theo thời gian. Bắt buộc để đối chiếu retention với vị trí beat — chỉ số tổng hợp không làm được việc đó.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["elapsedRatio", "watchRatio"],
+        "properties": {
+          "elapsedRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+          "watchRatio": { "type": "number", "minimum": 0 }
+        }
+      }
+    },
+    "cumulativeChannelWatchHours": { "type": "number", "minimum": 0 }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "snapshot.schema.json",
+  "title": "Data Snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["publisher", "seriesId", "asOfDate", "fetchedAt", "unit", "frequency", "volatility", "observations", "sourceUrl"],
+  "properties": {
+    "publisher": { "type": "string" },
+    "seriesId": { "type": "string" },
+    "title": { "type": "string" },
+    "asOfDate": { "type": "string", "format": "date" },
+    "fetchedAt": { "type": "string", "format": "date-time" },
+    "unit": { "type": "string" },
+    "frequency": { "type": "string", "enum": ["daily", "weekly", "monthly", "quarterly", "annual", "static"] },
+    "volatility": { "type": "string", "enum": ["fast", "slow", "annual-reset", "static"], "description": "annual-reset: giới hạn hưu trí, bậc thuế — đổi mỗi năm, làm tập cũ thành sai." },
+    "changeAlertThresholdPct": { "type": "number", "minimum": 0, "description": "Vượt mức này giữa hai ảnh chụp thì tự mở issue liệt kê tập bị ảnh hưởng." },
+    "geoLevel": { "type": "string", "enum": ["national", "state", "metro", "county"] },
+    "observations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["period", "value"],
+        "properties": {
+          "period": { "type": "string" },
+          "geo": { "type": "string" },
+          "value": { "type": ["number", "null"] }
+        }
+      }
+    },
+    "sourceUrl": { "type": "string", "format": "uri" },
+    "revisionNote": { "type": "string" },
+    "seasonalAdjustment": { "type": "string", "enum": ["SA", "NSA", "not-applicable"], "description": "Trộn SA với NSA là lỗi phổ biến nhất khi dùng dữ liệu lao động và giá. Bắt buộc khai." },
+    "vintage": { "type": "string", "format": "date", "description": "Ngày công bố của bản số liệu này, khác asOfDate là kỳ quan sát." },
+    "revisionOf": { "type": "string", "description": "seriesId + vintage của ảnh chụp mà bản này thay thế. Dùng để nối thành lịch sử điều chỉnh." },
+    "changeAlertThresholdAbs": { "type": "number", "minimum": 0, "description": "Ngưỡng cảnh báo tuyệt đối theo đơn vị của chuỗi. Bắt buộc dùng thay cho phần trăm khi giá trị gần 0: lãi suất 0,25% lên 0,5% là +100% nhưng không phải một thay đổi lớn." },
+    "enteredBy": { "type": "string", "enum": ["api", "machine-dual", "human"], "description": "api: adapter lấy tự động. machine-dual: hai lượt trích xuất độc lập từ hai nhà cung cấp khớp nhau. human: hai lượt lệch, người quyết." },
+    "verifiedBy": { "type": "string", "description": "Bắt buộc khi enteredBy = human." },
+    "sourceDocumentDate": { "type": "string", "format": "date", "description": "Ngày của tài liệu gốc với ảnh chụp biên tập." },
+    "sourceDocumentHash": { "type": "string", "description": "Hash của tài liệu gốc đã lưu, để đối chiếu lại khi trang nguồn đổi." }
+  }
+}

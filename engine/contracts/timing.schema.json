@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "timing.schema.json",
+  "title": "Voice Timing",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["episodeId", "audioPath", "totalMs", "words", "loudnessLufs"],
+  "properties": {
+    "episodeId": { "type": "string" },
+    "audioPath": { "type": "string" },
+    "captionsPath": { "type": "string" },
+    "totalMs": { "type": "integer", "minimum": 1000 },
+    "loudnessLufs": { "type": "number" },
+    "captionDriftMaxMs": { "type": "integer", "minimum": 0 },
+    "words": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "startMs", "endMs"],
+        "properties": {
+          "text": { "type": "string" },
+          "startMs": { "type": "integer", "minimum": 0 },
+          "endMs": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "voice": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": { "type": "string" },
+        "voiceId": { "type": "string" },
+        "commercialLicenseVerified": { "type": "boolean" }
+      }
+    }
+  }
+}

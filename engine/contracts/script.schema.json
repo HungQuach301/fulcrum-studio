@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "script.schema.json",
+  "title": "Script Front Matter",
+  "description": "Front-matter YAML ở đầu 05-script.md. Số từ, số thiết bị, số mục từ điển đối chiếu với format-spec.limits.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["episodeId", "wordCount", "devicesUsed", "lexiconUsed", "claimIds", "geoScopeStated", "selfCheck"],
+  "properties": {
+    "episodeId": { "type": "string" },
+    "wordCount": { "type": "integer", "minimum": 1 },
+    "devicesUsed": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "lexiconUsed": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "claimIds": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "geoScopeStated": { "type": "boolean", "description": "Phải true: một câu trong lời thoại nêu rõ phạm vi địa lý của kết luận." },
+    "localeReviewDone": { "type": "boolean" },
+    "selfCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["declaredWordCount", "declaredDeviceCount"],
+      "properties": {
+        "declaredWordCount": { "type": "integer" },
+        "declaredDeviceCount": { "type": "integer" }
+      }
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": { "type": "string" },
+        "promptVersion": { "type": "string" },
+        "temperature": { "type": "number" },
+        "seed": { "type": ["integer", "string"] },
+        "costUsd": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

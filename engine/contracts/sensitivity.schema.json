@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "sensitivity.schema.json",
+  "title": "Sensitivity Analysis",
+  "description": "Kết quả quét tham số. Tính toán thuần, không gọi mô hình ngôn ngữ. Xem 14-quantitative-core.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["episodeId", "modelId", "modelVersion", "runAt", "parameters", "flipPoints"],
+  "properties": {
+    "episodeId": { "type": "string" },
+    "modelId": { "type": "string", "pattern": "^[a-z0-9-]+/M-[0-9]{3}$" },
+    "modelVersion": { "type": "string" },
+    "runAt": { "type": "string", "format": "date-time" },
+    "snapshotKeys": { "type": "array", "items": { "type": "string" } },
+    "parameters": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "scannedRange", "step", "classification"],
+        "properties": {
+          "name": { "type": "string" },
+          "scannedRange": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" } },
+          "step": { "type": "number" },
+          "classification": { "type": "string", "enum": ["stable", "sensitive", "flips"] },
+          "geoVarying": { "type": "boolean" }
+        }
+      }
+    },
+    "flipPoints": {
+      "type": "array",
+      "description": "Có thể rỗng, nhưng khi rỗng thì phải có stableConclusion.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["parameter", "value", "conclusionBefore", "conclusionAfter"],
+        "properties": {
+          "parameter": { "type": "string" },
+          "value": { "type": "number" },
+          "unit": { "type": "string" },
+          "conclusionBefore": { "type": "string" },
+          "conclusionAfter": { "type": "string" },
+          "affectedGeos": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "stableConclusion": { "type": "string", "description": "Bắt buộc nếu flipPoints rỗng." },
+    "fullTablePath": { "type": "string" },
+    "publishedSheetUrl": { "type": "string", "format": "uri" }
+  }
+}

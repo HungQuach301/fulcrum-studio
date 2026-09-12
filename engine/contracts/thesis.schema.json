@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "thesis.schema.json",
+  "title": "Thesis Bank Entry",
+  "description": "Bốn trường của thẻ Gate 1 (expectedThresholds, flipPreview, noveltyVerdict, rpmTier) là BẮT BUỘC: engine không được trả thẻ trống mà vẫn hợp lệ.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["thesisId", "channel", "statement", "contradicts", "archetype", "pillar", "origin", "expectedThresholds", "flipPreview", "noveltyVerdict", "rpmTier", "status", "createdAt"],
+  "properties": {
+    "thesisId": { "type": "string", "pattern": "^[a-z0-9-]+/TB-[0-9]{3}$" },
+    "channel": { "type": "string" },
+    "statement": { "type": "string", "minLength": 40, "maxLength": 500 },
+    "contradicts": { "type": "string", "minLength": 15, "description": "Niềm tin mặc định bị thách thức. Rỗng thì không phải thesis." },
+    "archetype": { "type": "string" },
+    "pillar": { "type": "string" },
+    "origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "evidence"],
+      "properties": {
+        "source": { "type": "string", "enum": ["data-conflict", "hidden-threshold", "unanswered-question", "comment-cluster", "release-calendar"] },
+        "evidence": { "type": "string", "minLength": 20 },
+        "snapshotKeys": { "type": "array", "items": { "type": "string" } },
+        "modelId": { "type": "string" }
+      }
+    },
+    "expectedThresholds": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "flipPreview": { "type": "string", "minLength": 10, "maxLength": 300 },
+    "noveltyVerdict": { "type": "string", "enum": ["novel", "incremental", "duplicate"] },
+    "rpmTier": { "type": "string", "enum": ["high", "medium", "low"] },
+    "status": { "type": "string", "enum": ["available", "used", "rejected", "expired"] },
+    "rejectionReason": { "type": "string", "minLength": 10, "description": "BẮT BUỘC khi status = rejected; validator tầng 2 chặn nếu thiếu. Đầu vào duy nhất để cải thiện engine." },
+    "usedByEpisode": { "type": "string" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" }
+  }
+}

@@ -1,0 +1,137 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "run-log.schema.json",
+  "title": "Run Log Line",
+  "description": "Một dòng trong pipeline/runs.jsonl, append-only. Nguồn dữ liệu duy nhất cho FPY, định tuyến nguyên nhân gốc, cơ chế 4, và toàn bộ quản trị chi phí ở D-13. costUsd là BẮT BUỘC.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ts",
+    "runId",
+    "episodeId",
+    "stage",
+    "attempt",
+    "verdict",
+    "durationMs",
+    "costUsd"
+  ],
+  "properties": {
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "episodeId": {
+      "type": "string",
+      "description": "Rỗng khi subjectType khác 'episode'."
+    },
+    "channel": {
+      "type": "string"
+    },
+    "stage": {
+      "type": "string"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "blocked",
+        "skipped",
+        "cancelled",
+        "timeout"
+      ]
+    },
+    "errorClass": {
+      "type": "string"
+    },
+    "rootCauseStage": {
+      "type": "string"
+    },
+    "costUsd": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Bắt buộc. Ghi 0 nếu stage không tốn tiền. Không có trường này thì ba lớp quản trị chi phí ở D-13 không tồn tại."
+    },
+    "durationMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "runnerMinutes": {
+      "type": "number",
+      "minimum": 0
+    },
+    "model": {
+      "type": "string"
+    },
+    "promptVersion": {
+      "type": "string"
+    },
+    "engineVersion": {
+      "type": "string"
+    },
+    "decisionShadow": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Bậc 1 của D-11: máy ghi lại đề xuất của mình để so với quyết định thật của người.",
+      "properties": {
+        "decisionPoint": {
+          "type": "string"
+        },
+        "machineChoice": {
+          "type": "string"
+        },
+        "humanChoice": {
+          "type": "string"
+        },
+        "agreed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "runId": {
+      "type": "string",
+      "description": "Định danh duy nhất của lần chạy. Bắt buộc. Không có nó thì không phân biệt được retry với một lần gọi trả phí mới."
+    },
+    "attemptId": {
+      "type": "string",
+      "description": "Định danh của lần thử trong một runId."
+    },
+    "subjectType": {
+      "type": "string",
+      "enum": [
+        "episode",
+        "channel",
+        "workpackage",
+        "infrastructure"
+      ],
+      "description": "Chi phí của builder, kho ảnh chụp và thesis discovery không thuộc tập nào. episodeId để rỗng khi subjectType khác 'episode'."
+    },
+    "subjectId": {
+      "type": "string"
+    },
+    "providerRequestId": {
+      "type": "string"
+    },
+    "inputDigest": {
+      "type": "string"
+    },
+    "outputDigest": {
+      "type": "string"
+    },
+    "costKind": {
+      "type": "string",
+      "enum": [
+        "estimated",
+        "actual"
+      ],
+      "description": "Ước tính từ bảng giá hay số thật từ nhà cung cấp. Rollup phải phân biệt hai loại."
+    },
+    "priceTableVersion": {
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "canvas-map.schema.json",
+  "title": "Canvas Map",
+  "description": "Bản đồ vùng, sinh TRƯỚC storyboard. Số vùng đối chiếu với format-spec.limits.canvasRegionCount.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "episodeId",
+    "orientation",
+    "canvasWidth",
+    "canvasHeight",
+    "regions"
+  ],
+  "properties": {
+    "episodeId": {
+      "type": "string"
+    },
+    "canvasWidth": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "canvasHeight": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "regions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "beatIndex",
+          "x",
+          "y",
+          "width",
+          "height",
+          "content"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "beatIndex": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "x": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "y": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "content": {
+            "type": "string"
+          },
+          "neighbors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "orientation": {
+      "type": "string",
+      "enum": [
+        "landscape",
+        "vertical"
+      ]
+    }
+  }
+}

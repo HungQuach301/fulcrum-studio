@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "signals.schema.json",
+  "title": "Signals",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["channel", "generatedAt", "signals"],
+  "properties": {
+    "channel": { "type": "string" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "signals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "snapshotKey", "pillar", "changeDescription", "asOfDate"],
+        "properties": {
+          "id": { "type": "string" },
+          "snapshotKey": { "type": "string", "description": "Dạng {publisher}/{seriesId}" },
+          "pillar": { "type": "string" },
+          "changeDescription": { "type": "string" },
+          "changePct": { "type": "number" },
+          "asOfDate": { "type": "string", "format": "date" }
+        }
+      }
+    }
+  }
+}

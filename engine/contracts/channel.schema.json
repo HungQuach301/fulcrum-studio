@@ -1,0 +1,152 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "channel.schema.json",
+  "title": "Channel Pack Config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "slug",
+    "genre",
+    "market",
+    "language",
+    "pillars",
+    "audience",
+    "providers"
+  ],
+  "properties": {
+    "$schemaRef": {
+      "type": "string"
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "displayName": {
+      "type": "string"
+    },
+    "genre": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "engineVersion": {
+      "type": "string"
+    },
+    "market": {
+      "type": "string"
+    },
+    "language": {
+      "type": "string"
+    },
+    "faceless": {
+      "type": "boolean"
+    },
+    "pillars": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "audience": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ageRange",
+        "context"
+      ],
+      "properties": {
+        "ageRange": {
+          "type": "string"
+        },
+        "context": {
+          "type": "string"
+        }
+      }
+    },
+    "cadencePerMonth": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "scoringWeights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "demand",
+        "saturation",
+        "rpm",
+        "matrix"
+      ],
+      "description": "Trần điểm của từng trục Topic Scoring. Tổng phải bằng 100. Đây là hằng số nội dung — thuộc Channel Pack, không thuộc contract.",
+      "properties": {
+        "demand": {
+          "type": "number",
+          "minimum": 0
+        },
+        "saturation": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rpm": {
+          "type": "number",
+          "minimum": 0
+        },
+        "matrix": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "revenuePriorityByPhase": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "ttsVoiceId": {
+      "type": "string"
+    },
+    "googleAccount": {
+      "type": "string"
+    },
+    "providers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "llm",
+        "llmVerifier",
+        "tts",
+        "imageGen",
+        "stock",
+        "embeddings"
+      ],
+      "properties": {
+        "llm": {
+          "type": "string"
+        },
+        "llmVerifier": {
+          "type": "string",
+          "description": "Phải là NHÀ CUNG CẤP khác llm, không chỉ khoá khác. Cùng nhà cung cấp thì hai bên sai giống nhau."
+        },
+        "tts": {
+          "type": "string"
+        },
+        "imageGen": {
+          "type": "string"
+        },
+        "stock": {
+          "type": "string"
+        },
+        "embeddings": {
+          "type": "string",
+          "description": "Dùng cho phân cụm bình luận và kiểm mới lạ."
+        }
+      }
+    },
+    "disclaimerPlacement": {
+      "type": "string",
+      "enum": [
+        "description",
+        "on-screen"
+      ],
+      "description": "Chỉ điều khiển lời giới hạn phạm vi giáo dục. KHÔNG điều khiển khai báo quan hệ thương mại — cái đó bắt buộc trong video."
+    }
+  }
+}

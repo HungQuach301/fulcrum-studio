@@ -1,0 +1,170 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "episode-state.schema.json",
+  "title": "Episode State",
+  "description": "Trạng thái của MỘT tập, ở /episodes/{channel}/{id}/state.json. Chỉ pipeline của chính tập đó ghi. Xem quyết định D-07.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "episodeId",
+    "channel",
+    "currentStage",
+    "stageStatus",
+    "updatedAt",
+    "spendUsd",
+    "versions"
+  ],
+  "properties": {
+    "episodeId": {
+      "type": "string"
+    },
+    "channel": {
+      "type": "string"
+    },
+    "currentStage": {
+      "type": "string"
+    },
+    "stageStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "running",
+        "awaiting_gate",
+        "blocked",
+        "done",
+        "abandoned"
+      ]
+    },
+    "blockedReason": {
+      "type": "string"
+    },
+    "spendUsd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "spendCapUsd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "attempts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "gateHistory": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "gate",
+          "verdict",
+          "at",
+          "actor",
+          "approvedArtifactHash",
+          "policyVersion"
+        ],
+        "properties": {
+          "gate": {
+            "type": "string",
+            "enum": [
+              "gate1",
+              "gate2",
+              "gate3"
+            ]
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "rejected"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actor": {
+            "type": "string",
+            "description": "Ai quyết. 'human:<tên tài khoản>' hoặc 'machine-tier2'/'machine-tier3'."
+          },
+          "approvedArtifactHash": {
+            "type": "string",
+            "description": "Hash của artifact đã duyệt. Đầu vào đổi sau khi duyệt thì approval này hết hiệu lực — xem invalidatedBy."
+          },
+          "policyVersion": {
+            "type": "string",
+            "description": "Phiên bản automation-tiers.json lúc quyết."
+          },
+          "receiptUrl": {
+            "type": "string",
+            "description": "Link issue hoặc PR chứa dấu vết quyết định."
+          },
+          "invalidatedBy": {
+            "type": "string",
+            "description": "Điền khi approval hết hiệu lực: stage nào đã đổi đầu vào. Approval có trường này KHÔNG còn giá trị."
+          }
+        }
+      }
+    },
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Đóng băng lúc bắt đầu. Tập chạy hết bằng bộ phiên bản này.",
+      "properties": {
+        "engine": {
+          "type": "string"
+        },
+        "genre": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        }
+      }
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Tăng mỗi lần ghi. Ghi với revision cũ hơn bị từ chối ở hàng đợi D-15."
+    },
+    "pendingSideEffects": {
+      "type": "array",
+      "description": "Thao tác đã gọi ra ngoài nhưng chưa biết kết quả — upload, TTS, lời gọi trả phí. Phải đối soát trước khi gọi lại.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "writeId",
+          "startedAt"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "writeId": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "providerRequestId": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

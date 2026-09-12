@@ -1,0 +1,365 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "storyboard.schema.json",
+  "title": "Storyboard",
+  "description": "Số scene, thời lượng tối thiểu, fps đối chiếu với format-spec.limits.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "episodeId",
+    "canvasMapRef",
+    "orientation",
+    "scenes",
+    "selfCheck"
+  ],
+  "properties": {
+    "episodeId": {
+      "type": "string"
+    },
+    "canvasMapRef": {
+      "type": "string"
+    },
+    "fps": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Validator đối chiếu format-spec.limits.fpsAllowed."
+    },
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "beatIndex",
+          "regionId",
+          "durationMs",
+          "camera",
+          "layout",
+          "shotSize",
+          "content"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "beatIndex": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "regionId": {
+            "type": "string",
+            "description": "Phải tồn tại trong canvas map."
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "camera": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "x",
+              "y",
+              "scale",
+              "move"
+            ],
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "scale": {
+                "type": "number",
+                "minimum": 0.01
+              },
+              "move": {
+                "type": "string",
+                "description": "Từ vựng chuyển động khai trong engine/library/cinematography.md."
+              },
+              "easing": {
+                "type": "string"
+              }
+            }
+          },
+          "layout": {
+            "type": "string",
+            "description": "Hằng số nội dung. Validator đối chiếu layouts.json."
+          },
+          "variant": {
+            "type": "string"
+          },
+          "shotSize": {
+            "type": "string",
+            "enum": [
+              "wide",
+              "medium",
+              "close",
+              "detail"
+            ]
+          },
+          "claimIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "onScreenWords": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "audioLeadMs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "breathAfterMs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "parallaxLayer": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          },
+          "continuity": {
+            "type": "string"
+          },
+          "content": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Dữ liệu dựng hình của scene. Thiếu khối này thì renderer không dựng được gì — layout và camera chỉ nói ở đâu và nhìn thế nào, không nói cái gì hiện ra.",
+            "required": [
+              "texts",
+              "series"
+            ],
+            "properties": {
+              "texts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "slot",
+                    "value"
+                  ],
+                  "properties": {
+                    "slot": {
+                      "type": "string",
+                      "description": "Ô chữ do layout định nghĩa, ví dụ title, subtitle, callout, footnote. Danh sách ô hợp lệ nằm ở props schema của layout."
+                    },
+                    "value": {
+                      "type": "string"
+                    },
+                    "claimId": {
+                      "type": "string",
+                      "description": "Bắt buộc nếu value chứa một con số. Không có claimId thì con số không được phép hiển thị."
+                    },
+                    "emphasis": {
+                      "type": "string",
+                      "enum": [
+                        "primary",
+                        "secondary",
+                        "muted"
+                      ]
+                    }
+                  }
+                }
+              },
+              "series": {
+                "type": "array",
+                "description": "Dữ liệu biểu đồ. Rỗng với layout chỉ có chữ.",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "label",
+                    "points"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "claimId": {
+                      "type": "string"
+                    },
+                    "colorRole": {
+                      "type": "string",
+                      "description": "Vai trò màu trong visual-tokens.json, không phải mã màu."
+                    },
+                    "points": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "x",
+                          "y"
+                        ],
+                        "properties": {
+                          "x": {
+                            "type": [
+                              "string",
+                              "number"
+                            ]
+                          },
+                          "y": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "annotation": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "axes": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "x": {
+                    "$ref": "#/definitions/axis"
+                  },
+                  "y": {
+                    "$ref": "#/definitions/axis"
+                  }
+                }
+              },
+              "assets": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "assetId",
+                    "role"
+                  ],
+                  "properties": {
+                    "assetId": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    },
+                    "licenseRef": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "reveal": {
+                "type": "array",
+                "description": "Thứ tự xuất hiện trong scene. Rỗng nghĩa là hiện hết ngay từ đầu.",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "target",
+                    "atMs"
+                  ],
+                  "properties": {
+                    "target": {
+                      "type": "string"
+                    },
+                    "atMs": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "fade",
+                        "draw",
+                        "count",
+                        "highlight"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "reusesRegionFrom": {
+            "type": "string",
+            "description": "ID của scene trước dùng lại đúng vùng và đúng nội dung, chỉ đổi máy quay. Scene có trường này KHÔNG tính vào maxPerEpisode của layout — xem quy tắc đếm trong layouts.json."
+          }
+        }
+      }
+    },
+    "selfCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "declaredSceneCount",
+        "declaredTotalMs",
+        "declaredShotSizeMix"
+      ],
+      "properties": {
+        "declaredSceneCount": {
+          "type": "integer"
+        },
+        "declaredTotalMs": {
+          "type": "integer"
+        },
+        "declaredShotSizeMix": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "orientation": {
+      "type": "string",
+      "enum": [
+        "landscape",
+        "vertical"
+      ],
+      "description": "Storyboard dọc cho Shorts là một artifact RIÊNG, không phải bản ngang đổi khung nhìn."
+    }
+  },
+  "definitions": {
+    "axis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "unit",
+        "startsAtZero"
+      ],
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "startsAtZero": {
+          "type": "boolean",
+          "description": "False phải có lý do ở axisNote. Trục cắt gốc là cách làm sai lệch biểu đồ phổ biến nhất."
+        },
+        "axisNote": {
+          "type": "string"
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        }
+      }
+    }
+  }
+}

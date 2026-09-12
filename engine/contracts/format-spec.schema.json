@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "format-spec.schema.json",
+  "title": "Genre Format Spec",
+  "description": "Đặc tả định dạng của một thể loại. Mục limits chứa MỌI khoảng số mà contract KHÔNG được chứa. Validator đối chiếu artifact với các khoảng này.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["genre", "version", "limits", "beats", "devices", "thesisArchetypes"],
+  "properties": {
+    "$schemaRef": { "type": "string" },
+    "genre": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "version": { "type": "string" },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetDurationMin", "beatCount", "scriptWordCount", "canvasRegionCount", "sceneCount", "sceneMinDurationMs"],
+      "properties": {
+        "targetDurationMin": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" } },
+        "beatCount": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "integer" } },
+        "scriptWordCount": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "integer" } },
+        "canvasRegionCount": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "integer" } },
+        "sceneCount": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "integer" } },
+        "sceneMinDurationMs": { "type": "integer", "minimum": 1 },
+        "sceneDurationStdDevMinRatio": { "type": "number", "minimum": 0 },
+        "maxConsecutiveScenesUnder2s": { "type": "integer", "minimum": 1 },
+        "onScreenWordsMaxPerScene": { "type": "integer", "minimum": 1 },
+        "totalDurationTolerancePct": { "type": "number", "minimum": 0 },
+        "devicesMin": { "type": "integer", "minimum": 0 },
+        "lexiconMin": { "type": "integer", "minimum": 0 },
+        "counterClaimsMin": { "type": "integer", "minimum": 0 },
+        "proofStillsMin": { "type": "integer", "minimum": 1 },
+        "qaVisualSamplesMin": { "type": "integer", "minimum": 1 },
+        "qaVisualPassScore": { "type": "integer", "minimum": 0 },
+        "captionDriftMaxMs": { "type": "integer", "minimum": 0 },
+        "shortsCount": { "type": "integer", "minimum": 0 },
+        "titleCount": { "type": "integer", "minimum": 1 },
+        "thumbnailCount": { "type": "integer", "minimum": 1 },
+        "fpsAllowed": { "type": "array", "minItems": 1, "items": { "type": "integer" } },
+        "noveltyVideosCheckedMin": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "sampledFromKinds": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "beats": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "name", "purpose", "shareOfDuration"],
+        "properties": {
+          "index": { "type": "integer", "minimum": 1 },
+          "name": { "type": "string" },
+          "purpose": { "type": "string" },
+          "shareOfDuration": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "devices": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "description"],
+        "properties": { "id": { "type": "string" }, "description": { "type": "string" } }
+      }
+    },
+    "thesisArchetypes": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "thresholdMatrix": { "type": "object", "additionalProperties": true },
+    "coldOpenKinds": { "type": "array", "items": { "type": "string" } },
+    "shotSizeMix": { "type": "object", "additionalProperties": { "type": "number" } }
+  }
+}

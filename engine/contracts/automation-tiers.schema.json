@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "automation-tiers.schema.json",
+  "title": "Automation Tiers Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "decisionPoints",
+    "promotionRule"
+  ],
+  "properties": {
+    "note": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "decisionPoints": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tier",
+          "maxTier"
+        ],
+        "properties": {
+          "tier": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          },
+          "maxTier": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          },
+          "evidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "promotionRule": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

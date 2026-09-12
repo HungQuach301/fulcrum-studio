@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "publication.schema.json",
+  "title": "Publication Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["episodeId", "videoId", "publishedAt", "visibility", "quotaUnitsUsed"],
+  "properties": {
+    "episodeId": { "type": "string" },
+    "videoId": { "type": "string" },
+    "publishedAt": { "type": "string", "format": "date-time" },
+    "visibility": { "type": "string", "enum": ["private", "unlisted", "public"] },
+    "titleUsed": { "type": "string" },
+    "thumbnailUsed": { "type": "string" },
+    "captionsUploaded": { "type": "boolean" },
+    "adBreaksSetManually": { "type": "boolean", "description": "Đặt điểm chèn quảng cáo là thao tác tay ở bước vận hành sau đăng." },
+    "modelSheetPublished": { "type": "boolean" },
+    "quotaUnitsUsed": { "type": "integer", "minimum": 0 }
+  }
+}

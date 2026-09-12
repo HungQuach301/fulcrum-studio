@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "factcheck.schema.json",
+  "title": "Fact and Risk Check",
+  "description": "Chạy bằng lời gọi riêng, khoá riêng, prompt đối kháng. Có quyền chặn pipeline.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["episodeId", "verdict", "checkedClaims"],
+  "properties": {
+    "episodeId": { "type": "string" },
+    "verdict": { "type": "string", "enum": ["pass", "warn", "block"] },
+    "checkedClaims": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claimId", "verdict"],
+        "properties": {
+          "claimId": { "type": "string" },
+          "verdict": { "type": "string", "enum": ["confirmed", "mismatch", "unverifiable"] },
+          "note": { "type": "string" }
+        }
+      }
+    },
+    "complianceFlags": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "excerpt", "rule"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["red", "yellow"] },
+          "excerpt": { "type": "string" },
+          "rule": { "type": "string" }
+        }
+      }
+    },
+    "derivedNumberCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Kết quả lượt tính lại độc lập cho con số phái sinh.",
+      "properties": {
+        "modelId": { "type": "string" },
+        "firstPass": { "type": "number" },
+        "recompute": { "type": "number" },
+        "deltaPct": { "type": "number" },
+        "tolerancePct": { "type": "number" },
+        "verdict": { "type": "string", "enum": ["match", "mismatch"] }
+      }
+    }
+  }
+}

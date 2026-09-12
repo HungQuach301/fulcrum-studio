@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "pipeline-state.schema.json",
+  "title": "Pipeline Index (derived)",
+  "description": "CHỈ MỤC DẪN XUẤT. Không stage nào ghi trực tiếp; chỉ reindex.yml xây lại từ các state.json của từng tập. Xem D-01 và D-07.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "rebuiltAt",
+    "sourceCommit",
+    "episodes"
+  ],
+  "properties": {
+    "note": {
+      "type": "string"
+    },
+    "rebuiltAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sourceCommit": {
+      "type": "string",
+      "description": "SHA mà chỉ mục này được xây từ. Lệch với HEAD nghĩa là chỉ mục cũ."
+    },
+    "episodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "episodeId",
+          "currentStage",
+          "stageStatus",
+          "updatedAt"
+        ],
+        "properties": {
+          "episodeId": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "currentStage": {
+            "type": "string"
+          },
+          "stageStatus": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "spendUsd": {
+            "type": "number"
+          }
+        }
+      }
+    }
+  }
+}

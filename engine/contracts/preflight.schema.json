@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "preflight.schema.json",
+  "title": "Preflight Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["episodeId", "runAt", "verdict", "checks"],
+  "properties": {
+    "episodeId": { "type": "string" },
+    "runAt": { "type": "string", "format": "date-time" },
+    "verdict": { "type": "string", "enum": ["pass", "fail"] },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "verdict"],
+        "properties": {
+          "id": { "type": "string" },
+          "verdict": { "type": "string", "enum": ["pass", "fail", "warn"] },
+          "expected": { "type": ["string", "number"] },
+          "actual": { "type": ["string", "number"] },
+          "sceneIds": { "type": "array", "items": { "type": "string" } },
+          "rootCauseStage": { "type": "string" }
+        }
+      }
+    },
+    "selfCheckMismatch": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Trường mà stage trước tự khai khác với số tính được. Nghiêm trọng hơn một check fail thường."
+    }
+  }
+}

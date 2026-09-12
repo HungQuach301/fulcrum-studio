@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "proof.schema.json",
+  "title": "Proof Render Report",
+  "description": "Số ảnh tĩnh tối thiểu đối chiếu với format-spec.limits.proofStillsMin; loại lấy mẫu đối chiếu format-spec.sampledFromKinds.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["episodeId", "runAt", "verdict", "stills", "clip", "costUsd"],
+  "properties": {
+    "episodeId": { "type": "string" },
+    "runAt": { "type": "string", "format": "date-time" },
+    "verdict": { "type": "string", "enum": ["pass", "fail"] },
+    "stills": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sceneId", "path", "sampledFrom"],
+        "properties": {
+          "sceneId": { "type": "string" },
+          "path": { "type": "string" },
+          "sampledFrom": { "type": "string" }
+        }
+      }
+    },
+    "clip": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "durationSec"],
+      "properties": {
+        "path": { "type": "string" },
+        "durationSec": { "type": "number", "minimum": 1 }
+      }
+    },
+    "issues": { "type": "array", "items": { "type": "string" } },
+    "costUsd": { "type": "number", "minimum": 0 }
+  }
+}
