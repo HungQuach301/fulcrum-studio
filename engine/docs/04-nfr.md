@@ -28,7 +28,7 @@ Các giá trị này được chốt cho giai đoạn xây. Trước khi sang gi
 trình lại các ngưỡng dựa trên chi phí đã đo để chủ dự án duyệt; không tự nâng theo mục
 tiêu ngân sách của giai đoạn sau. Giữ nguyên cơ chế ở D-13.
 
-Hai biện pháp bù nằm **ngoài repo**, chủ dự án tự làm: hạn mức chi tiêu trên trang quản lý
+Hai biện pháp bù nằm **ngoài repo**, agent thực hiện trong phạm vi được chủ dự án phê duyệt: hạn mức chi tiêu trên trang quản lý
 của từng nhà cung cấp API, và `concurrency` giới hạn job song song trong workflow.
 
 **Không bao giờ hạ chuẩn kiểm chất lượng để tiết kiệm.** Vượt mốc thì giảm sản lượng.
