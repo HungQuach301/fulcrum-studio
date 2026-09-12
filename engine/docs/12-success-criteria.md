@@ -101,7 +101,8 @@ bác ghi `rejectionReason`.
 
 **Nội dung**
 1. Thesis có điều bị phản bác, không rỗng
-2. Ma trận ngưỡng ba tầng, mọi ngưỡng có số thật
+2. Kết quả định lượng hợp lệ theo `thresholdMatrix` trong `genres/{genre}/format-spec.json`;
+   mọi ngưỡng có số thật
 3. Có ít nhất một điểm đảo chiều, hoặc một kết luận "ổn định trên toàn khoảng" có bằng chứng
 4. `geoScope` được khai và được nêu trong lời thoại
 5. Có ít nhất một con số phái sinh, đã qua kiểm theo bốn cấp
@@ -187,7 +188,7 @@ Hoà vốn một tập = chi phí biến đổi ÷ doanh thu mỗi 1.000 lượt
 ```
 
 Một con số RPM giả định không có nguồn là thứ chính tài liệu này cấm. Bảng dưới yêu cầu **hai
-kịch bản có nguồn**, điền sau khi đo thật ở Mốc 7:
+kịch bản có nguồn**, điền sau khi đo thật ở Mốc 7b:
 
 | Kịch bản | RPM | Hoà vốn mỗi tập | Nguồn |
 |---|---|---|---|

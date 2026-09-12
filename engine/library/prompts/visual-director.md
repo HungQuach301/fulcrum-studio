@@ -6,7 +6,8 @@ Prompt này chạy **hai lượt**: Canvas Map trước, Scene Pass sau. Không 
 
 ## Lượt 1 · Canvas Map
 
-Sinh 7–10 vùng trên canvas. Mỗi vùng gắn với một beat, có toạ độ, kích thước, nội dung
+Sinh số vùng trên canvas trong khoảng `limits.canvasRegionCount` khai ở
+`genres/{genre}/format-spec.json`. Mỗi vùng gắn với một beat, có toạ độ, kích thước, nội dung
 chính, và danh sách vùng liền kề.
 
 **Ràng buộc**
@@ -28,9 +29,11 @@ Sinh số scene trong khoảng `limits.sceneCount` khai ở `genres/{genre}/form
 - Từ vựng chuyển động: `engine/library/cinematography.md` mục 1.
 
 **Ràng buộc cứng**
-- Thời lượng scene tối thiểu **1200ms**.
-- Độ lệch chuẩn thời lượng ≥40% giá trị trung bình.
-- Không quá **3 scene liên tiếp** dưới 2 giây.
+- Thời lượng scene tối thiểu theo `limits.sceneMinDurationMs` trong `genres/{genre}/format-spec.json`.
+- Tỷ lệ độ lệch chuẩn thời lượng so với giá trị trung bình tối thiểu theo
+  `limits.sceneDurationStdDevMinRatio` trong `genres/{genre}/format-spec.json`.
+- Chuỗi scene ngắn liên tiếp tuân thủ `limits.maxConsecutiveScenesUnder2s` trong
+  `genres/{genre}/format-spec.json`.
 - Mọi scene khai `regionId`, và camera phải nằm trong vùng đó.
 - Mọi ranh giới beat có `audioLeadMs` > 0.
 - Mọi con số trên màn hình có `claimId`.

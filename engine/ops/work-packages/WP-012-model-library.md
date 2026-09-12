@@ -34,7 +34,8 @@ Runner xác định chạy mô hình từ `model.schema.json`, cộng cơ chế 
 
 ### 3c. Quy tắc trạng thái tổng hợp
 `verification.status = "verified"` chỉ khi: cấp 1 pass, **và** mọi cấp bắt buộc theo điều
-kiện của mô hình đó pass. Thiếu bất kỳ cấp bắt buộc nào → `partial`. Bất kỳ cấp nào fail →
+kiện của mô hình đó pass. Cấp 1 đã pass nhưng còn thiếu một cấp bắt buộc theo điều kiện →
+`partial`, theo D-19; chưa pass cấp 1 thì không được gán `partial`. Bất kỳ cấp nào fail →
 `failed`. Runner **không** được tự đặt `verified` — nó tính trạng thái, và trạng thái được
 commit như dữ liệu.
 
@@ -55,12 +56,13 @@ thái về `pending`. Tăng số phiên bản mà không chạy lại kiểm là
 - Runner không tạo mô hình. WP này **không** được viết nội dung mô hình nào.
 
 ### 5b. Điều kiện dừng
-- Một mô hình cần cấp 3 nhưng chưa có triển khai thứ hai → báo `partial`, không tự viết
+- Một mô hình cần cấp 3 nhưng chưa có triển khai thứ hai → chỉ báo `partial` khi đủ điều kiện
+  ở mục 3c, không tự viết
 - Cần đặt `verified` để test chạy → dừng, dùng mô hình giả trong thư mục test thay vì sửa dữ liệu thật
 
 ### 6. Acceptance test
 1. Mô hình giả có ba ca kiểm tay → runner chạy, khớp, trạng thái `verified`.
-2. Mô hình giả `geoVarying: true` chỉ có cấp 1 → trạng thái `partial`, nêu thiếu cấp 3.
+2. Mô hình giả `geoVarying: true` chỉ có cấp 1 pass → trạng thái `partial`, nêu thiếu cấp 3.
 3. Chạy cùng mô hình hai lần → kết quả **giống hệt** từng chữ số.
 4. **Kiểm âm 1:** tham số ngoài `validRange` → lỗi, không kẹp về biên.
 5. **Kiểm âm 2:** sửa công thức mà không đổi kiểm → trạng thái về `pending` tự động.
