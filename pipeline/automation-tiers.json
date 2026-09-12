@@ -1,0 +1,104 @@
+{
+  "note": "Bậc tự động hoá của từng điểm quyết định. Xem quyết định D-11. Nâng bậc chỉ khi đủ bằng chứng, và phải ghi vào evidence. Bốn điểm có maxTier 1 không bao giờ được nâng.",
+  "version": "1.0",
+  "decisionPoints": {
+    "gate1-topic-selection": {
+      "tier": 1,
+      "maxTier": 2,
+      "evidence": null
+    },
+    "gate2-script-approval": {
+      "tier": 1,
+      "maxTier": 3,
+      "evidence": null
+    },
+    "gate3-build-approval": {
+      "tier": 1,
+      "maxTier": 3,
+      "evidence": null
+    },
+    "post-publish-ops": {
+      "tier": 1,
+      "maxTier": 3,
+      "evidence": null
+    },
+    "analyst-note": {
+      "tier": 1,
+      "maxTier": 2,
+      "evidence": null
+    },
+    "correction-on-data-change": {
+      "tier": 1,
+      "maxTier": 2,
+      "evidence": null
+    },
+    "open-new-episode": {
+      "tier": 1,
+      "maxTier": 3,
+      "evidence": null
+    },
+    "merge-mechanical-wp": {
+      "tier": 1,
+      "maxTier": 2,
+      "evidence": null
+    },
+    "contract-change": {
+      "tier": 1,
+      "maxTier": 1,
+      "evidence": "D-11: không bao giờ nâng"
+    },
+    "architecture-decision": {
+      "tier": 1,
+      "maxTier": 1,
+      "evidence": "D-11: không bao giờ nâng"
+    },
+    "spec-approval": {
+      "tier": 1,
+      "maxTier": 1,
+      "evidence": "D-11: không bao giờ nâng"
+    },
+    "milestone3-gate": {
+      "tier": 1,
+      "maxTier": 1,
+      "evidence": "D-11: không bao giờ nâng"
+    },
+    "layout-approval": {
+      "tier": 1,
+      "maxTier": 1,
+      "evidence": "D-11: không bao giờ nâng"
+    },
+    "tier-promotion": {
+      "tier": 1,
+      "maxTier": 1,
+      "evidence": "D-11: nâng bậc luôn do người. Hạ bậc do orchestrator, xem demotionWrittenBy."
+    },
+    "publish-to-public": {
+      "tier": 1,
+      "maxTier": 2,
+      "evidence": "Thao tác ra ngoài, không suy quyền từ bậc chung."
+    },
+    "reply-to-comment": {
+      "tier": 1,
+      "maxTier": 2,
+      "evidence": "Trả lời về tài chính cá nhân — chạm ranh giới tư vấn, cần policy riêng."
+    }
+  },
+  "promotionRule": {
+    "tier1to2": "Máy trùng quyết định người >=90% qua >=10 lần liên tiếp, VÀ trong đó có >=3 lần người BÁC — một chuỗi toàn 'duyệt' không chứng minh gì.",
+    "tier2to3": "Tỷ lệ phủ quyết <10% qua >=10 lần, không lỗi lọt ở kiểm mẫu, VÀ >=3 ca khó cài có chủ đích được máy bắt đúng.",
+    "vetoWindowHours": 12,
+    "vetoRequiresAck": true,
+    "vetoAckNote": "Cửa sổ phủ quyết chỉ chạy sau khi người xác nhận đã đọc thông báo. Im lặng vì không nhận được thông báo không tính là đồng ý.",
+    "sampleCheckRate": 0.1,
+    "seededHardCaseRate": 0.1,
+    "measure": [
+      "falseApproval",
+      "falseRejection",
+      "escapedDefect"
+    ],
+    "severityWeighted": true,
+    "demotionRule": "Một lỗi lọt mức nghiêm trọng, hoặc hai lỗi lọt mức thường trong 10 lần kiểm mẫu, thì hạ một bậc.",
+    "demotionWrittenBy": "orchestrator — đây là NGOẠI LỆ duy nhất của luật 'chỉ người ghi automation-tiers.json'. Orchestrator được phép HẠ bậc, không bao giờ được NÂNG.",
+    "confidenceNote": "0 lỗi trong 10 mẫu không chứng minh tỷ lệ lỗi nhỏ: cận trên một phía 95% vẫn khoảng 25,9%. Đừng đọc 'không thấy lỗi' là 'không có lỗi'."
+  }
+}
