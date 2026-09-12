@@ -1,0 +1,22 @@
+{
+  "note": "Danh sách trắng đường dẫn được xuất sang repo công khai fulcrum-models. Xem D-16. Bất cứ file nào ngoài danh sách bị chặn ở bước xuất.",
+  "version": "1.0",
+  "targetRepo": "fulcrum-models",
+  "allow": [
+    "models/data-explainer/*.json",
+    "models/data-explainer/*.cases.json",
+    "models/data-explainer/README.md",
+    "public/calculators/*.html",
+    "public/README.md"
+  ],
+  "deny": [
+    "**/*.key",
+    "**/secrets*",
+    "engine/**",
+    "channels/**",
+    "pipeline/**",
+    ".github/**",
+    "episodes/**"
+  ],
+  "requireCalculatorParity": true
+}

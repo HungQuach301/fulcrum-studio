@@ -1,0 +1,54 @@
+{
+  "slug": "us-personal-finance",
+  "displayName": "<ĐIỀN>",
+  "genre": "data-explainer",
+  "engineVersion": "1.0",
+  "market": "US",
+  "language": "en-US",
+  "faceless": true,
+  "pillars": [
+    "housing",
+    "debt",
+    "investing",
+    "career-income",
+    "retirement"
+  ],
+  "audience": {
+    "ageRange": "28-45",
+    "context": "Đang đứng trước một quyết định tiền lớn và muốn biết ngưỡng, không muốn biết lời khuyên chung"
+  },
+  "cadencePerMonth": {
+    "phase1": 0,
+    "phase2": 10,
+    "phase3": "bằng tốc độ Thesis Engine"
+  },
+  "scoringWeights": {
+    "demand": 30,
+    "saturation": 20,
+    "rpm": 30,
+    "matrix": 20
+  },
+  "revenuePriorityByPhase": {
+    "prePlatformThreshold": [
+      "affiliate",
+      "email",
+      "ads"
+    ],
+    "postPlatformThreshold": [
+      "ads",
+      "affiliate",
+      "email"
+    ]
+  },
+  "ttsVoiceId": "<ĐIỀN sau khi kiểm điều khoản thương mại>",
+  "googleAccount": "<ĐIỀN — tài khoản RIÊNG của kênh, không dùng tài khoản cá nhân>",
+  "providers": {
+    "llm": "<ĐIỀN>",
+    "llmVerifier": "<ĐIỀN — phải là NHÀ CUNG CẤP khác llm, không chỉ khoá khác>",
+    "tts": "<ĐIỀN>",
+    "imageGen": "<ĐIỀN>",
+    "stock": "<ĐIỀN>",
+    "embeddings": "<ĐIỀN>"
+  },
+  "disclaimerPlacement": "description"
+}
