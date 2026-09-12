@@ -452,3 +452,43 @@ mỗi chỉ số `null`, và kế thừa bộ phiên bản qua `episodeId` khi a
 Prompt và validator tầng 2 đọc `limits.beatShareTolerance` cùng `shareOfDuration`
 của từng beat từ Genre Pack để giới hạn hoặc kiểm độ dài beat.
 Thay đổi được ghi với nhãn `[contract-change]` trong cùng một pull request.
+
+---
+
+## D-20 · Bổ sung phiên bản artifact và bỏ ngưỡng thời lượng cứng trong contract
+
+**Bối cảnh.** Lần rà mâu thuẫn thứ hai phát hiện hai phần contract còn lệch với quy tắc
+hiện hành. `13-upgrade-safety.md` mục 1 cho phép mọi artifact khai `versions`, nhưng
+`analyst-note.schema.json` và `license-ledger.schema.json` đang đóng và chưa nhận trường
+này. Đồng thời, `outline.beats[].estimatedMs` có sàn 1000 mili giây,
+`brief.targetDurationMin` có sàn 1 phút và `proof.clip.durationSec` có sàn 1 giây,
+trong khi khoảng thời lượng nội dung thuộc Genre Pack, không thuộc contract.
+
+**Quyết định.**
+1. Bổ sung phạm vi mục 5 của D-19 cho `analyst-note.schema.json` và
+   `license-ledger.schema.json`: thêm `versions` tuỳ chọn, không đưa vào danh sách
+   `required` cấp artifact. Khi khai, object phải có đủ `engine`, `genre`, `channel`
+   dạng string và không nhận khoá khác. Khi không khai, kế thừa qua `episodeId` từ
+   brief và episode-state. Brief và episode-state giữ `versions` bắt buộc.
+2. Trong `outline.schema.json`, đổi `beats[].estimatedMs` từ `minimum: 1000` thành
+   `exclusiveMinimum: 0`, giữ kiểu `integer`. Trong `brief.schema.json`, đổi
+   `targetDurationMin` từ `minimum: 1` thành `exclusiveMinimum: 0`, giữ kiểu `number`.
+   Trong `proof.schema.json`, đổi `clip.durationSec` từ `minimum: 1` thành
+   `exclusiveMinimum: 0`, giữ kiểu `number`. Đây là miền giá trị thời lượng dương,
+   không phải ngưỡng thời lượng nội dung của một thể loại.
+3. Không thêm trường hoặc đổi giá trị Genre Pack. Khoảng thời lượng mục tiêu vẫn đọc
+   từ `limits.targetDurationMin`; tỷ lệ thời lượng beat vẫn đọc từ
+   `beats[].shareOfDuration` cùng `limits.beatShareTolerance` trong
+   `genres/{genre}/format-spec.json`. Không đặt thêm ngưỡng nội dung cho clip proof.
+
+**Phương án bị loại.** Thu hẹp quy tắc phiên bản trong tài liệu để giữ hai schema đang
+thiếu trường: trái cơ chế kế thừa đã chốt. Giữ các sàn thời lượng cứng trong contract:
+trái ranh giới Engine và Genre Pack. Bỏ cả kiểm giá trị dương: cho phép thời lượng
+bằng không hoặc âm, không phải mục tiêu của thay đổi này.
+
+**Hệ quả.** Validator tầng 1 kiểm bộ phiên bản khi được khai, kiểu thời lượng hiện hành
+và giá trị lớn hơn không. Validator tầng 2 phải áp dụng kế thừa phiên bản cho cả hai
+artifact bổ sung và tiếp tục đối chiếu khoảng thời lượng, tỷ lệ beat với các trường
+Genre Pack hiện có. Hợp lệ theo schema không đồng nghĩa đạt giới hạn nội dung của
+thể loại. D-20 bổ sung phạm vi phiên bản của D-19; giữ nguyên D-01 đến D-19.
+Thay đổi được ghi với nhãn `[contract-change]` trong cùng một pull request.

@@ -30,7 +30,7 @@
       "required": ["path", "durationSec"],
       "properties": {
         "path": { "type": "string" },
-        "durationSec": { "type": "number", "minimum": 1 }
+        "durationSec": { "type": "number", "exclusiveMinimum": 0 }
       }
     },
     "issues": { "type": "array", "items": { "type": "string" } },

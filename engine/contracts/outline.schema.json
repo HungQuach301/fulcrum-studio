@@ -19,7 +19,7 @@
           "index": { "type": "integer", "minimum": 1 },
           "name": { "type": "string" },
           "purpose": { "type": "string" },
-          "estimatedMs": { "type": "integer", "minimum": 1000 },
+          "estimatedMs": { "type": "integer", "exclusiveMinimum": 0 },
           "claimIds": { "type": "array", "items": { "type": "string" } },
           "curiosityBridge": { "type": "string", "minLength": 10, "description": "Câu cuối beat khiến người xem muốn xem beat sau. Bắt buộc ở mọi ranh giới." }
         }
