@@ -1,0 +1,28 @@
+{
+  "genre": "data-explainer",
+  "version": "1.0",
+  "generatedImages": {
+    "allowed": true,
+    "mustNotContainTextOrNumbers": true,
+    "rationale": "Mô hình sinh ảnh không kiểm soát được chính tả và chữ số. Chữ và số luôn là phần tử DOM.",
+    "provenanceRequired": true,
+    "provenanceFields": ["prompt", "seed", "model", "generatedAt"]
+  },
+  "stockAssets": {
+    "allowed": true,
+    "maxShareOfScenes": 0.15,
+    "queryRule": "Truy vấn phải chứa ít nhất một danh từ cụ thể lấy từ chính câu lời thoại của scene đó.",
+    "licenseLedgerRequired": true
+  },
+  "music": {
+    "commercialLicenseRequired": true,
+    "ledgerRequired": true
+  },
+  "charts": {
+    "renderedAsDom": true,
+    "neverAsImage": true
+  },
+  "fonts": {
+    "mustBeInTokenTable": true
+  }
+}
