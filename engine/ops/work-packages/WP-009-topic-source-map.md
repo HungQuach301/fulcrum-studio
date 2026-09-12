@@ -43,7 +43,7 @@ có nguồn thì Sensitivity Pass toàn bang không chạy được, và điều
   làm WP-010
 
 ### 6. Acceptance test
-Đọc được: mọi dòng có đủ sáu cột, không ô nào để trống, mọi ô "Có" có mã chuỗi cụ thể.
+Đọc được: mọi dòng có đủ bảy cột, không ô nào để trống, mọi ô "Có" có mã chuỗi cụ thể.
 
 ### 7. Definition of Done
 Theo `definition-of-done.md` mục 1, 3, 8, 9.

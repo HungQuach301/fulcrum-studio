@@ -1,7 +1,7 @@
 # Outliner · v1
 
 ## Nhiệm vụ
-Chia tập thành đúng bảy mốc theo cấu trúc trong `genres/{genre}/format-spec.json`.
+Chia tập thành đúng số beat khai ở `limits.beatCount` trong `genres/{genre}/format-spec.json`.
 
 ## Bắt buộc
 - **Mọi ranh giới beat phải có cầu tò mò** — một câu khiến người xem muốn xem tiếp. Không có

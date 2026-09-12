@@ -1,5 +1,5 @@
 {
-  "note": "Bậc tự động hoá của từng điểm quyết định. Xem quyết định D-11. Nâng bậc chỉ khi đủ bằng chứng, và phải ghi vào evidence. Bốn điểm có maxTier 1 không bao giờ được nâng.",
+  "note": "Bậc tự động hoá của từng điểm quyết định. Xem quyết định D-11. Nâng bậc chỉ khi đủ bằng chứng, và phải ghi vào evidence. Sáu điểm có maxTier 1 không bao giờ được nâng.",
   "version": "1.0",
   "decisionPoints": {
     "gate1-topic-selection": {
