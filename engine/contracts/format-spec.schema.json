@@ -17,6 +17,12 @@
       "properties": {
         "targetDurationMin": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" } },
         "beatCount": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "integer" } },
+        "beatShareTolerance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Dung sai cho phép của shareOfDuration mỗi beat, tính theo tỷ lệ tuyệt đối. Ví dụ 0.05 nghĩa là một beat khai 0.22 được chấp nhận trong khoảng 0.17 đến 0.27."
+        },
         "scriptWordCount": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "integer" } },
         "canvasRegionCount": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "integer" } },
         "sceneCount": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "integer" } },
