@@ -1,6 +1,6 @@
 {
   "slug": "us-personal-finance",
-  "displayName": "<ĐIỀN>",
+  "displayName": "Fulcrum Money",
   "genre": "data-explainer",
   "engineVersion": "1.0",
   "market": "US",
@@ -40,15 +40,15 @@
       "email"
     ]
   },
-  "ttsVoiceId": "<ĐIỀN sau khi kiểm điều khoản thương mại>",
+  "ttsVoiceId": "cedar",
   "googleAccount": "<ĐIỀN — tài khoản RIÊNG của kênh, không dùng tài khoản cá nhân>",
   "providers": {
-    "llm": "<ĐIỀN>",
-    "llmVerifier": "<ĐIỀN — phải là NHÀ CUNG CẤP khác llm, không chỉ khoá khác>",
-    "tts": "<ĐIỀN>",
-    "imageGen": "<ĐIỀN>",
-    "stock": "<ĐIỀN>",
-    "embeddings": "<ĐIỀN>"
+    "llm": "openai",
+    "llmVerifier": "anthropic",
+    "tts": "openai",
+    "imageGen": "fal-ai",
+    "stock": "pexels",
+    "embeddings": "openai"
   },
   "disclaimerPlacement": "description"
 }

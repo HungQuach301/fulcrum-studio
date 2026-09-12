@@ -87,7 +87,7 @@ chuỗi thao tác agent tự nghĩ ra.
 
 | Giới hạn | Con số | Hệ quả |
 |---|---|---|
-| Quota YouTube Data API | 10.000 đơn vị/ngày | Upload tốn nhiều nhất; còn phải chừa cho tìm kiếm, phụ đề, playlist, đo lường. Cần bảng ngân sách quota **theo stage**, không chỉ theo upload |
+| Quota YouTube Data API | Theo từng bucket/phương thức; mặc định công bố xem `04-nfr.md` mục "Quota YouTube — nguồn công bố và bằng chứng project" | Lập ngân sách **theo stage, phương thức và bucket thực tế của project** trước WP-014. Quota project hiện chưa có bằng chứng; không coi mọi lời gọi cùng dùng một hạn mức |
 | Job đồng thời của Actions | Phụ thuộc gói — **phải kiểm trước khi thiết kế xong S12** | Matrix 16–20 worker có thể chiếm hết, không còn chỗ cho job khác |
 | Kích thước file trong repo | Tránh commit nhị phân lớn | Video và ảnh đi qua Releases hoặc artifact, không commit |
 | Refresh token Google | Hết hạn 7 ngày nếu app ở trạng thái testing | Phải đưa app sang production |
