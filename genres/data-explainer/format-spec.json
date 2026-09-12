@@ -11,6 +11,7 @@
       7,
       7
     ],
+    "beatShareTolerance": 0.05,
     "scriptWordCount": [
       3200,
       3600

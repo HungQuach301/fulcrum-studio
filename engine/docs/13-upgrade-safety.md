@@ -4,8 +4,9 @@ Mục tiêu: thay đổi hệ thống mà không làm hỏng thứ đang chạy 
 
 ## 1 · Đánh phiên bản ba lớp
 
-Mọi artifact khai `versions`: `engine`, `genre`, `channel`. Một tập được sản xuất bởi một bộ
-ba phiên bản cụ thể, và tái lập được bằng bộ ba đó.
+Brief và episode-state khai `versions` bắt buộc; mọi artifact khác được phép khai `versions`
+và kế thừa qua `episodeId` nếu không khai. Bộ phiên bản gồm `engine`, `genre`, `channel`.
+Một tập được sản xuất bởi một bộ ba phiên bản cụ thể, và tái lập được bằng bộ ba đó. Xem D-19.
 
 ## 2 · Quy tắc ba tập
 
