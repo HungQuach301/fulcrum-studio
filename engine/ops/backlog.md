@@ -7,14 +7,48 @@ Thứ tự trong bảng là thứ tự thực hiện. Không nhảy cóc.
 
 ## Mốc 0 — Nạp và rà
 
+**Trạng thái: `done` — nghiệm thu tài liệu và cấu hình.**
+
 | Việc | TT |
 |---|---|
-| Nạp bốn lô tài liệu vào repo | todo |
-| Task rà mâu thuẫn, chỉ đọc | todo |
-| Sửa danh sách rà ra | todo |
-| Điền các ô `<ĐIỀN>`, gồm ba mốc chi phí và giá quy ước giờ người | todo |
+| Nạp bốn lô tài liệu vào repo | done |
+| Task rà mâu thuẫn, chỉ đọc | done |
+| Sửa danh sách rà ra | done |
+| Điền các ô `<ĐIỀN>`, gồm ba mốc chi phí và giá quy ước giờ người | done |
 | **Mở đường nhận tiền và danh tính pháp lý — chạy song song, không chặn mốc nào** | todo |
 | **Thu xếp người soát bản địa nói tiếng Anh Mỹ — cần trước Mốc 5** | todo |
+
+**Hồ sơ DoD và giới hạn nghiệm thu**
+
+- Checkpoint đối chiếu: main `6f48e77c7eeb9dd3c04a297cab3a7647f5d07a72`,
+  tree `b6bb1b3c3078662eeb28676dfd7a5eac1a7dcff1`; 106 file, 45/45 JSON parse được.
+- 19 mục A của lần rà thứ nhất đã xử lý qua [PR #1](https://github.com/HungQuach301/fulcrum-studio/pull/1),
+  [PR #2](https://github.com/HungQuach301/fulcrum-studio/pull/2), [PR #3](https://github.com/HungQuach301/fulcrum-studio/pull/3).
+  Tám mục mới của lần rà thứ hai đã xử lý qua [PR #4](https://github.com/HungQuach301/fulcrum-studio/pull/4),
+  [PR #5](https://github.com/HungQuach301/fulcrum-studio/pull/5), [PR #6](https://github.com/HungQuach301/fulcrum-studio/pull/6).
+  Giữ nguyên phân loại B–E đã được chủ dự án xác nhận.
+- Đủ 14/14 giá trị cấu hình Mốc 0: 13 giá trị ở PR #6 và `googleAccount` ở
+  [PR #7](https://github.com/HungQuach301/fulcrum-studio/pull/7). Google Drive `get_profile`
+  trả email `hungqv301@gmail.com` lúc `2026-09-12T16:14:58.975Z`; chủ dự án xác nhận
+  tài khoản được dành riêng cho Fulcrum. Không suy ra quyền kênh YouTube hoặc quota.
+- Các ô được phép chờ: `visual-tokens.json:imagePromptSuffix` chờ chốt phong cách
+  ở Mốc 4; hai RPM, hai nguồn và hai ô tính hoà vốn trong `12-success-criteria.md`
+  chờ sau Mốc 7b và đủ điều kiện đo doanh thu quảng cáo thật. Không còn ô cấu hình
+  bắt buộc điền ở Mốc 0 bị bỏ trống.
+- Hai việc song song trong bảng giữ `todo`: đường nhận tiền/danh tính pháp lý không
+  chặn mốc nào; người soát bản địa giữ yêu cầu D-17, gồm ngoại lệ chạy kỹ thuật Mốc 5
+  và chặn Mốc 7b/phát hành khi chưa đáp ứng. Không đổi trạng thái bất kỳ WP nào.
+- CI chưa có kết quả: tại checkpoint đối chiếu có 0 check runs, 0 commit statuses,
+  0 Actions runs; combined status `pending` với danh sách rỗng. Kiểm schema và hồ sơ
+  59 fixture của PR #5 chạy trong Codex; validator tầng 2 chưa được nghiệm thu.
+  Các ngoại lệ CI đã duyệt chỉ có hiệu lực cho từng PR, không miễn DoD của WP sau.
+- Hồi quy năm brief chưa chạy; ngoại lệ chỉ áp dụng PR #4 ở Mốc 0. Chưa nghiệm thu
+  chất lượng prompt, giọng/ảnh hoặc đầu ra sản xuất. Sai khác đã biết của
+  `pipeline/state.json` giữ phân loại D; không coi dữ liệu đó đã đạt validator runtime.
+- C4/canvas/fps/motion blur chờ WP-003. Quota project cần bằng chứng trước WP-014;
+  quyền YouTube/OAuth, quyền truy cập provider/model, giấy phép từng asset và quyền
+  thương hiệu của tên làm việc vẫn chưa được xác minh. Các ngưỡng chi phí giữ theo D-13;
+  đóng Mốc 0 không cấp quyền thực thi WP, chi tiêu, gọi provider hoặc đổi settings/quota.
 
 ## Mốc 1 — Hạ tầng xây dựng
 
