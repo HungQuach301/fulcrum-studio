@@ -89,6 +89,27 @@
           }
         }
       }
+    },
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Tuỳ chọn. Không khai thì kế thừa qua episodeId từ brief và episode-state; xem D-19 và D-20.",
+      "required": [
+        "engine",
+        "genre",
+        "channel"
+      ],
+      "properties": {
+        "engine": {
+          "type": "string"
+        },
+        "genre": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        }
+      }
     }
   }
 }

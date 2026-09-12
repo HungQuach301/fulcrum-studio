@@ -80,7 +80,7 @@
     },
     "targetDurationMin": {
       "type": "number",
-      "minimum": 1,
+      "exclusiveMinimum": 0,
       "description": "Validator đối chiếu format-spec.limits.targetDurationMin."
     },
     "formatVariant": {
