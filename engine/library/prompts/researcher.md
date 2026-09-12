@@ -9,7 +9,8 @@ Xây hồ sơ nghiên cứu cho một tập, từ thesis đã được duyệt.
 - Mọi claim phải có `origin`: ảnh chụp, mô hình, hoặc URL.
 
 ## Bắt buộc
-- Ít nhất **2 claim phản bác thesis**. Nghiên cứu một chiều là fail, không phải cảnh báo.
+- Số claim phản bác thesis tối thiểu theo `limits.counterClaimsMin` trong
+  `genres/{genre}/format-spec.json`. Nghiên cứu một chiều là fail, không phải cảnh báo.
 - Ghi rõ `geoLevel` của mỗi claim. Claim ở cấp toàn quốc mà kết luận áp cho từng bang là lỗi.
 - Không ước lượng. Không tìm được số thì bỏ claim, không nội suy.
 

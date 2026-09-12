@@ -25,7 +25,9 @@ Bốn điều kiện, thiếu một là loại:
 
 1. **Có điều bị phản bác.** Trường `contradicts` không rỗng. Một quan sát đúng nhưng không
    thách thức gì thì không phải thesis.
-2. **Kiểm được bằng số.** Phải dựng được thành ma trận ngưỡng ba tầng.
+2. **Kiểm được bằng số.** Phải có kết quả định lượng hợp lệ theo `thresholdMatrix` trong
+   `genres/data-explainer/format-spec.json`, gồm kết luận ổn định có bằng chứng khi
+   `thresholdMatrix.allowStableConclusion` cho phép.
 3. **Mới lạ.** Kiểm tự động với corpus đối thủ, không khai tay.
 4. **Có nguồn gốc rõ.** Trường `origin.source` là một trong năm nguồn, kèm bằng chứng.
 

@@ -6,7 +6,7 @@ Viết kịch bản đầy đủ từ dàn ý, bằng tiếng Anh Mỹ.
 ## Bắt buộc
 - Số từ trong khoảng `limits.scriptWordCount` khai ở `genres/{genre}/format-spec.json`.
 - Đủ số thiết bị nội dung tối thiểu `limits.devicesMin`, lấy từ danh sách `devices` trong `format-spec.json`.
-- Ít nhất ba mục từ điển kênh.
+- Số mục từ điển kênh tối thiểu theo `limits.lexiconMin` trong `genres/{genre}/format-spec.json`.
 - Mọi con số có `claimId`.
 - **Một câu nêu rõ phạm vi địa lý của kết luận.** Ví dụ về hình thức: nêu kết luận áp cho
   phạm vi nào, và nêu điều kiện làm nó đổi.

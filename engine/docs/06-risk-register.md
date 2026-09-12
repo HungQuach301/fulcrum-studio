@@ -15,7 +15,7 @@ Cột **Dấu hiệu sớm** quan trọng hơn cột giảm thiểu: nó là th�
 | R9 | Ngưỡng sai vì bỏ qua tham số vùng miền | Cao | Cao | Bình luận nêu ngoại lệ theo bang | Sensitivity Pass bắt buộc quét mọi tham số biến thiên theo địa lý; khai `geoScope` |
 | R10 | Phụ thuộc nền tảng agent cho **cả xây dựng lẫn vận hành** | Trung bình | **Cao** | Đổi giới hạn, đổi giá, đổi cách truy cập | Mọi thứ agent gọi là workflow trong repo; WP viết độc lập với agent cụ thể |
 | R11 | Giọng đọc bị gỡ, đổi điều khoản, hoặc tăng giá | Trung bình | Cao | Thông báo của nhà cung cấp | Kiểm điều khoản thương mại **trước** khi cam kết; chọn giọng có bản tương đương ở nhà cung cấp thứ hai |
-| R12 | **Bỏ dở trước khi có thành quả nhìn thấy được** | **Cao** | **Rất cao** | Nhiều tuần trôi qua không có sản phẩm nhìn thấy được; số file code tăng nhanh hơn số tính năng chạy được | Mỗi mốc có sản phẩm nhìn thấy; DoD Mốc 4 chặn ở 25 file code; điểm dừng viết trước |
+| R12 | **Bỏ dở trước khi có thành quả nhìn thấy được** | **Cao** | **Rất cao** | Nhiều tuần trôi qua không có sản phẩm nhìn thấy được; số file code tăng nhanh hơn số tính năng chạy được | Mỗi mốc có sản phẩm nhìn thấy; DoD Mốc 4 chặn ở 45 file code; điểm dừng viết trước |
 | R13 | Chi phí vượt mốc | Trung bình | Trung bình | Chi phí/tập tăng ba tập liên tiếp | Ba lớp mềm ở D-13: đo `costUsd`, cảnh báo bằng issue, orchestrator ngừng mở tập mới. **Không có trần cứng trong code** — lưới an toàn còn lại là hạn mức chi tiêu đặt ở nhà cung cấp API, nằm ngoài repo |
 | R14 | Vượt quota API nền tảng | Trung bình | Trung bình | Job đỏ vào ngày dồn việc | Bảng ngân sách quota theo stage |
 | R15 | Mất tài sản do sự cố tài khoản | Thấp | **Rất cao** | — | Workflow sao lưu artifact văn bản sang nơi thứ hai |
