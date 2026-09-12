@@ -59,6 +59,16 @@ Mặc định khi WP không khai: `architectural`.
 
 ## Quy ước làm việc
 
+- **Agent đề xuất, chủ dự án duyệt, agent thực hiện.** Trình phương án hoàn chỉnh kèm giá
+  trị cấu hình, lý do, phạm vi và cách kiểm. Chủ dự án duyệt hoặc bác; agent tự cập nhật
+  file và kiểm chứng trong phạm vi đã duyệt, không giao bảng trống hoặc yêu cầu điền tay.
+- **Luôn hướng dẫn chi tiết bước tiếp theo trong mỗi phản hồi.** Nêu việc sẽ làm, checkpoint,
+  phạm vi, điều kiện nghiệm thu và câu phê duyệt khi cần.
+- Dữ liệu phụ thuộc tài khoản phải có bằng chứng; giữ chưa xác minh nếu chưa đọc được.
+  Với thao tác tài khoản, chủ dự án chỉ thực hiện phần đăng nhập/xác thực mà dịch vụ bắt
+  buộc chủ tài khoản thực hiện. Không suy đoán danh tính, quyền truy cập hay hạn mức.
+- Phê duyệt phương án chỉ có hiệu lực trong phạm vi được giao; quyền merge, thực thi và
+  chi tiêu vẫn theo chỉ dẫn hiện hành. Không xin lại quyền cho thao tác đã được duyệt.
 - **Kiểm checkpoint trước.** Không khớp thì DỪNG và báo cáo, không tự khắc phục.
 - **Điều kiện dừng là tuyệt đối.** Gặp thì dừng, không tìm cách đi vòng.
 - **Nghiệm thu chạy trong GitHub Actions.** Không tuyên bố test pass mà không có kết quả

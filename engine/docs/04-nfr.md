@@ -18,11 +18,15 @@ Ngân sách mở khoá theo chất lượng đã chứng minh, không theo thờ
 
 | Mốc | Giá trị | Điều gì xảy ra |
 |---|---|---|
-| `warnUsd` (tháng) | `<ĐIỀN>` | Workflow mở một issue. Không chặn gì |
-| `pauseIntakeUsd` (tháng) | `<ĐIỀN>` | Orchestrator **ngừng mở tập mới**. Tập đang chạy chạy hết |
-| `stopAndReviewUsd` (tích luỹ toàn dự án) | `<ĐIỀN>` | Mọi workflow theo lịch tạm dừng, issue mức cao |
+| `warnUsd` (tháng) | 150 USD | Workflow mở một issue. Không chặn gì |
+| `pauseIntakeUsd` (tháng) | 200 USD | Orchestrator **ngừng mở tập mới**. Tập đang chạy chạy hết |
+| `stopAndReviewUsd` (tích luỹ toàn dự án) | 1.000 USD | Mọi workflow theo lịch tạm dừng, issue mức cao |
 
 Ba con số này do chủ dự án đặt ở Mốc 0. Chúng là điều kiện dừng, không phải gợi ý.
+
+Các giá trị này được chốt cho giai đoạn xây. Trước khi sang giai đoạn chạy thử, agent
+trình lại các ngưỡng dựa trên chi phí đã đo để chủ dự án duyệt; không tự nâng theo mục
+tiêu ngân sách của giai đoạn sau. Giữ nguyên cơ chế ở D-13.
 
 Hai biện pháp bù nằm **ngoài repo**, chủ dự án tự làm: hạn mức chi tiêu trên trang quản lý
 của từng nhà cung cấp API, và `concurrency` giới hạn job song song trong workflow.
@@ -47,7 +51,7 @@ của từng nhà cung cấp API, và `concurrency` giới hạn job song song t
 | Vận hành sau đăng | ≤8 phút/tập | Duyệt theo lô |
 | **Tổng** | **≤20 phút/tập** | **≤60 phút/tuần cho toàn kênh** |
 
-Gán một giá trị quy ước cho giờ người và đưa vào công thức: `<ĐIỀN>` USD/giờ.
+Gán một giá trị quy ước cho giờ người và đưa vào công thức: 50 USD/giờ.
 
 **Cảnh báo bền vững.** Tỷ lệ buổi duyệt gate đúng hạn dưới 70% qua bốn tuần liên tiếp là dấu
 hiệu quỹ thời gian không bền — giảm nhịp, hoặc nâng bậc tự động hoá nếu dữ liệu cho phép.
@@ -68,8 +72,34 @@ hiệu quỹ thời gian không bền — giảm nhịp, hoặc nâng bậc tự
 |---|---|
 | Upload/ngày | ≤3. Vượt là tín hiệu nhịp sai |
 | Job đồng thời Actions | Kiểm trước khi chốt thiết kế matrix render |
-| Quota YouTube API | `search.list` và `videos.insert` có **bucket riêng**, mỗi method mặc định 100 lần/ngày, 1 đơn vị mỗi lần; 10.000 đơn vị dùng chung cho các endpoint còn lại. Corpus đối thủ **không** cạnh tranh với quota đăng. Nút thắt thật là 100 lần tìm kiếm/ngày và `captions` (50 đơn vị mỗi lần list). Kiểm lại số trong Cloud Console trước khi thiết kế corpus |
+| Quota YouTube API | Mặc định công bố theo từng bucket/phương thức, không phải quota project đã xác minh. Xem mục "Quota YouTube — nguồn công bố và bằng chứng project" bên dưới |
 | Kích thước file trong repo | Không commit nhị phân lớn |
+
+### Quota YouTube — nguồn công bố và bằng chứng project
+
+Đối chiếu tài liệu YouTube chính thức ngày **2026-09-12**:
+
+- `search.list`: bucket **Search Queries**, mặc định 100 lần/ngày, 1 đơn vị/lần.
+  [Nguồn: Search: list](https://developers.google.com/youtube/v3/docs/search/list).
+- `videos.insert`: bucket **Video Uploads**, mặc định 100 lần/ngày, 1 đơn vị/lần.
+  [Nguồn: Videos: insert](https://developers.google.com/youtube/v3/docs/videos/insert?hl=en).
+- Bucket dùng chung có mặc định 10.000 đơn vị/ngày; mỗi trang kết quả được yêu cầu thêm
+  vẫn phát sinh quota. Quota ngày đặt lại lúc nửa đêm giờ Pacific (PT).
+  [Nguồn: Quota Calculator, cập nhật 2026-09-04](https://developers.google.com/youtube/v3/determine_quota_cost?hl=en).
+- Không gom mọi phương thức khác vào bucket dùng chung: `videos.batchGetStats` có bucket
+  riêng, mặc định 10.000 đơn vị/ngày, 1 đơn vị/lần, theo mục ngày 2026-06-03.
+  [Nguồn: Revision History](https://developers.google.com/youtube/v3/revision_history?hl=en).
+- `captions.list` tốn 50 đơn vị/lần; con số này không tự chứng minh nút thắt của corpus.
+  [Nguồn: Captions: list](https://developers.google.com/youtube/v3/docs/captions/list).
+
+`search.list` không tiêu bucket của `videos.insert`. Các lời gọi phụ trợ của corpus và
+khâu công bố vẫn có thể dùng chung bucket, tuỳ phương thức được gọi. Trần upload/ngày
+của dự án trong bảng trên là chính sách sản lượng, không phải hạn mức API công bố.
+
+**Quota thực tế của project chưa có bằng chứng.** Trước WP-014,
+`channels/us-personal-finance/quota-budget.md` phải ghi project, thời điểm kiểm, phương
+thức, bucket và hạn mức đọc từ Cloud Console. Mặc định công bố chỉ là số tham chiếu;
+không dùng nó thay bằng chứng quota project. Không coi bảng ngân sách này đã được lập.
 
 ## Độ tin cậy và luật retry
 

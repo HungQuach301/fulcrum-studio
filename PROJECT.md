@@ -6,7 +6,7 @@ mở ở `engine/docs/15-open-defects.md`.
 
 ## Naming
 - Repo: `fulcrum-studio`
-- Chủ dự án: `<ĐIỀN username GitHub>`
+- Chủ dự án: `HungQuach301`
 - Kênh đầu tiên: `us-personal-finance`
 - Thể loại đầu tiên: `data-explainer`
 

@@ -26,14 +26,24 @@ chính dữ liệu, không nằm trong ghi chú.
 - Ảnh chụp corpus theo `corpus.schema.json` trong `data/corpus/`
 
 ### 3b. Ngân sách quota — lập trước khi viết code
-`search.list` và `videos.insert` có **bucket riêng**, mỗi method 100 lần/ngày, 1 đơn vị mỗi
-lần. Các endpoint còn lại dùng chung 10.000 đơn vị/ngày, trong đó `captions.list` tốn 50 đơn
-vị mỗi lần. Corpus **không** cạnh tranh với quota đăng.
+Mặc định công bố và nguồn chính thức nằm ở `engine/docs/04-nfr.md`, mục "Quota YouTube —
+nguồn công bố và bằng chứng project". Chúng không phải bằng chứng quota của project.
 
-Nút thắt thật là 100 lần tìm kiếm/ngày, và mỗi trang kết quả tiếp theo tốn thêm một lần gọi.
-Bảng phải khai: mỗi lần xây corpus dùng bao nhiêu truy vấn, phân trang sâu bao nhiêu, và một
-tuần dùng hết bao nhiêu phần trăm bucket. **Kiểm lại số trong Cloud Console trước khi chốt** —
-hạn mức đã đổi vài lần và tài liệu bên thứ ba thường lỗi thời.
+`search.list` và `videos.insert` tính vào hai bucket riêng theo tài liệu công bố; các lời
+gọi phụ trợ của corpus và khâu công bố vẫn có thể dùng chung bucket. Không kết luận nút
+thắt hoặc hạn mức thực tế của project chỉ từ số mặc định.
+
+Bảng ngân sách phải ghi:
+
+1. Project ID, thời điểm kiểm và bằng chứng đọc hạn mức từ Cloud Console.
+2. Mỗi stage/phương thức: bucket hoặc quota metric tương ứng, đơn vị tính và hạn mức
+   thực tế của project; tách số tham chiếu công bố khỏi số đã xác minh.
+3. Mỗi lần xây corpus: số truy vấn, độ sâu phân trang và tổng số lần gọi, kể cả từng
+   trang tiếp theo. Tính phần quota dùng theo ngày và tuần cho từng bucket, giữ phần
+   dự phòng tìm kiếm ở mục 5; chỉ kết luận nút thắt từ bảng đã xác minh.
+
+**Hiện chưa có bằng chứng quota project.** Bảng này là đầu ra phải hoàn tất trước khi
+viết code của WP-014, không phải ngân sách đã được xác minh ở Mốc 0.
 
 ### 3c. Giới hạn phải mã hoá vào dữ liệu, không viết thành ghi chú
 1. Corpus là **metadata**: tiêu đề, mô tả, thời lượng, lượt xem, ngày đăng, kênh. API không
