@@ -14,14 +14,33 @@
       "additionalProperties": false,
       "required": ["views", "impressions", "ctr", "avgViewDurationSec"],
       "properties": {
-        "views": { "type": "integer", "minimum": 0 },
-        "impressions": { "type": "integer", "minimum": 0 },
-        "ctr": { "type": "number", "minimum": 0 },
-        "avgViewDurationSec": { "type": "number", "minimum": 0 },
+        "views": { "type": ["integer", "null"], "minimum": 0 },
+        "impressions": { "type": ["integer", "null"], "minimum": 0 },
+        "ctr": { "type": ["number", "null"], "minimum": 0 },
+        "avgViewDurationSec": { "type": ["number", "null"], "minimum": 0 },
         "retention30s": { "type": "number" },
         "subsGained": { "type": "integer" },
         "watchHours": { "type": "number", "minimum": 0 },
-        "rpm": { "type": "number", "minimum": 0 }
+        "rpm": { "type": "number", "minimum": 0 },
+        "nullReason": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Lý do theo từng chỉ số chưa có dữ liệu ở S18b. Khoá là tên chỉ số, giá trị là string. Validator tầng 2 yêu cầu lý do tương ứng cho mỗi chỉ số null; xem D-19.",
+          "properties": {
+            "views": {
+              "type": "string"
+            },
+            "impressions": {
+              "type": "string"
+            },
+            "ctr": {
+              "type": "string"
+            },
+            "avgViewDurationSec": {
+              "type": "string"
+            }
+          }
+        }
       }
     },
     "retentionCurve": {
@@ -37,6 +56,27 @@
         }
       }
     },
-    "cumulativeChannelWatchHours": { "type": "number", "minimum": 0 }
+    "cumulativeChannelWatchHours": { "type": "number", "minimum": 0 },
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Tuỳ chọn. Không khai thì kế thừa qua episodeId từ brief và episode-state; xem D-19.",
+      "required": [
+        "engine",
+        "genre",
+        "channel"
+      ],
+      "properties": {
+        "engine": {
+          "type": "string"
+        },
+        "genre": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        }
+      }
+    }
   }
 }

@@ -12,7 +12,7 @@ Không viết dòng code nào.
 4. Điền các ô `<ĐIỀN>` không phụ thuộc spike.
 
 **DoD:** đọc lại toàn bộ, không thấy mâu thuẫn giữa các tài liệu. Không ô `<ĐIỀN>` nào còn
-lại trừ những ô được đánh dấu chờ kết quả spike.
+lại trừ những ô được đánh dấu chờ kết quả spike hoặc chờ một mốc cụ thể.
 
 ## Mốc 1 · Hạ tầng xây dựng
 WP-000 · WP-001 · WP-002 · WP-004
@@ -37,7 +37,9 @@ thì thay, phát hiện trước khi xây kho.
 ## Mốc 4 · Xưởng hình
 WP-020 → WP-022
 **DoD:** 5 layout đạt 8/8 tiêu chí. Không có trạng thái "tạm chấp nhận".
-**Chống phình:** nếu tới đây đã viết hơn 25 file code, dừng lại và cắt phạm vi.
+**Chống phình:** không quá 45 file code tính tới hết Mốc 4, và không file code nào nằm
+ngoài các đường dẫn khai trong mục Output của một WP. Vượt bất kỳ điều kiện nào thì
+dừng và cắt phạm vi.
 
 ## Mốc 5 · Vertical slice
 WP-030 → WP-045

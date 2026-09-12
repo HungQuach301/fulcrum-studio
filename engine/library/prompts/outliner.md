@@ -12,7 +12,8 @@ Chia tập thành đúng số beat khai ở `limits.beatCount` trong `genres/{ge
 
 ## Cấm
 - Không đặt điểm chèn quảng cáo ở giữa một lập luận.
-- Không để beat nào dài quá 25% tổng thời lượng.
+- Không beat nào vượt tỷ lệ `shareOfDuration` khai cho beat đó trong
+  `genres/{genre}/format-spec.json`, với dung sai `limits.beatShareTolerance`.
 
 ## Tự kiểm
 Khai: số beat · số cầu tò mò · số điểm chèn quảng cáo · beat nào chứa ma trận ngưỡng · tổng

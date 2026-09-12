@@ -226,8 +226,9 @@ hội thoại — đúng điều dự án cấm.
 4. Không dùng PAT cá nhân để lách giới hạn này. Nếu một trường hợp bắt buộc phải dùng, nó
    đi qua thủ tục D-14.
 
-**Hệ quả.** Orchestrator (WP-005) trở thành thành phần bắt buộc sớm hơn dự kiến, không phải
-tuỳ chọn ở Mốc 6.
+**Hệ quả.** Cơ chế nối khối được cài ngay trong bốn workflow khối ở Mốc 5 — mỗi khối gọi
+khối sau bằng `workflow_dispatch`. WP-005 ở Mốc 7 không tạo ra cơ chế nối mà thêm lớp chính sách
+điều tiết sản lượng lên trên nó.
 
 ---
 
@@ -399,3 +400,55 @@ lặp lại cùng một hiểu sai hai lần.
 
 **Hệ quả.** WP-008 là WP duy nhất trong bộ mà phần lớn công việc nằm ngoài agent. Thời gian
 cho nó phải được tính vào Mốc 3 như thời gian người, không phải thời gian máy.
+
+---
+
+## D-19 · Đồng bộ contract với quy trình nguồn, kiểm mô hình, đo lường, phát hành, phiên bản và dung sai beat
+
+**Bối cảnh.** Sáu chỗ trong contract đang chặn chính quy trình mà tài liệu quy định:
+origin thiếu trường và chưa ràng buộc theo kind; trạng thái kiểm mô hình thiếu partial;
+chỉ số chưa có dữ liệu không nhận null; hồ sơ tải lên riêng tư đòi thời điểm công khai;
+artifact cấp tập đóng không cho khai bộ phiên bản; và Genre Pack chưa khai được dung sai
+cho tỷ lệ thời lượng beat. Prompt bị cấm chứa hằng số nội dung, nên giới hạn độ dài beat
+phải đọc được từ Genre Pack. Đây là một thay đổi contract thống nhất.
+
+**Quyết định.**
+1. **Nguồn claim.** `sources.schema.json` thêm `origin.modelVersion`, `inputSetId`,
+   `outputKey`, đều là string và không bắt buộc vô điều kiện. Giữ tên `url`, sửa mô tả
+   `origin.kind` cho khớp. Các khối `if/then` draft-07 bắt buộc: `snapshot` có
+   `snapshotKey`; `model` có `modelId`, `modelVersion`, `inputSetId`, `outputKey`;
+   `url` có `url`.
+2. **Kiểm mô hình.** `model.schema.json` thêm `partial` vào `verification.status`:
+   đã đạt cấp 1 nhưng chưa đạt một cấp bắt buộc theo điều kiện. Mô hình ở trạng thái
+   `partial` **KHÔNG được dùng để sinh claim**.
+3. **Chỉ số chưa có dữ liệu.** `metrics.schema.json` cho phép `null` ở `aggregate.views`,
+   `impressions`, `ctr`, `avgViewDurationSec`, đồng thời giữ nguyên kiểu số hiện hành
+   và danh sách `required`. Thêm `aggregate.nullReason`: object có khoá là tên của
+   các chỉ số này, giá trị là string ghi lý do theo S18b.
+4. **Vòng đời phát hành.** `publication.schema.json` bắt buộc `uploadedAt` dạng
+   `date-time`. `publishedAt` vẫn là `date-time` nhưng chỉ bắt buộc khi `visibility`
+   là `public`, qua `if/then`. S17 tải lên riêng tư chưa cần có thời điểm công khai.
+5. **Phiên bản artifact.** Thêm `versions` tuỳ chọn vào các schema `outline`, `script`,
+   `canvas-map`, `storyboard`, `sources`, `factcheck`, `sensitivity`, `preflight`,
+   `timing`, `proof`, `render-manifest`, `qa-report`, `package`, `publication`, `metrics`.
+   Khi khai, object gồm đủ `engine`, `genre`, `channel` dạng string. Không thêm
+   `versions` vào danh sách bắt buộc của các artifact này. Brief và episode-state
+   giữ `versions` bắt buộc; artifact khác kế thừa qua `episodeId` nếu không khai.
+   `13-upgrade-safety.md` mục 1 được cập nhật theo cơ chế này.
+6. **Dung sai độ dài beat.** `format-spec.schema.json` thêm `limits.beatShareTolerance`
+   tuỳ chọn, kiểu `number`, `minimum: 0`, `maximum: 1`. Dung sai tính theo tỷ lệ
+   tuyệt đối của `shareOfDuration` mỗi beat. `genres/data-explainer/format-spec.json`
+   khai giá trị `0.05`: beat khai `0.22` được chấp nhận trong khoảng `0.17` đến
+   `0.27`. Prompt đọc giới hạn từ Genre Pack, không chứa hằng số nội dung.
+
+**Phương án bị loại.** Sửa tài liệu quy trình cho khớp contract hiện tại. Bị loại vì
+contract đang sai, không phải quy trình.
+
+**Hệ quả.** Validator tầng 1 phải áp dụng các khối `if/then` draft-07 mới. Validator
+tầng 2 phải kiểm các quan hệ `if/then` mới: trường đi kèm `origin.kind` và điều kiện
+`visibility = public` bắt buộc có `publishedAt`. Tầng 2 còn phải đối chiếu mô hình
+được tham chiếu để chặn claim dùng mô hình `partial`, kiểm lý do tương ứng cho
+mỗi chỉ số `null`, và kế thừa bộ phiên bản qua `episodeId` khi artifact không khai.
+Prompt và validator tầng 2 đọc `limits.beatShareTolerance` cùng `shareOfDuration`
+của từng beat từ Genre Pack để giới hạn hoặc kiểm độ dài beat.
+Thay đổi được ghi với nhãn `[contract-change]` trong cùng một pull request.

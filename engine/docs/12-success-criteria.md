@@ -138,7 +138,7 @@ bác ghi `rejectionReason`.
 | Số retry trung bình mỗi tập | ≤2 | >4 |
 | Tỷ lệ bác ở Gate 2 — **chỉ khi gate ở bậc 1** | 10–25% | =0 qua 10 tập liên tiếp |
 | **Tỷ lệ phủ quyết — khi gate ở bậc 2** | 0–10% | >25% (hạ bậc) |
-| **Lỗi lọt — khi gate ở bậc 3** | 0 qua 10 lần kiểm mẫu | ≥1 (hạ bậc, tự động) |
+| **Lỗi lọt — khi gate ở bậc 3** | 0 qua 10 lần kiểm mẫu | ≥1 lỗi lọt mức nghiêm trọng, hoặc ≥2 mức thường trong 10 lần kiểm mẫu (hạ bậc, tự động) |
 | Tỷ lệ buổi duyệt gate đúng hạn | ≥85% | <70% qua 4 tuần |
 | Thesis Bank khả dụng | ≥25 | <20 |
 | Chi phí thật mỗi tập | ≤35 USD | >45 USD ba tập liên tiếp |
@@ -214,7 +214,7 @@ vững, nhà máy chạy hoàn hảo vẫn lỗ vĩnh viễn. Đây là con số
 | Mốc | Dừng khi |
 |---|---|
 | Mốc 2 | Spike canvas cho kết quả DỪNG ở cả runner tiêu chuẩn lẫn runner lớn hơn |
-| **Mốc 3** | **Máy thắng <60% trong so sánh mù, hoặc <15/20 thesis đạt chuẩn** |
+| **Mốc 3** | **Kết quả rơi vào ô Không đạt của bảng ba kết quả ở mục Cổng Mốc 3** |
 | Mốc 3 | Quá 4 trong 12 đề tài không có nguồn dữ liệu hợp lệ sau WP-009 |
 | Mốc 4 | Sau 3 vòng lặp chưa có layout nào đạt 8/8 |
 | Mốc 5 | Vertical slice fail lần thứ hai vì cùng nguyên nhân gốc |
