@@ -226,8 +226,9 @@ hội thoại — đúng điều dự án cấm.
 4. Không dùng PAT cá nhân để lách giới hạn này. Nếu một trường hợp bắt buộc phải dùng, nó
    đi qua thủ tục D-14.
 
-**Hệ quả.** Orchestrator (WP-005) trở thành thành phần bắt buộc sớm hơn dự kiến, không phải
-tuỳ chọn ở Mốc 6.
+**Hệ quả.** Cơ chế nối khối được cài ngay trong bốn workflow khối ở Mốc 5 — mỗi khối gọi
+khối sau bằng `workflow_dispatch`. WP-005 ở Mốc 7 không tạo ra cơ chế nối mà thêm lớp chính sách
+điều tiết sản lượng lên trên nó.
 
 ---
 

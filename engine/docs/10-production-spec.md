@@ -49,7 +49,8 @@ nhanh.
 ### S02 · Topic Scoring
 Bốn trục có trọng số: nhu cầu 30 · độ bão hoà 20 · bậc RPM 30 · khả năng dựng ma trận
 ngưỡng 20.
-Bộ lọc cứng: đề tài không dựng được ma trận ngưỡng ba tầng thì **loại**, bất kể điểm.
+Bộ lọc cứng: đề tài không dựng được ma trận ngưỡng ba tầng HOẶC một kết luận ổn định có bằng chứng
+thì **loại**, bất kể điểm.
 
 ### S03 · GATE 1
 Xem quyết định D-08. Trình 5 thesis, người chọn 1 hoặc bác tất cả.
@@ -92,7 +93,7 @@ mò**. Điểm chèn quảng cáo sinh **từ** vị trí cầu tò mò, không 
 
 ### S07 · Script
 - 3.200–3.600 từ. Ở tốc độ đọc mục tiêu, tương ứng 20–24 phút.
-- Đủ 6 thiết bị nội dung theo format-spec.
+- Đủ số thiết bị nội dung tối thiểu `limits.devicesMin` khai trong `format-spec.json`.
 - Ít nhất 3 mục từ điển kênh.
 - Mọi con số có `claimId`.
 - Một câu nêu rõ `geoScope` của kết luận.

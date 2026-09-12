@@ -53,7 +53,7 @@ Hoà vốn một tháng = (chi phí biến đổi × số tập + chi phí cố 
 
 **Không điền một con số RPM giả định vào đây.** Một RPM không có nguồn là đúng thứ tài liệu
 này cấm ở nguyên tắc số 6. Hai kịch bản RPM có nguồn được điền ở `12-success-criteria.md`
-Tầng 5 sau khi đo thật ở Mốc 7.
+Tầng 5 sau khi đo thật ở Mốc 7b.
 
 Điểm phải nhớ khi điền: công thức theo tháng **bắt buộc cộng chi phí cố định**. Bỏ nó ra thì
 con số hoà vốn trông nhỏ hơn thực tế nhiều lần. Và nếu lượt xem trung bình mỗi tập ổn định ở
