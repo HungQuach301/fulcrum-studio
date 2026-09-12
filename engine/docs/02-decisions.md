@@ -399,3 +399,46 @@ lặp lại cùng một hiểu sai hai lần.
 
 **Hệ quả.** WP-008 là WP duy nhất trong bộ mà phần lớn công việc nằm ngoài agent. Thời gian
 cho nó phải được tính vào Mốc 3 như thời gian người, không phải thời gian máy.
+
+---
+
+## D-19 · Đồng bộ contract với quy trình nguồn, kiểm mô hình, đo lường, phát hành và phiên bản
+
+**Bối cảnh.** Năm chỗ trong contract đang chặn chính quy trình mà tài liệu quy định:
+origin thiếu trường và chưa ràng buộc theo kind; trạng thái kiểm mô hình thiếu partial;
+chỉ số chưa có dữ liệu không nhận null; hồ sơ tải lên riêng tư đòi thời điểm công khai;
+và artifact cấp tập đóng không cho khai bộ phiên bản. Đây là một thay đổi contract thống nhất.
+
+**Quyết định.**
+1. **Nguồn claim.** `sources.schema.json` thêm `origin.modelVersion`, `inputSetId`,
+   `outputKey`, đều là string và không bắt buộc vô điều kiện. Giữ tên `url`, sửa mô tả
+   `origin.kind` cho khớp. Các khối `if/then` draft-07 bắt buộc: `snapshot` có
+   `snapshotKey`; `model` có `modelId`, `modelVersion`, `inputSetId`, `outputKey`;
+   `url` có `url`.
+2. **Kiểm mô hình.** `model.schema.json` thêm `partial` vào `verification.status`:
+   đã đạt cấp 1 nhưng chưa đạt một cấp bắt buộc theo điều kiện. Mô hình ở trạng thái
+   `partial` **KHÔNG được dùng để sinh claim**.
+3. **Chỉ số chưa có dữ liệu.** `metrics.schema.json` cho phép `null` ở `aggregate.views`,
+   `impressions`, `ctr`, `avgViewDurationSec`, đồng thời giữ nguyên kiểu số hiện hành
+   và danh sách `required`. Thêm `aggregate.nullReason`: object có khoá là tên của
+   các chỉ số này, giá trị là string ghi lý do theo S18b.
+4. **Vòng đời phát hành.** `publication.schema.json` bắt buộc `uploadedAt` dạng
+   `date-time`. `publishedAt` vẫn là `date-time` nhưng chỉ bắt buộc khi `visibility`
+   là `public`, qua `if/then`. S17 tải lên riêng tư chưa cần có thời điểm công khai.
+5. **Phiên bản artifact.** Thêm `versions` tuỳ chọn vào các schema `outline`, `script`,
+   `canvas-map`, `storyboard`, `sources`, `factcheck`, `sensitivity`, `preflight`,
+   `timing`, `proof`, `render-manifest`, `qa-report`, `package`, `publication`, `metrics`.
+   Khi khai, object gồm đủ `engine`, `genre`, `channel` dạng string. Không thêm
+   `versions` vào danh sách bắt buộc của các artifact này. Brief và episode-state
+   giữ `versions` bắt buộc; artifact khác kế thừa qua `episodeId` nếu không khai.
+   `13-upgrade-safety.md` mục 1 được cập nhật theo cơ chế này.
+
+**Phương án bị loại.** Sửa tài liệu quy trình cho khớp contract hiện tại. Bị loại vì
+contract đang sai, không phải quy trình.
+
+**Hệ quả.** Validator tầng 1 phải áp dụng các khối `if/then` draft-07 mới. Validator
+tầng 2 phải kiểm các quan hệ `if/then` mới: trường đi kèm `origin.kind` và điều kiện
+`visibility = public` bắt buộc có `publishedAt`. Tầng 2 còn phải đối chiếu mô hình
+được tham chiếu để chặn claim dùng mô hình `partial`, kiểm lý do tương ứng cho
+mỗi chỉ số `null`, và kế thừa bộ phiên bản qua `episodeId` khi artifact không khai.
+Thay đổi được ghi trong một commit có nhãn `[contract-change]` và một pull request.

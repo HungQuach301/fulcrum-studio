@@ -24,12 +24,71 @@
             "additionalProperties": false,
             "required": ["kind"],
             "properties": {
-              "kind": { "type": "string", "enum": ["snapshot", "model", "url"], "description": "Trường bắt buộc kèm theo: snapshot -> snapshotKey; model -> modelId, modelVersion, inputSetId, outputKey; url -> sourceUrl. Validator tầng 2 kiểm quan hệ này." },
+              "kind": { "type": "string", "enum": ["snapshot", "model", "url"], "description": "Trường bắt buộc kèm theo: snapshot -> snapshotKey; model -> modelId, modelVersion, inputSetId, outputKey; url -> url. Quan hệ này được kiểm bằng if/then draft-07 và validator tầng 2; xem D-19." },
               "snapshotKey": { "type": "string" },
               "modelId": { "type": "string" },
+              "modelVersion": { "type": "string" },
+              "inputSetId": { "type": "string" },
+              "outputKey": { "type": "string" },
               "url": { "type": "string", "format": "uri" },
               "asOfDate": { "type": "string", "format": "date" }
-            }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "snapshot"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "snapshotKey"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "model"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "modelId",
+                    "modelVersion",
+                    "inputSetId",
+                    "outputKey"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "url"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "url"
+                  ]
+                }
+              }
+            ]
           },
           "geoLevel": { "type": "string", "enum": ["national", "state", "metro", "county"] }
         }
@@ -49,6 +108,27 @@
         }
       }
     },
-    "costUsd": { "type": "number", "minimum": 0 }
+    "costUsd": { "type": "number", "minimum": 0 },
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Tuỳ chọn. Không khai thì kế thừa qua episodeId từ brief và episode-state; xem D-19.",
+      "required": [
+        "engine",
+        "genre",
+        "channel"
+      ],
+      "properties": {
+        "engine": {
+          "type": "string"
+        },
+        "genre": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        }
+      }
+    }
   }
 }

@@ -328,6 +328,27 @@
         "vertical"
       ],
       "description": "Storyboard dọc cho Shorts là một artifact RIÊNG, không phải bản ngang đổi khung nhìn."
+    },
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Tuỳ chọn. Không khai thì kế thừa qua episodeId từ brief và episode-state; xem D-19.",
+      "required": [
+        "engine",
+        "genre",
+        "channel"
+      ],
+      "properties": {
+        "engine": {
+          "type": "string"
+        },
+        "genre": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        }
+      }
     }
   },
   "definitions": {

@@ -4,10 +4,11 @@
   "title": "Publication Record",
   "type": "object",
   "additionalProperties": false,
-  "required": ["episodeId", "videoId", "publishedAt", "visibility", "quotaUnitsUsed"],
+  "required": ["episodeId", "videoId", "uploadedAt", "visibility", "quotaUnitsUsed"],
   "properties": {
     "episodeId": { "type": "string" },
     "videoId": { "type": "string" },
+    "uploadedAt": { "type": "string", "format": "date-time" },
     "publishedAt": { "type": "string", "format": "date-time" },
     "visibility": { "type": "string", "enum": ["private", "unlisted", "public"] },
     "titleUsed": { "type": "string" },
@@ -15,6 +16,42 @@
     "captionsUploaded": { "type": "boolean" },
     "adBreaksSetManually": { "type": "boolean", "description": "Đặt điểm chèn quảng cáo là thao tác tay ở bước vận hành sau đăng." },
     "modelSheetPublished": { "type": "boolean" },
-    "quotaUnitsUsed": { "type": "integer", "minimum": 0 }
+    "quotaUnitsUsed": { "type": "integer", "minimum": 0 },
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Tuỳ chọn. Không khai thì kế thừa qua episodeId từ brief và episode-state; xem D-19.",
+      "required": [
+        "engine",
+        "genre",
+        "channel"
+      ],
+      "properties": {
+        "engine": {
+          "type": "string"
+        },
+        "genre": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "if": {
+    "properties": {
+      "visibility": {
+        "const": "public"
+      }
+    },
+    "required": [
+      "visibility"
+    ]
+  },
+  "then": {
+    "required": [
+      "publishedAt"
+    ]
   }
 }

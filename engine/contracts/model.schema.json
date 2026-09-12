@@ -51,7 +51,7 @@
       "properties": {
         "method": { "type": "string", "enum": ["hand-worked-case", "published-benchmark", "second-implementation", "llm-assumption-check"], "description": "Bốn cấp ở 14-quantitative-core.md mục 2. hand-worked-case bắt buộc cho mọi mô hình. llm-assumption-check KHÔNG được dùng để kiểm số học." },
         "tolerancePct": { "type": "number", "minimum": 0 },
-        "status": { "type": "string", "enum": ["verified", "pending", "failed"] },
+        "status": { "type": "string", "enum": ["verified", "pending", "partial", "failed"], "description": "partial nghĩa là đã đạt cấp 1 nhưng chưa đạt một cấp bắt buộc theo điều kiện. Mô hình ở trạng thái partial KHÔNG được dùng để sinh claim. Validator tầng 2 kiểm điều kiện sử dụng mô hình này; xem D-19." },
         "verifiedAt": { "type": "string", "format": "date-time" },
         "benchmarkUrl": { "type": "string", "format": "uri" }
       }
