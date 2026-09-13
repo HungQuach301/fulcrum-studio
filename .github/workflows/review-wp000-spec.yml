@@ -1,0 +1,562 @@
+name: Review WP-000 specification
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: wp000-spec-pr9
+  cancel-in-progress: false
+
+jobs:
+  spec-review:
+    if: >-
+      ${{ github.repository == 'HungQuach301/fulcrum-studio' &&
+          github.event.pull_request.number == 9 &&
+          github.event.pull_request.draft == true &&
+          github.event.pull_request.head.repo.full_name == 'HungQuach301/fulcrum-studio' &&
+          github.head_ref == 'wp/000' && github.base_ref == 'main' &&
+          github.run_number == 1 && github.run_attempt == 1 }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SPEC_BASE: a7d5533eb53c53c55bf5208ad76a02bbad006ae8
+      SPEC_BASE_TREE: db004bdf2b1ddb3fad6526f70182a28a3cee7f8f
+      SPEC_PREVIOUS: 50e7d39387015858ef9e5985d36ac95a6974ea1b
+      SPEC_PREVIOUS_TREE: 121d12091b7dcecc8a9b13788741a17a1ad45f7f
+      SPEC_HEAD: ${{ github.event.pull_request.head.sha }}
+      SPEC_EVENT_SHA: ${{ github.sha }}
+      SPEC_PR_TITLE: ${{ github.event.pull_request.title }}
+    steps:
+      - name: Initialize evidence
+        id: evidence
+        env:
+          SPEC_ROOT: ${{ runner.temp }}/wp000-spec
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$SPEC_ROOT/report" "$SPEC_ROOT/downloads" "$SPEC_ROOT/node_modules"
+          {
+            printf 'scope: PR9 specification only\n'
+            printf 'run_id: %s\nrun_number: %s\nattempt: %s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_ATTEMPT"
+            printf 'head: %s\nevent_sha: %s\n' "$SPEC_HEAD" "$SPEC_EVENT_SHA"
+            printf 'base: %s\nbase_tree: %s\nprevious_head: %s\nprevious_tree: %s\n' "$SPEC_BASE" "$SPEC_BASE_TREE" "$SPEC_PREVIOUS" "$SPEC_PREVIOUS_TREE"
+            printf 'wp000Acceptance: blocked\nruntimeTier2: not_run\nwp000Fixtures: not_run\ntypecheck: not_run\nfiveBriefRegression: not_run\n'
+            printf 'state-current: not_run (known baseline defect; see observed result below)\n'
+            printf 'budget_usd: 0.10\njob_timeout_minutes: 10\nartifact_retention_days: 1\n'
+            date -u '+started_at: %Y-%m-%dT%H:%M:%SZ'
+            printf 'runner_image: %s\nrunner_image_version: %s\n' "$ImageOS" "$ImageVersion"
+            printf 'checkout: 34e114876b0b11c390a56381ad16ebd13914f8d5\nupload-artifact: ea165f8d65b6e75b540449e92b4886f43607fa02\n'
+          } > "$SPEC_ROOT/report/ci-report.txt"
+
+      - name: Checkout the candidate head
+        id: checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 3
+          persist-credentials: false
+          submodules: false
+          lfs: false
+
+      - name: Check immutable baselines and live refs before tools
+        id: preflight
+        env:
+          SPEC_ROOT: ${{ runner.temp }}/wp000-spec
+          SPEC_READ_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$SPEC_ROOT/checkpoint.sh" <<'SH'
+          set -euo pipefail
+          SPEC_PHASE="$1"
+          [[ "$SPEC_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SPEC_HEAD"
+          test "$(git show -s --format=%P "$SPEC_HEAD")" = "$SPEC_PREVIOUS"
+          test "$(git show -s --format=%P "$SPEC_PREVIOUS")" = "$SPEC_BASE"
+          test "$(git rev-parse "$SPEC_PREVIOUS^{tree}")" = "$SPEC_PREVIOUS_TREE"
+          test "$(git rev-parse "$SPEC_BASE^{tree}")" = "$SPEC_BASE_TREE"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          SPEC_AUTH=$(printf 'x-access-token:%s' "$SPEC_READ_TOKEN" | base64 -w0)
+          SPEC_REFS=$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $SPEC_AUTH" GIT_TERMINAL_PROMPT=0 timeout 30s git ls-remote --exit-code https://github.com/HungQuach301/fulcrum-studio.git refs/heads/main refs/heads/wp/000)
+          unset SPEC_AUTH
+          SPEC_LIVE_MAIN=''
+          SPEC_LIVE_HEAD=''
+          while read -r SPEC_SHA SPEC_REF; do
+            case "$SPEC_REF" in
+              refs/heads/main) SPEC_LIVE_MAIN="$SPEC_SHA" ;;
+              refs/heads/wp/000) SPEC_LIVE_HEAD="$SPEC_SHA" ;;
+              *) exit 1 ;;
+            esac
+          done <<< "$SPEC_REFS"
+          test "$SPEC_LIVE_MAIN" = "$SPEC_BASE"
+          test "$SPEC_LIVE_HEAD" = "$SPEC_HEAD"
+          {
+            printf '%s: pass\nlive_main: %s\nlive_head: %s\n' "$SPEC_PHASE" "$SPEC_LIVE_MAIN" "$SPEC_LIVE_HEAD"
+            printf 'checkout_tree: %s\n' "$(git rev-parse HEAD^{tree})"
+          } >> "$SPEC_ROOT/report/ci-report.txt"
+          SH
+          bash "$SPEC_ROOT/checkpoint.sh" preflight
+
+      - name: Install only the approved temporary tools
+        id: tools
+        env:
+          SPEC_ROOT: ${{ runner.temp }}/wp000-spec
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --max-time 90 --retry 0 \
+            https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz \
+            --output "$SPEC_ROOT/downloads/node.tar.xz"
+          printf '%s  %s\n' df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d "$SPEC_ROOT/downloads/node.tar.xz" | sha256sum --check --status
+          mkdir -p "$SPEC_ROOT/node"
+          tar -xJf "$SPEC_ROOT/downloads/node.tar.xz" --strip-components=1 -C "$SPEC_ROOT/node"
+          SPEC_NODE_VERSION=$("$SPEC_ROOT/node/bin/node" --version)
+          SPEC_NPM_VERSION=$("$SPEC_ROOT/node/bin/node" "$SPEC_ROOT/node/lib/node_modules/npm/bin/npm-cli.js" --version)
+          test "$SPEC_NODE_VERSION" = v20.20.2
+          test "$SPEC_NPM_VERSION" = 10.8.2
+          {
+            printf 'node: %s\nnpm_bundled: %s\n' "$SPEC_NODE_VERSION" "$SPEC_NPM_VERSION"
+            printf 'node_archive_sha256: df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d\n'
+            printf 'node20_eol: accepted only for this specification CI run\n'
+          } >> "$SPEC_ROOT/report/ci-report.txt"
+          while read -r SPEC_PACKAGE SPEC_VERSION SPEC_SRI SPEC_URL; do
+            SPEC_ARCHIVE="$SPEC_ROOT/downloads/$SPEC_PACKAGE.tgz"
+            curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --max-time 30 --retry 0 \
+              "$SPEC_URL" --output "$SPEC_ARCHIVE"
+            SPEC_ACTUAL_SRI=$("$SPEC_ROOT/node/bin/node" -e "const f=require('node:fs'),c=require('node:crypto');process.stdout.write('sha512-'+c.createHash('sha512').update(f.readFileSync(process.argv[1])).digest('base64'))" "$SPEC_ARCHIVE")
+            test "$SPEC_ACTUAL_SRI" = "$SPEC_SRI"
+            tar -tzf "$SPEC_ARCHIVE" | while read -r SPEC_ENTRY; do
+              case "$SPEC_ENTRY" in package/*) ;; *) exit 1 ;; esac
+              case "/$SPEC_ENTRY/" in *"/../"*|*"/./"*) exit 1 ;; esac
+            done
+            mkdir -p "$SPEC_ROOT/node_modules/$SPEC_PACKAGE"
+            tar -xzf "$SPEC_ARCHIVE" --strip-components=1 -C "$SPEC_ROOT/node_modules/$SPEC_PACKAGE"
+            "$SPEC_ROOT/node/bin/node" -e "const p=JSON.parse(require('node:fs').readFileSync(process.argv[1],'utf8'));if(p.name!==process.argv[2]||p.version!==process.argv[3])process.exit(1)" \
+              "$SPEC_ROOT/node_modules/$SPEC_PACKAGE/package.json" "$SPEC_PACKAGE" "$SPEC_VERSION"
+            printf 'tool: %s@%s %s\n' "$SPEC_PACKAGE" "$SPEC_VERSION" "$SPEC_SRI" >> "$SPEC_ROOT/report/ci-report.txt"
+          done <<'PINS'
+          ajv 8.12.0 sha512-sRu1kpcO9yLtYxBKvqfTeh9KzZEwO3STyX1HT+4CaDzC6HpTGYhIhPIzj9XuKU7KYDwnaeh5hcOwjy1QuJzBPA== https://registry.npmjs.org/ajv/-/ajv-8.12.0.tgz
+          ajv-formats 2.1.1 sha512-Wx0Kx52hxE7C18hkMEggYlEifqWZtYaRgouJor+WMdPnQyEK13vgEWyVNup7SoeeoLMsr4kf5h6dOW11I15MUA== https://registry.npmjs.org/ajv-formats/-/ajv-formats-2.1.1.tgz
+          fast-deep-equal 3.1.3 sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q== https://registry.npmjs.org/fast-deep-equal/-/fast-deep-equal-3.1.3.tgz
+          json-schema-traverse 1.0.0 sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug== https://registry.npmjs.org/json-schema-traverse/-/json-schema-traverse-1.0.0.tgz
+          require-from-string 2.0.2 sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw== https://registry.npmjs.org/require-from-string/-/require-from-string-2.0.2.tgz
+          uri-js 4.4.1 sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg== https://registry.npmjs.org/uri-js/-/uri-js-4.4.1.tgz
+          punycode 2.3.1 sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg== https://registry.npmjs.org/punycode/-/punycode-2.3.1.tgz
+          PINS
+
+      - name: Review specification scope and schema contracts
+        id: review
+        env:
+          SPEC_ROOT: ${{ runner.temp }}/wp000-spec
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$SPEC_ROOT/review.cjs" <<'JS'
+          'use strict';
+          // D-21 section 7: temporary JavaScript exception for this specification CI only.
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const cp = require('node:child_process');
+          const specRoot = process.env.SPEC_ROOT;
+          const reportPath = path.join(specRoot, 'report', 'ci-report.txt');
+          const base = process.env.SPEC_BASE;
+          const previous = process.env.SPEC_PREVIOUS;
+          const head = process.env.SPEC_HEAD;
+          const docs = [
+            'engine/docs/02-decisions.md',
+            'engine/ops/work-packages/WP-000-scaffold.md',
+            'engine/ops/definition-of-done.md',
+            'engine/contracts/README.md'
+          ];
+          const workflow = '.github/workflows/review-wp000-spec.yml';
+          const allowlistSchema = 'engine/contracts/publish-allowlist.schema.json';
+          const statePath = 'pipeline/state.json';
+          function record(label, data) {
+            fs.appendFileSync(reportPath, label + ': ' + JSON.stringify(data) + '\n');
+          }
+          function check(label, condition, detail) {
+            record(label, {result: condition ? 'pass' : 'failure', detail});
+            if (!condition) throw new Error(label);
+          }
+          function git(...args) {
+            return cp.execFileSync('git', args, {maxBuffer: 8 * 1024 * 1024});
+          }
+          function source(ref, filename) {
+            return git('show', ref + ':' + filename);
+          }
+          function tree(ref) {
+            const entries = git('ls-tree', '-rz', '--full-tree', ref).toString('utf8').split('\0').filter(Boolean);
+            return new Map(entries.map(entry => {
+              const tab = entry.indexOf('\t');
+              const [mode, type, sha] = entry.slice(0, tab).split(' ');
+              return [entry.slice(tab + 1), {mode, type, sha}];
+            }));
+          }
+          function equalEntry(a, b) {
+            return !!a && !!b && a.mode === b.mode && a.type === b.type && a.sha === b.sha;
+          }
+          function changes(a, b) {
+            return [...new Set([...a.keys(), ...b.keys()])].filter(name => !equalEntry(a.get(name), b.get(name))).sort();
+          }
+          function exactDelta(a, b, wanted) {
+            return JSON.stringify(changes(a, b)) === JSON.stringify([...wanted].sort());
+          }
+          function preservedPrefix(oldBytes, newBytes) {
+            return newBytes.length >= oldBytes.length && newBytes.subarray(0, oldBytes.length).equals(oldBytes);
+          }
+          function markers(text) {
+            return text.includes('[wp-change]') && text.includes('[contract-change]');
+          }
+          function secretKinds(text) {
+            const patterns = [
+              ['github-token', /\bgh[pousr]_[A-Za-z0-9]{20,}\b/],
+              ['github-fine-grained-token', /\bgithub_pat_[A-Za-z0-9_]{20,}\b/],
+              ['provider-token', /\bsk-(?:ant-)?[A-Za-z0-9_-]{16,}\b/],
+              ['private-key', /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/],
+              ['literal-credential', /\b[A-Za-z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD)[A-Za-z0-9_]*\s*[:=]\s*["'][A-Za-z0-9_+\/=.-]{12,}["']/i]
+            ];
+            return patterns.filter(([, pattern]) => pattern.test(text)).map(([kind]) => kind);
+          }
+          function contentConstant(filename, text) {
+            if (!filename.startsWith('engine/') || !/\.(?:json|[cm]?[jt]sx?)$/.test(filename)) return false;
+            return /["']?\b(?:beatCount|sceneCount|scriptWordCount|targetDurationMin|sceneMinDurationMs|ttsVoiceId|pillar|layout|color|fps)["']?\s*[:=]\s*(?:\[\s*\d|\d|["'](?:#[0-9a-f]{6}|[a-z][a-z0-9-]*)["'])/i.test(text);
+          }
+          function addedLines(diff) {
+            let filename = '';
+            let lineNumber = 0;
+            const result = [];
+            for (const line of diff.split('\n')) {
+              if (line.startsWith('+++ b/')) filename = line.slice(6);
+              else if (line.startsWith('@@ ')) {
+                const match = line.match(/\+(\d+)(?:,\d+)? @@/);
+                if (!match) throw new Error('Cannot read diff location');
+                lineNumber = Number(match[1]);
+              } else if (line.startsWith('+') && !line.startsWith('+++')) {
+                result.push({filename, lineNumber, text: line.slice(1)});
+                lineNumber += 1;
+              } else if (line.startsWith(' ')) lineNumber += 1;
+            }
+            return result;
+          }
+          const mappings = new Map([
+            ['channels/us-personal-finance/channel.json', 'channel.schema.json'],
+            ['channels/us-personal-finance/visual-tokens.json', 'visual-tokens.schema.json'],
+            ['genres/data-explainer/format-spec.json', 'format-spec.schema.json'],
+            ['genres/data-explainer/layouts.json', 'layouts.schema.json'],
+            ['genres/data-explainer/asset-policy.json', 'asset-policy.schema.json'],
+            ['pipeline/automation-tiers.json', 'automation-tiers.schema.json'],
+            ['pipeline/state.json', 'pipeline-state.schema.json'],
+            ['config/publish-allowlist.json', 'publish-allowlist.schema.json']
+          ]);
+          function category(filename) {
+            if (/^engine\/contracts\/[^/]+\.schema\.json$/.test(filename)) return 'schema';
+            return mappings.has(filename) ? 'domain-config' : null;
+          }
+          function simplifiedErrors(errors) {
+            return (errors || []).map(error => ({
+              instancePath: error.instancePath,
+              keyword: error.keyword,
+              params: error.params,
+              schemaPath: error.schemaPath,
+              message: error.message
+            }));
+          }
+          function main() {
+            const baseTree = tree(base), oldTree = tree(previous), candidateTree = tree(head);
+            check('source-inventory', baseTree.size === 106 && oldTree.size === 107 && candidateTree.size === 108,
+              {base: baseTree.size, previous: oldTree.size, candidate: candidateTree.size});
+            check('incremental-scope', exactDelta(oldTree, candidateTree, [...docs, workflow]), changes(oldTree, candidateTree));
+            check('full-pr-scope', exactDelta(baseTree, candidateTree, [...docs, allowlistSchema, workflow]), changes(baseTree, candidateTree));
+            const outside = [...oldTree.keys()].filter(filename => !docs.includes(filename));
+            check('preserve-103-existing-blobs-modes', outside.length === 103 &&
+              outside.every(filename => equalEntry(oldTree.get(filename), candidateTree.get(filename))), {count: outside.length});
+            check('file-modes', docs.every(filename => candidateTree.get(filename).mode === oldTree.get(filename).mode) &&
+              candidateTree.get(workflow).mode === '100644' && candidateTree.get(workflow).type === 'blob');
+            check('pinned-allowlist-schema', candidateTree.get(allowlistSchema).sha === 'a0de2c89a18bbe20e751dec69e5b508ee1a9efb9');
+            check('pinned-state', candidateTree.get(statePath).sha === '6f6eb4493fb6173b19bf2af126bf0b0cd68c5593');
+            const oldDecisions = source(base, docs[0]), candidateDecisions = source(head, docs[0]);
+            check('D01-D20-verbatim', preservedPrefix(oldDecisions, candidateDecisions), {baseline: base});
+            const tail = candidateDecisions.subarray(oldDecisions.length).toString('utf8');
+            check('only-new-D21', JSON.stringify(tail.match(/^## D-\d+/gm)) === JSON.stringify(['## D-21']));
+            check('D21-required-specifications', tail.includes('D-15 mục 4') &&
+              tail.includes('@git-commit:<C>') && tail.includes('@git-tree:<tree của toàn Genre Pack tại C>') &&
+              tail.includes('git-tree:<tree của toàn Channel Pack tại C>') &&
+              tail.includes('7. **Cổng CI riêng cho PR đặc tả #9'));
+            check('commit-markers', markers(git('show', '-s', '--format=%B', head).toString('utf8')));
+            check('PR-title-markers', markers(process.env.SPEC_PR_TITLE));
+            const wpRows = source(head, 'engine/ops/backlog.md').toString('utf8').split('\n')
+              .filter(line => /^\|\s*(?:\*\*)?WP-/.test(line))
+              .map(line => ({id: line.match(/WP-\d+[a-z]?/)[0], status: line.split('|').at(-2).trim()}));
+            check('WP-statuses', wpRows.length === 41 && wpRows.filter(row => row.status === 'todo').length === 40 &&
+              wpRows.filter(row => row.status === 'blocked').length === 1 &&
+              wpRows.some(row => row.id === 'WP-001b' && row.status === 'blocked'),
+              {total: wpRows.length, todo: wpRows.filter(row => row.status === 'todo').length, blocked: 'WP-001b'});
+            const additions = addedLines(git('diff', '--no-ext-diff', '--no-color', '--unified=0', base, head).toString('utf8'));
+            const secretHits = additions.flatMap(line => secretKinds(line.text)
+              .map(kind => ({filename: line.filename, line: line.lineNumber, kind})));
+            check('diff-secret-scan', secretHits.length === 0, {coverage: 'GitHub/provider token, private key, quoted literal credential', findings: secretHits});
+            const constantHits = additions.filter(line => contentConstant(line.filename, line.text))
+              .map(line => ({filename: line.filename, line: line.lineNumber}));
+            check('engine-code-schema-content-constants', constantHits.length === 0,
+              {coverage: 'new Engine code/schema literals; documentation reviewed separately', findings: constantHits});
+
+            let guardFixtures = 0;
+            function guardCase(name, result) {
+              check('guard-fixture:' + name, result);
+              guardFixtures += 1;
+            }
+            guardCase('valid-scope', exactDelta(oldTree, candidateTree, [...docs, workflow]));
+            const extraFile = new Map(candidateTree);
+            extraFile.set('UNAPPROVED.md', {mode: '100644', type: 'blob', sha: '0'.repeat(40)});
+            guardCase('outside-scope', !exactDelta(oldTree, extraFile, [...docs, workflow]));
+            for (const filename of [statePath, 'engine/ops/backlog.md', allowlistSchema]) {
+              const altered = new Map(candidateTree);
+              altered.set(filename, {...altered.get(filename), sha: '0'.repeat(40)});
+              guardCase('preserved-file:' + filename, !exactDelta(oldTree, altered, [...docs, workflow]));
+            }
+            const alteredMode = new Map(candidateTree);
+            alteredMode.set(statePath, {...alteredMode.get(statePath), mode: '100755'});
+            guardCase('preserved-mode', !exactDelta(oldTree, alteredMode, [...docs, workflow]));
+            guardCase('valid-decision-prefix', preservedPrefix(oldDecisions, candidateDecisions));
+            const alteredDecisions = Buffer.from(candidateDecisions);
+            alteredDecisions[0] ^= 1;
+            guardCase('changed-D01-D20', !preservedPrefix(oldDecisions, alteredDecisions));
+            guardCase('valid-markers', markers('[wp-change] [contract-change]'));
+            guardCase('missing-contract-marker', !markers('[wp-change]'));
+            guardCase('missing-wp-marker', !markers('[contract-change]'));
+            guardCase('valid-no-secret', secretKinds('Documentation references an environment variable.').length === 0);
+            const fakeSecrets = [
+              'gh' + 'p_' + 'A'.repeat(36),
+              'github_' + 'pat_' + 'B'.repeat(40),
+              's' + 'k-' + 'C'.repeat(32),
+              's' + 'k-ant-' + 'D'.repeat(32),
+              '-----BEGIN ' + 'PRIVATE KEY-----',
+              'API_' + 'KEY = "' + 'E'.repeat(24) + '"'
+            ];
+            fakeSecrets.forEach((value, index) => guardCase('fake-secret-' + index, secretKinds(value).length > 0));
+            guardCase('valid-no-content-literal', !contentConstant('engine/example.ts', 'const value = config.limits;'));
+            guardCase('content-literal', contentConstant('engine/example.ts', 'const beatCount = 7;'));
+            guardCase('unknown-JSON', category('unclassified.json') === null);
+            guardCase('known-JSON', category('config/publish-allowlist.json') === 'domain-config');
+            record('guard-fixtures-total', guardFixtures);
+
+            const filenames = [...candidateTree.keys()].filter(filename => filename.endsWith('.json')).sort();
+            const schemaFiles = filenames.filter(filename => category(filename) === 'schema');
+            const domainFiles = filenames.filter(filename => category(filename) === 'domain-config');
+            check('JSON-classification', filenames.length === 46 && schemaFiles.length === 38 &&
+              domainFiles.length === 8 && filenames.every(filename => category(filename) !== null),
+              {json: filenames.length, schema: schemaFiles.length, domainConfig: domainFiles.length});
+            const documentMap = new Map();
+            for (const filename of filenames) {
+              try {
+                documentMap.set(filename, JSON.parse(fs.readFileSync(filename, 'utf8')));
+              } catch (error) {
+                record('JSON-parse', {filename, result: 'failure', message: error.message});
+                throw error;
+              }
+            }
+            record('JSON-parse', {result: 'pass', files: filenames.length});
+            const Ajv = require(path.join(specRoot, 'node_modules', 'ajv'));
+            const addFormats = require(path.join(specRoot, 'node_modules', 'ajv-formats'));
+            const options = {
+              allErrors: true, validateFormats: true,
+              strictSchema: true, strictTypes: true, strictTuples: true, strictNumbers: true,
+              allowUnionTypes: true, strictRequired: false,
+              coerceTypes: false, useDefaults: false, removeAdditional: false
+            };
+            record('Ajv-options', options);
+            const ajv = new Ajv(options);
+            addFormats(ajv);
+            const ids = new Set();
+            for (const filename of schemaFiles) {
+              const schema = documentMap.get(filename);
+              check('schema-identity:' + filename,
+                schema.$schema === 'http://json-schema.org/draft-07/schema#' &&
+                typeof schema.$id === 'string' && schema.$id === path.basename(filename) && !ids.has(schema.$id));
+              ids.add(schema.$id);
+              check('meta-schema:' + filename, ajv.validateSchema(schema), simplifiedErrors(ajv.errors));
+              ajv.addSchema(schema);
+            }
+            for (const filename of schemaFiles) {
+              try {
+                check('compile:' + filename, typeof ajv.getSchema(documentMap.get(filename).$id) === 'function');
+              } catch (error) {
+                record('schema-compile-error', {filename, message: error.message});
+                throw error;
+              }
+            }
+            let validConfigCount = 0;
+            for (const filename of domainFiles) {
+              const validate = ajv.getSchema(mappings.get(filename));
+              const data = documentMap.get(filename);
+              const before = JSON.stringify(data);
+              const valid = validate(data);
+              const errors = simplifiedErrors(validate.errors);
+              check('read-only-data:' + filename, JSON.stringify(data) === before);
+              if (filename === statePath) {
+                record('state-current', valid ? 'unexpectedly_valid' : 'invalid');
+                record('state-observed-errors', errors);
+                record('realDataAllValid', false);
+                const observed = errors.map(error => [error.instancePath, error.keyword,
+                  error.params.missingProperty ?? error.params.additionalProperty ?? error.params.type ?? ''].join('|')).sort();
+                const expected = [
+                  '|required|sourceCommit',
+                  '|additionalProperties|engineVersion',
+                  '|additionalProperties|aggregates',
+                  '/rebuiltAt|type|string'
+                ].sort();
+                check('known-state-negative-control', valid === false &&
+                  JSON.stringify(observed) === JSON.stringify(expected), {observed, expected});
+              } else {
+                check('real-config:' + filename, valid, errors);
+                validConfigCount += 1;
+              }
+            }
+            check('seven-other-configs', validConfigCount === 7);
+
+            const validateAllowlist = ajv.getSchema('publish-allowlist.schema.json');
+            const original = documentMap.get('config/publish-allowlist.json');
+            const clone = () => JSON.parse(JSON.stringify(original));
+            let allowlistFixtures = 0;
+            function allowlistCase(name, data, expectedValid, expectedError) {
+              const before = JSON.stringify(data);
+              const valid = validateAllowlist(data);
+              const errors = simplifiedErrors(validateAllowlist.errors);
+              const correctError = expectedValid ? errors.length === 0 :
+                errors.length === 1 && errors[0].keyword === expectedError.keyword &&
+                errors[0].instancePath === expectedError.instancePath &&
+                Object.entries(expectedError.params).every(([key, value]) => errors[0].params[key] === value);
+              check('allowlist-fixture:' + name,
+                valid === expectedValid && correctError && JSON.stringify(data) === before,
+                {expectedValid, valid, errors});
+              allowlistFixtures += 1;
+            }
+            allowlistCase('valid-with-note', clone(), true);
+            const withoutNote = clone();
+            delete withoutNote.note;
+            allowlistCase('valid-without-note', withoutNote, true);
+            for (const key of ['version', 'targetRepo', 'allow', 'deny', 'requireCalculatorParity']) {
+              const data = clone();
+              delete data[key];
+              allowlistCase('missing-' + key, data, false,
+                {keyword: 'required', instancePath: '', params: {missingProperty: key}});
+            }
+            for (const [key, wrongValue, type] of [
+              ['note', 0, 'string'], ['version', 0, 'string'], ['targetRepo', 0, 'string'],
+              ['allow', 'wrong', 'array'], ['deny', 'wrong', 'array'], ['requireCalculatorParity', 'true', 'boolean']
+            ]) {
+              const data = clone();
+              data[key] = wrongValue;
+              allowlistCase('wrong-type-' + key, data, false,
+                {keyword: 'type', instancePath: '/' + key, params: {type}});
+            }
+            for (const key of ['allow', 'deny']) {
+              const data = clone();
+              data[key] = [0];
+              allowlistCase('wrong-item-' + key, data, false,
+                {keyword: 'type', instancePath: '/' + key + '/0', params: {type: 'string'}});
+            }
+            const extra = clone();
+            extra.unexpected = true;
+            allowlistCase('extra-property', extra, false,
+              {keyword: 'additionalProperties', instancePath: '', params: {additionalProperty: 'unexpected'}});
+            record('allowlist-fixtures-total', allowlistFixtures);
+            record('coverage', {
+              schemas: schemaFiles.length, realConfigFiles: domainFiles.length,
+              validRealConfigs: validConfigCount, invalidRealConfigs: 1,
+              artifactJSON: 0, frontMatter: 0, jsonlLines: 0, toolingJSON: 0,
+              tier2RealArtifacts: 0, runtimeTier2: 'not_run', wp000Acceptance: 'blocked'
+            });
+            check('source-tree-clean', git('status', '--porcelain', '--untracked-files=all').toString('utf8') === '');
+            record('spec-review', 'pass; pending final checkpoint and evidence upload');
+          }
+          try {
+            main();
+          } catch (error) {
+            record('spec-review', {result: 'failure', message: error.message});
+            process.exitCode = 1;
+          }
+          JS
+          "$SPEC_ROOT/node/bin/node" "$SPEC_ROOT/review.cjs"
+
+      - name: Read back live refs and the unchanged checkout
+        id: postflight
+        env:
+          SPEC_ROOT: ${{ runner.temp }}/wp000-spec
+          SPEC_READ_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash "$SPEC_ROOT/checkpoint.sh" postflight
+
+      - name: Complete and print the evidence report
+        id: report
+        if: always()
+        env:
+          SPEC_ROOT: ${{ runner.temp }}/wp000-spec
+          SPEC_INIT_OUTCOME: ${{ steps.evidence.outcome }}
+          SPEC_CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          SPEC_PREFLIGHT_OUTCOME: ${{ steps.preflight.outcome }}
+          SPEC_TOOLS_OUTCOME: ${{ steps.tools.outcome }}
+          SPEC_REVIEW_OUTCOME: ${{ steps.review.outcome }}
+          SPEC_POSTFLIGHT_OUTCOME: ${{ steps.postflight.outcome }}
+          SPEC_JOB_STATUS: ${{ job.status }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$SPEC_ROOT/report"
+          {
+            printf '\nstep_outcomes:\n'
+            printf 'initialize: %s\ncheckout: %s\npreflight: %s\ntools: %s\nreview: %s\npostflight: %s\n' \
+              "$SPEC_INIT_OUTCOME" "$SPEC_CHECKOUT_OUTCOME" "$SPEC_PREFLIGHT_OUTCOME" "$SPEC_TOOLS_OUTCOME" "$SPEC_REVIEW_OUTCOME" "$SPEC_POSTFLIGHT_OUTCOME"
+            printf 'job_status_at_report: %s\n' "$SPEC_JOB_STATUS"
+            printf 'evidence_upload: pending; final upload outcome and job conclusion must be read separately\n'
+            printf 'wp000Acceptance: blocked\nstate_normalization: not_performed\nprovider_calls: 0\n'
+            printf 'budget_note: 0.10 USD authorization; actual billed usage is not established by this report\n'
+            date -u '+report_completed_at: %Y-%m-%dT%H:%M:%SZ'
+          } >> "$SPEC_ROOT/report/ci-report.txt"
+          SPEC_REPORT_BYTES=$(wc -c < "$SPEC_ROOT/report/ci-report.txt")
+          # Reserve room for ZIP metadata below the approved 1 MiB artifact limit.
+          if test "$SPEC_REPORT_BYTES" -gt 1000000; then
+            printf 'Evidence exceeds the artifact budget; no upload is permitted.\n'
+            exit 1
+          fi
+          printf '::group::ci-report.txt\n'
+          cat "$SPEC_ROOT/report/ci-report.txt"
+          printf '::endgroup::\n'
+          printf 'upload=true\n' >> "$GITHUB_OUTPUT"
+
+      - name: Upload the evidence, including failure evidence
+        id: upload
+        if: ${{ always() && steps.report.outputs.upload == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: wp000-spec-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/wp000-spec/report/ci-report.txt
+          retention-days: 1
+          compression-level: 6
+          if-no-files-found: error
+          include-hidden-files: false
+
+      - name: Record upload outcome and clean temporary tools
+        if: always()
+        env:
+          SPEC_ROOT: ${{ runner.temp }}/wp000-spec
+          SPEC_UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          SPEC_ARTIFACT_ID: ${{ steps.upload.outputs['artifact-id'] }}
+          SPEC_ARTIFACT_DIGEST: ${{ steps.upload.outputs['artifact-digest'] }}
+          SPEC_FINAL_JOB_STATUS: ${{ job.status }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'upload_outcome: %s\nartifact_id: %s\nartifact_digest: %s\njob_status_after_upload: %s\n' \
+            "$SPEC_UPLOAD_OUTCOME" "$SPEC_ARTIFACT_ID" "$SPEC_ARTIFACT_DIGEST" "$SPEC_FINAL_JOB_STATUS"
+          test "$SPEC_ROOT" = "$RUNNER_TEMP/wp000-spec"
+          rm -rf -- "$SPEC_ROOT"
+          test "$SPEC_UPLOAD_OUTCOME" = success
