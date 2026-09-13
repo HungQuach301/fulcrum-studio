@@ -1,0 +1,258 @@
+name: WP-000 bootstrap
+
+# Candidate only. Creating this file/commit does not authorize execution or spending.
+# Opening the Draft PR requires a separate owner grant for this one preparation run,
+# Node 20.20.2 EOL, managed action Node 24 (patch unproven), and the proposed limits below.
+# No push/synchronize trigger; state and acceptance routes have not been activated.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  prepare-lockfile:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'opened' &&
+      github.repository == 'HungQuach301/fulcrum-studio' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'wp/000' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.draft == true &&
+      github.run_number == 1 && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      BASELINE: a7fecd4f8a614d10687b471f70f71a5d5e08685f
+      BASELINE_TREE: ddb16f67fbf246e669dc28fc50718de75a365f11
+      SPEC_HEAD: 69e1ea78c51370d221edc9179dfd573340b63d5b
+      EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+      EVENT_BASE: ${{ github.event.pull_request.base.sha }}
+      EVENT_SHA: ${{ github.sha }}
+      NODE_VERSION: 20.20.2
+      NPM_VERSION: 10.8.2
+      NODE_ARCHIVE_SHA256: df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d
+      PROPOSED_BUDGET_USD: '0.05'
+      ARTIFACT_MAX_BYTES: '1048576'
+      NPM_CONFIG_AUDIT: 'false'
+      NPM_CONFIG_FUND: 'false'
+      NPM_CONFIG_IGNORE_SCRIPTS: 'true'
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+    steps:
+      - name: Initialize preparation receipt
+        id: init
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_RUN_NUMBER" = 1
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test "$(uname -m)" = x86_64
+          task_root="$(mktemp -d "$RUNNER_TEMP/wp000-lockfile.XXXXXX")"
+          mkdir -p "$task_root/report" "$task_root/tools" "$task_root/manifest" "$task_root/cache"
+          printf 'TASK_ROOT=%s\n' "$task_root" >> "$GITHUB_ENV"
+          printf 'NPM_CONFIG_CACHE=%s/cache\n' "$task_root" >> "$GITHUB_ENV"
+          {
+            printf 'purpose=lockfile-preparation-only\n'
+            printf 'runId=%s\nrunNumber=%s\nattempt=%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_ATTEMPT"
+            printf 'eventHead=%s\neventBase=%s\neventSha=%s\n' "$EVENT_HEAD" "$EVENT_BASE" "$EVENT_SHA"
+            printf 'baseline=%s\nbaselineTree=%s\n' "$BASELINE" "$BASELINE_TREE"
+            printf 'proposedBudgetUsd=%s\nnewGrantRequiredBeforeOpeningPR=true\n' "$PROPOSED_BUDGET_USD"
+            printf 'billedCostUsd=unknown\ninvoiceReconciled=false\napiZeroDoesNotProveZeroCost=true\n'
+            printf 'statePreparation=not-activated\nacceptance=not-activated\nwp000Acceptance=blocked\n'
+            printf 'npmCi=not-run\ntypecheck=not-run\nvalidator=not-run\nfixtures=not-run\n'
+            printf 'nodeEolException=requires-separate-current-grant\n'
+            printf 'actionRuntime=managed-by-GitHub; Node24-override-possible\nnode24Patch=unproven\n'
+            printf 'checkout=v4.3.1@34e114876b0b11c390a56381ad16ebd13914f8d5\n'
+            printf 'setup-node=v4.4.0@49933ea5288caeca8642d1e84afbd3f7d6820020\n'
+            printf 'upload-artifact=v4.6.2@ea165f8d65b6e75b540449e92b4886f43607fa02\n'
+            printf 'startedAt=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            printf 'runnerOS=%s\nrunnerArch=%s\nimageVersion=%s\n' "$RUNNER_OS" "$RUNNER_ARCH" "${ImageVersion:-unproven}"
+          } > "$task_root/report/ci-report.txt"
+
+      - name: Checkout exact candidate head
+        id: checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+          lfs: false
+
+      - name: Verify source checkpoint and read live refs
+        id: checkpoint
+        shell: bash
+        env:
+          READ_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_HEAD" =~ ^[a-f0-9]{40}$ ]]
+          test "$EVENT_BASE" = "$BASELINE"
+          test "$(git rev-parse HEAD)" = "$EVENT_HEAD"
+          test "$(git rev-parse "$BASELINE^{tree}")" = "$BASELINE_TREE"
+          test "$(git rev-parse "$SPEC_HEAD^{tree}")" = "$BASELINE_TREE"
+          test "$(git show -s --format=%P HEAD)" = "$BASELINE"
+          git merge-base --is-ancestor "$SPEC_HEAD" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          test ! -e package-lock.json
+          test ! -e node_modules
+          # Read-only token in environment; no persisted checkout credentials or token in URL/logs.
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$READ_TOKEN" | base64 -w0)"
+          GIT_TERMINAL_PROMPT=0 timeout 30s git ls-remote --refs "https://github.com/$GITHUB_REPOSITORY.git" refs/heads/main refs/heads/wp/000 > "$TASK_ROOT/live-refs.txt"
+          unset GIT_CONFIG_VALUE_0 READ_TOKEN
+          test "$(awk '$2 == "refs/heads/main" {print $1}' "$TASK_ROOT/live-refs.txt")" = "$BASELINE"
+          test "$(awk '$2 == "refs/heads/wp/000" {print $1}' "$TASK_ROOT/live-refs.txt")" = "$EVENT_HEAD"
+          git ls-tree -r HEAD > "$TASK_ROOT/source-tree.before"
+          git diff --no-renames --name-status "$BASELINE" HEAD > "$TASK_ROOT/report/candidate-files.txt"
+          {
+            printf 'checkoutSha=%s\ncheckoutTree=%s\nparent=%s\n' "$(git rev-parse HEAD)" "$(git rev-parse HEAD^{tree})" "$(git show -s --format=%P HEAD)"
+            printf 'stateBlob=%s\n' "$(git rev-parse HEAD:pipeline/state.json)"
+            printf 'checkpoint=pass\n'
+          } >> "$TASK_ROOT/report/ci-report.txt"
+
+      - name: Fetch checksum-pinned Node archive into temporary storage
+        id: archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="node-v$NODE_VERSION-linux-x64.tar.xz"
+          curl --fail --silent --show-error --proto '=https' --tlsv1.2 --connect-timeout 20 --max-time 90 \
+            "https://nodejs.org/dist/v$NODE_VERSION/$archive" -o "$TASK_ROOT/tools/$archive"
+          printf '%s  %s\n' "$NODE_ARCHIVE_SHA256" "$TASK_ROOT/tools/$archive" | sha256sum --check --strict
+          tar -xJf "$TASK_ROOT/tools/$archive" -C "$TASK_ROOT/tools" --no-same-owner
+          printf 'VERIFIED_NODE_ROOT=%s/tools/node-v%s-linux-x64\n' "$TASK_ROOT" "$NODE_VERSION" >> "$GITHUB_ENV"
+          printf 'nodeArchiveSha256=%s\narchiveChecksum=pass\n' "$NODE_ARCHIVE_SHA256" >> "$TASK_ROOT/report/ci-report.txt"
+
+      - name: Set up required Node major using pinned action
+        id: setup
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20.20.2'
+          check-latest: false
+
+      - name: Verify exact helper tools
+        id: tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$NODE_VERSION"
+          test "$("$VERIFIED_NODE_ROOT/bin/node" --version)" = "v$NODE_VERSION"
+          test "$("$VERIFIED_NODE_ROOT/bin/node" "$VERIFIED_NODE_ROOT/lib/node_modules/npm/bin/npm-cli.js" --version)" = "$NPM_VERSION"
+          printf '%s/bin\n' "$VERIFIED_NODE_ROOT" >> "$GITHUB_PATH"
+          {
+            printf 'helperNode=%s\n' "$("$VERIFIED_NODE_ROOT/bin/node" --version)"
+            printf 'helperNpm=%s\n' "$("$VERIFIED_NODE_ROOT/bin/node" "$VERIFIED_NODE_ROOT/lib/node_modules/npm/bin/npm-cli.js" --version)"
+            printf 'tools=pass\n'
+          } >> "$TASK_ROOT/report/ci-report.txt"
+
+      - name: Generate lockfile only in temporary manifest directory
+        id: lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp package.json "$TASK_ROOT/manifest/package.json"
+          cd "$TASK_ROOT/manifest"
+          "$VERIFIED_NODE_ROOT/bin/node" "$VERIFIED_NODE_ROOT/lib/node_modules/npm/bin/npm-cli.js" install \
+            --package-lock-only --ignore-scripts --no-audit --no-fund --lockfile-version=3 --include=dev --include=optional
+          test -s package-lock.json
+          test ! -e node_modules
+          cmp package.json "$GITHUB_WORKSPACE/package.json"
+          "$VERIFIED_NODE_ROOT/bin/node" "$VERIFIED_NODE_ROOT/lib/node_modules/npm/bin/npm-cli.js" ls \
+            --all --package-lock-only --json > "$TASK_ROOT/report/dependency-inventory.json"
+          cp package-lock.json "$TASK_ROOT/report/package-lock.json"
+          sha256sum package.json package-lock.json > "$TASK_ROOT/report/manifest-lock.sha256"
+          printf 'lockfilePreparation=pass\ntransitiveTree=requires-read-only-review-before-acceptance\n' >> "$TASK_ROOT/report/ci-report.txt"
+
+      - name: Read back source and live refs without changes
+        id: preservation
+        if: ${{ always() && steps.checkpoint.outcome == 'success' }}
+        shell: bash
+        env:
+          READ_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EVENT_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git ls-tree -r HEAD > "$TASK_ROOT/source-tree.after"
+          cmp "$TASK_ROOT/source-tree.before" "$TASK_ROOT/source-tree.after"
+          test ! -e package-lock.json
+          test ! -e node_modules
+          test "$(git rev-parse HEAD:pipeline/state.json)" = 6f6eb4493fb6173b19bf2af126bf0b0cd68c5593
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$READ_TOKEN" | base64 -w0)"
+          GIT_TERMINAL_PROMPT=0 timeout 30s git ls-remote --refs "https://github.com/$GITHUB_REPOSITORY.git" refs/heads/main refs/heads/wp/000 > "$TASK_ROOT/live-refs.after"
+          unset GIT_CONFIG_VALUE_0 READ_TOKEN
+          cmp "$TASK_ROOT/live-refs.txt" "$TASK_ROOT/live-refs.after"
+          printf 'sourceUnchanged=true\nliveRefsUnchanged=true\n' >> "$TASK_ROOT/report/ci-report.txt"
+
+      - name: Finalize bounded preparation report
+        id: report
+        if: ${{ always() && steps.init.outcome == 'success' }}
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          CHECKPOINT_OUTCOME: ${{ steps.checkpoint.outcome }}
+          ARCHIVE_OUTCOME: ${{ steps.archive.outcome }}
+          SETUP_OUTCOME: ${{ steps.setup.outcome }}
+          TOOLS_OUTCOME: ${{ steps.tools.outcome }}
+          LOCKFILE_OUTCOME: ${{ steps.lockfile.outcome }}
+          PRESERVATION_OUTCOME: ${{ steps.preservation.outcome }}
+        run: |
+          set -euo pipefail
+          {
+            printf 'jobStatusBeforeUpload=%s\ncheckoutOutcome=%s\ncheckpointOutcome=%s\n' "$JOB_STATUS" "$CHECKOUT_OUTCOME" "$CHECKPOINT_OUTCOME"
+            printf 'archiveOutcome=%s\nsetupOutcome=%s\ntoolsOutcome=%s\n' "$ARCHIVE_OUTCOME" "$SETUP_OUTCOME" "$TOOLS_OUTCOME"
+            printf 'lockfileOutcome=%s\npreservationOutcome=%s\n' "$LOCKFILE_OUTCOME" "$PRESERVATION_OUTCOME"
+            printf 'state-current=unchanged-known-invalid\nstateValidation=not-run\nrealDataAllValid=false\nwp000Acceptance=blocked\n'
+            printf 'ciSpecPR9Acceptance=separate-historical-evidence-only\n'
+            printf 'finishedAt=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$TASK_ROOT/report/ci-report.txt"
+          cat "$TASK_ROOT/report/ci-report.txt"
+          bytes="$(find "$TASK_ROOT/report" -type f -printf '%s\n' | awk '{sum += $1} END {print sum+0}')"
+          printf 'artifactUncompressedBytes=%s\n' "$bytes"
+          # Reserve archive-header headroom; the uploaded artifact's actual size still needs API read-back.
+          test "$bytes" -le "$((ARTIFACT_MAX_BYTES - 16384))"
+          printf 'artifactUncompressedBytes=%s\n' "$bytes" >> "$TASK_ROOT/report/ci-report.txt"
+          final_bytes="$(find "$TASK_ROOT/report" -type f -printf '%s\n' | awk '{sum += $1} END {print sum+0}')"
+          test "$final_bytes" -le "$((ARTIFACT_MAX_BYTES - 16384))"
+          printf 'artifactReady=true\n' >> "$GITHUB_OUTPUT"
+
+      - name: Upload bounded preparation artifact
+        id: upload
+        if: ${{ always() && steps.report.outputs.artifactReady == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: wp000-lockfile-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ env.TASK_ROOT }}/report/
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 9
+          overwrite: false
+
+      - name: Final evidence and cleanup
+        if: ${{ always() && steps.init.outcome == 'success' }}
+        shell: bash
+        env:
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        run: |
+          set -euo pipefail
+          printf 'uploadOutcome=%s\nartifactId=%s\nartifactDigest=%s\n' "$UPLOAD_OUTCOME" "$ARTIFACT_ID" "$ARTIFACT_DIGEST"
+          printf 'artifactMetadataAndBilledCost=requires-read-back; missing evidence blocks the next phase\n'
+          case "$TASK_ROOT" in "$RUNNER_TEMP"/wp000-lockfile.*) rm -rf -- "$TASK_ROOT" ;; *) exit 1 ;; esac
+          test "$UPLOAD_OUTCOME" = success
+
+# No state/acceptance job, automatic write, provider secret, cache, dispatch execution or retry loop.
+# A failed/skipped/cancelled run, missing receipt, changed checkpoint or exceeded limit stops progression.
+# Final run/job status, action runtime warnings, artifact size/expiry and billing evidence are read back
+# from GitHub separately; this preparation report cannot certify its own future upload or invoice.

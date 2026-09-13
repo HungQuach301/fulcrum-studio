@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": false,
+    "types": ["node"]
+  },
+  "include": ["scripts/**/*.ts", "engine/io/**/*.ts", "engine/providers/**/*.ts"],
+  "exclude": ["node_modules"]
+}
