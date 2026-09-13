@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import ts from "typescript";
 import { dryRun } from "./log-run";
@@ -659,7 +660,250 @@ export function fixtureSuite(source: GitSource, schemas: Schemas, tempRoot: stri
   return results;
 }
 
-if (require.main === module) {
+/**
+ * L is a separate, future Actions-only lockfile/tool feasibility route.
+ * It never calls makeStateCandidate, Schemas, Validator, fixtureSuite or --acceptance.
+ * npm ci belongs to the preceding workflow step; this route never installs or retries.
+ * Existing acceptance/state functions and the acceptance body below are unchanged.
+ */
+function lockfileCheckL(): number {
+  const lockSha256 = "28effb5a9d439ea02b39b3cc9ec8f49157b962534213bf3464f5edd19199ba97";
+  const manifestSha256 = "448d897c27e4a664cbbbbefab0de4c9e7dde705e2bbc24b06dd8f67928e8f8e5";
+  const direct: Record<string, string> = { "typescript": "5.4.5", "@types/node": "20.12.7",
+    "ajv": "8.12.0", "ajv-formats": "2.1.1", "tsx": "4.7.1", "gray-matter": "4.0.3" };
+  const receipt: Record<string, unknown> = {
+    purpose: "lockfile-L-only", startedAt: new Date().toISOString(), result: "fail",
+    npmCi: "owned-by-preceding-workflow-step", npmLs: "not-run", installedTree: "not-run",
+    minimalToolCase: "not-run", projectTypecheck: "not-run", validator: "not-run", fullFixtures: "not-run",
+    statePreparation: "not-activated", acceptance: "not-activated", wp000Acceptance: "blocked",
+    lockfileAcceptance: "requires-exact-run-readback-and-owner-review", billedCostUsd: null,
+    billingReconciled: false, apiZeroDoesNotProveZeroCost: true,
+    artifactAndFinalCleanup: "require-workflow-and-API-readback", commands: []
+  };
+  let reportRoot: string | undefined, smokeRoot: string | undefined;
+  const immutableFiles = new Map<string, Buffer>();
+  const sha256 = (bytes: Buffer | string): string => createHash("sha256").update(bytes).digest("hex");
+  const record = (value: unknown): Record<string, unknown> => {
+    assert.ok(value !== null && typeof value === "object" && !Array.isArray(value), "Expected JSON object");
+    return value as Record<string, unknown>;
+  };
+  const readJson = (path: string): Record<string, unknown> => record(JSON.parse(readFileSync(path, "utf8")));
+  const sameMap = (left: unknown, right: unknown): void => {
+    assert.deepEqual(Object.entries(record(left)).sort(), Object.entries(record(right)).sort());
+  };
+  try {
+    assert.equal(process.env.GITHUB_ACTIONS, "true", "Actions-only L route; offline preparation grants no execution");
+    assert.deepEqual(process.argv.slice(2), ["--lockfile-l"]);
+    assert.equal(process.env.GITHUB_REPOSITORY, "HungQuach301/fulcrum-studio");
+    assert.equal(process.env.GITHUB_EVENT_NAME, "pull_request");
+    assert.equal(process.env.EVENT_ACTION, "synchronize");
+    assert.equal(process.env.EVENT_PR, "10");
+    assert.equal(process.env.GITHUB_RUN_NUMBER, "4");
+    assert.equal(process.env.GITHUB_RUN_ATTEMPT, "1");
+    assert.equal(process.version, "v20.20.2");
+    assert.equal(process.platform, "linux"); assert.equal(process.arch, "x64");
+    assert.equal(process.env.NPM_CONFIG_IGNORE_SCRIPTS, "true");
+    assert.ok(!process.env.ESBUILD_BINARY_PATH, "No alternate esbuild binary or repair route");
+    const sourceRoot = realpathSync(process.env.GITHUB_WORKSPACE ?? "");
+    const runnerTemp = realpathSync(process.env.RUNNER_TEMP ?? "");
+    const taskRoot = realpathSync(process.env.TASK_ROOT ?? "");
+    assert.ok(relative(runnerTemp, taskRoot).startsWith("wp000-lockfile-l."));
+    assert.equal(dirname(taskRoot), runnerTemp);
+    assert.ok(relative(sourceRoot, taskRoot).startsWith(".."), "Temporary data must be outside source");
+    const installRoot = inside(taskRoot, "manifest"), modulesRoot = inside(installRoot, "node_modules");
+    assert.equal(realpathSync(process.cwd()), installRoot);
+    assert.equal(realpathSync(process.env.NODE_PATH ?? ""), modulesRoot);
+    const nodeRoot = realpathSync(process.env.VERIFIED_NODE_ROOT ?? "");
+    assert.equal(nodeRoot, inside(taskRoot, "tools/node-v20.20.2-linux-x64"));
+    assert.equal(realpathSync(process.execPath), inside(nodeRoot, "bin/node"));
+    reportRoot = inside(taskRoot, "report");
+    assert.ok(lstatSync(reportRoot).isDirectory() && !lstatSync(reportRoot).isSymbolicLink());
+    const npmCli = inside(nodeRoot, "lib/node_modules/npm/bin/npm-cli.js");
+    const run = (label: string, args: string[]): string => {
+      assert.ok(/^[a-z0-9-]+$/.test(label));
+      const outcome = spawnSync(process.execPath, args, { cwd: installRoot, encoding: "utf8",
+        timeout: 20000, maxBuffer: 131072, env: process.env });
+      const stdout = outcome.stdout ?? "", stderr = outcome.stderr ?? "";
+      writeFileSync(inside(reportRoot!, `${label}.stdout.txt`), stdout);
+      writeFileSync(inside(reportRoot!, `${label}.stderr.txt`), stderr);
+      (receipt.commands as unknown[]).push({ label, executable: process.execPath, args,
+        status: outcome.status, signal: outcome.signal, error: outcome.error ? String(outcome.error) : null,
+        stdoutBytes: Buffer.byteLength(stdout), stdoutSha256: sha256(stdout),
+        stderrBytes: Buffer.byteLength(stderr), stderrSha256: sha256(stderr) });
+      assert.equal(outcome.error, undefined, `${label}: command error; no repair/retry`);
+      assert.equal(outcome.signal, null, `${label}: signal; no repair/retry`);
+      assert.equal(outcome.status, 0, `${label}: nonzero exit; no repair/retry`);
+      return stdout;
+    };
+    for (const root of [sourceRoot, installRoot]) for (const file of ["package.json", "package-lock.json"]) {
+      const path = inside(root, file);
+      assert.ok(lstatSync(path).isFile() && !lstatSync(path).isSymbolicLink());
+      const bytes = readFileSync(path); immutableFiles.set(path, bytes);
+      assert.equal(sha256(bytes), file === "package.json" ? manifestSha256 : lockSha256);
+      if (file === "package-lock.json") assert.equal(bytes.length, 22948);
+    }
+    const manifest = readJson(inside(installRoot, "package.json"));
+    const lock = readJson(inside(installRoot, "package-lock.json"));
+    assert.equal(lock.lockfileVersion, 3);
+    assert.equal(lock.name, manifest.name); assert.equal(lock.version, manifest.version);
+    const packages = record(lock.packages), rootEntry = record(packages[""]);
+    sameMap(rootEntry.dependencies, manifest.dependencies);
+    sameMap(rootEntry.devDependencies, manifest.devDependencies);
+    sameMap({ ...record(manifest.dependencies), ...record(manifest.devDependencies) }, direct);
+    const event = readJson(process.env.GITHUB_EVENT_PATH ?? ""), pr = record(event.pull_request);
+    assert.equal(event.action, "synchronize"); assert.equal(pr.number, 10); assert.equal(pr.draft, true);
+    const head = record(pr.head), base = record(pr.base);
+    assert.equal(record(head.repo).full_name, "HungQuach301/fulcrum-studio");
+    assert.equal(record(base.repo).full_name, "HungQuach301/fulcrum-studio");
+    assert.equal(head.ref, "wp/000"); assert.equal(base.ref, "main");
+    assert.equal(base.sha, BASELINE); assert.equal(head.sha, process.env.EVENT_HEAD);
+    receipt.sourceCommit = git(sourceRoot, "rev-parse", "HEAD").trim();
+    receipt.sourceTree = git(sourceRoot, "rev-parse", "HEAD^{tree}").trim();
+    assert.equal(receipt.sourceCommit, head.sha);
+    assert.equal(git(sourceRoot, "show", "-s", "--format=%P", "HEAD").trim(), "d149efe64b0ed33b73d57a6e806c61d2fa24b340");
+    assert.equal(git(sourceRoot, "rev-parse", `${BASELINE}^{tree}`).trim(), BASELINE_TREE);
+    receipt.eventSha = process.env.GITHUB_SHA; receipt.runId = process.env.GITHUB_RUN_ID;
+    receipt.runNumber = 4; receipt.attempt = 1; receipt.helperNode = process.version;
+    receipt.npm = run("npm-version", [npmCli, "--version"]).trim();
+    assert.equal(receipt.npm, "10.8.2");
+    const npmView = record(JSON.parse(run("npm-ls", [npmCli, "ls", "--all", "--json"])));
+    receipt.npmLs = "pass";
+    assert.equal(npmView.name, manifest.name); assert.equal(npmView.version, manifest.version);
+    const supported = (constraint: unknown, current: string): boolean => {
+      if (constraint === undefined) return true;
+      assert.ok(Array.isArray(constraint) && constraint.every(value => typeof value === "string"));
+      const values = constraint as string[];
+      if (values.includes(`!${current}`)) return false;
+      const positive = values.filter(value => !value.startsWith("!"));
+      return !positive.length || positive.includes(current) || positive.includes("any");
+    };
+    const installed = new Map<string, Record<string, unknown>>(), excluded: unknown[] = [];
+    for (const [path, raw] of Object.entries(packages)) {
+      if (path === "") continue;
+      // The exact reviewed lockfile is flat. Unknown/nested topology fails instead of being guessed.
+      assert.match(path, /^node_modules\/(?:@[^/]+\/)?[^/]+$/);
+      const entry = record(raw), location = inside(installRoot, path);
+      assert.equal(entry.libc, undefined, "This reviewed lockfile has no libc selector");
+      const eligible = supported(entry.os, process.platform) && supported(entry.cpu, process.arch);
+      if (!eligible) {
+        assert.equal(entry.optional, true, `${path}: platform exclusion must be optional in lockfile`);
+        assert.ok(!existsSync(location), `${path}: platform-excluded package unexpectedly installed`);
+        excluded.push({ path, version: entry.version, optional: true, os: entry.os ?? null, cpu: entry.cpu ?? null,
+          reason: "lockfile-os-or-cpu-excludes-linux-x64", resolved: entry.resolved, integrity: entry.integrity });
+        continue;
+      }
+      assert.ok(lstatSync(location).isDirectory() && !lstatSync(location).isSymbolicLink());
+      assert.equal(realpathSync(location), location);
+      assert.ok(!existsSync(inside(location, "node_modules")), `${path}: unreviewed nested topology`);
+      const packageJson = readJson(inside(location, "package.json"));
+      assert.equal(packageJson.name, path.slice("node_modules/".length));
+      assert.equal(packageJson.version, entry.version, `${path}: installed version differs`);
+      installed.set(path, entry);
+    }
+    const actualPaths: string[] = [];
+    for (const item of readdirSync(modulesRoot, { withFileTypes: true })) {
+      if (item.name === ".bin") { assert.ok(item.isDirectory()); continue; }
+      if (item.name === ".package-lock.json") { assert.ok(item.isFile()); continue; }
+      assert.ok(item.isDirectory() && !item.isSymbolicLink(), `Unexpected node_modules entry: ${item.name}`);
+      if (item.name.startsWith("@")) {
+        for (const child of readdirSync(inside(modulesRoot, item.name), { withFileTypes: true })) {
+          assert.ok(child.isDirectory() && !child.isSymbolicLink());
+          actualPaths.push(`node_modules/${item.name}/${child.name}`);
+        }
+      } else actualPaths.push(`node_modules/${item.name}`);
+    }
+    assert.deepEqual(actualPaths.sort(), [...installed.keys()].sort(), "Installed paths must exactly match platform-admitted lock entries");
+    const seen = new Set<string>(), observedEdges = new Map<string, Set<string>>();
+    const walk = (raw: unknown, owner = ""): void => {
+      const node = record(raw);
+      assert.ok(!node.error && !node.invalid && !node.extraneous && !node.missing, "npm ls reports a dependency problem");
+      if (node.problems !== undefined) assert.deepEqual(node.problems, []);
+      if (node.dependencies === undefined) return;
+      for (const [name, rawChild] of Object.entries(record(node.dependencies))) {
+        const path = `node_modules/${name}`, child = record(rawChild), locked = packages[path];
+        assert.ok(locked, `npm ls includes unlocked package: ${path}`);
+        if (!observedEdges.has(owner)) observedEdges.set(owner, new Set());
+        observedEdges.get(owner)!.add(name);
+        if (!installed.has(path)) {
+          const entry = record(locked);
+          assert.equal(entry.optional, true);
+          assert.ok(!supported(entry.os, process.platform) || !supported(entry.cpu, process.arch));
+          // npm may retain an empty placeholder for an unavailable optional platform package.
+          assert.ok(child.version === undefined && !child.error && !child.invalid && !child.extraneous);
+          assert.ok(child.dependencies === undefined && child.problems === undefined);
+          continue;
+        }
+        assert.equal(child.version, installed.get(path)!.version, `npm ls version differs: ${path}`);
+        seen.add(path); walk(child, path);
+      }
+    };
+    walk(npmView);
+    assert.deepEqual([...seen].sort(), [...installed.keys()].sort(), "npm ls must account for every installed lock entry");
+    const graph: unknown[] = [];
+    for (const [owner, entry] of [["", rootEntry] as const, ...installed.entries()]) {
+      const edges = { ...record(entry.dependencies ?? {}), ...record(entry.optionalDependencies ?? {}),
+        ...record(entry.peerDependencies ?? {}), ...(owner === "" ? record(entry.devDependencies ?? {}) : {}) };
+      const expected = Object.keys(edges).filter(name => installed.has(`node_modules/${name}`)).sort();
+      const actual = [...(observedEdges.get(owner) ?? [])].filter(name => installed.has(`node_modules/${name}`)).sort();
+      assert.deepEqual(actual, expected, `${owner || "root"}: npm ls dependency edges differ from lockfile`);
+      graph.push({ owner: owner || "root", dependencies: actual });
+    }
+    receipt.dependencyEdges = graph;
+    receipt.installedTree = "pass";
+    receipt.platform = { os: process.platform, cpu: process.arch, installed: installed.size, excluded: excluded.length };
+    receipt.installed = [...installed].map(([path, entry]) => ({ path, version: entry.version,
+      resolved: entry.resolved, integrity: entry.integrity, optional: entry.optional === true }));
+    receipt.excluded = excluded;
+    receipt.integrityMeaning = "Lockfile SRI preserved; npm ci owns download integrity. No independent tarball-byte audit claimed.";
+    const localRequire = createRequire(inside(installRoot, "package.json"));
+    for (const name of Object.keys(direct).filter(name => name !== "@types/node")) {
+      const resolved = realpathSync(localRequire.resolve(name));
+      assert.ok(!relative(modulesRoot, resolved).startsWith("..") && !isAbsolute(relative(modulesRoot, resolved)));
+    }
+    assert.equal(ts.version, direct.typescript);
+    assert.equal(run("tsc-version", [inside(modulesRoot, "typescript/bin/tsc"), "--version"]).trim(), "Version 5.4.5");
+    const tsxVersion = run("tsx-version", [inside(modulesRoot, "tsx/dist/cli.mjs"), "--version"]);
+    assert.match(tsxVersion, /(?:^|\n)tsx v4\.7\.1(?:\r?\n|$)/);
+    assert.match(tsxVersion, /(?:^|\n)node v20\.20\.2(?:\r?\n|$)/);
+    smokeRoot = inside(taskRoot, "smoke"); assert.ok(!existsSync(smokeRoot)); mkdirSync(smokeRoot);
+    const sample = 'const value: number = 2 + 3;\nprocess.stdout.write(String(value) + "\\n");\n';
+    const tsPath = inside(smokeRoot, "minimal.ts"); writeFileSync(tsPath, sample);
+    run("tsc-minimal", [inside(modulesRoot, "typescript/bin/tsc"), "--noEmit", "--strict", "--target", "ES2022",
+      "--module", "commonjs", "--moduleResolution", "node", "--types", "node", "--typeRoots", inside(modulesRoot, "@types"), tsPath]);
+    assert.equal(run("tsx-minimal", [inside(modulesRoot, "tsx/dist/cli.mjs"), tsPath]), "5\n");
+    // The API must use its installed optional binary normally. No rebuild/fallback download is enabled here.
+    const esbuild = localRequire("esbuild") as { version: string;
+      transformSync(input: string, options: { loader: string; format: string; target: string }): { code: string } };
+    assert.equal(esbuild.version, record(packages["node_modules/esbuild"]).version);
+    const transformed = esbuild.transformSync(sample, { loader: "ts", format: "cjs", target: "node20" });
+    const jsPath = inside(smokeRoot, "minimal.cjs"); writeFileSync(jsPath, transformed.code);
+    assert.equal(run("esbuild-minimal", [jsPath]), "5\n");
+    receipt.toolVersions = { typescript: ts.version, tsx: direct.tsx, esbuild: esbuild.version };
+    receipt.minimalToolCase = { outcome: "pass", inputSha256: sha256(sample), outputSha256: sha256(transformed.code),
+      expectedStdout: "5\n", projectTypecheck: "not-run" };
+    receipt.result = "pass";
+  } catch (error) { receipt.error = String(error); receipt.result = "fail"; }
+  finally {
+    try {
+      if (smokeRoot) { rmSync(smokeRoot, { recursive: true, force: true }); assert.ok(!existsSync(smokeRoot)); }
+      receipt.minimalTemporaryCleanup = smokeRoot ? "pass" : "not-created";
+    } catch (error) { receipt.cleanupError = String(error); receipt.result = "fail"; }
+    try {
+      for (const [path, before] of immutableFiles) assert.deepEqual(readFileSync(path), before, `${path}: source or temporary manifest changed`);
+      receipt.manifestAndLockUnchanged = immutableFiles.size === 4;
+      if (immutableFiles.size !== 4) receipt.result = "fail";
+    } catch (error) { receipt.preservationError = String(error); receipt.result = "fail"; }
+    receipt.finishedAt = new Date().toISOString();
+    if (reportRoot) writeFileSync(inside(reportRoot, "lockfile-l-receipt.json"), `${JSON.stringify(receipt, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ purpose: receipt.purpose, result: receipt.result,
+      wp000Acceptance: "blocked", receipt: reportRoot ? "lockfile-l-receipt.json" : "unavailable" })}\n`);
+  }
+  return receipt.result === "pass" ? 0 : 1;
+}
+
+if (require.main === module && process.argv[2] === "--lockfile-l") {
+  process.exitCode = lockfileCheckL();
+} else if (require.main === module) {
   let temp: string | undefined;
   let source: GitSource | undefined;
   let statusBefore: string | undefined;
