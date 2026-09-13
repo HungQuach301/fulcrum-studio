@@ -10,7 +10,8 @@ trong repo theo danh mục và cách phân loại ở D-21. Không viết logic 
 
 Gói quyết định/đặc tả D-21 không phải triển khai WP này. Nó giữ nguyên trạng thái WP và
 mọi dữ liệu; chỉ sau khi D-21 có trên `main` và có phê duyệt triển khai riêng mới được
-viết scaffold, cài/chạy công cụ hoặc chuẩn hóa state.
+viết scaffold, cài/chạy công cụ của WP hoặc chuẩn hóa state. Riêng CI kiểm gói đặc tả
+trước merge chỉ theo phê duyệt giới hạn ở D-21 mục 7; kết quả đó không nghiệm thu WP.
 
 ### 2. Input
 `PROJECT.md` · `AGENTS.md` · `engine/ops/guardrails.md` · `engine/docs/01-architecture.md` ·
@@ -22,7 +23,7 @@ viết scaffold, cài/chạy công cụ hoặc chuẩn hóa state.
 `engine/ops/definition-of-done.md` · `engine/docs/07-delivery-plan.md` ·
 `engine/docs/02-decisions.md` D-14, D-19, D-20, D-21 · `engine/docs/13-upgrade-safety.md`
 
-### 2b. Checkpoint trước khi bắt đầu
+### 2b. Checkpoint trước khi triển khai WP-000
 - Mốc 0 ở trạng thái `done` trong `backlog.md`
 - Chưa có `package.json` ở gốc repo
 - `engine/contracts/format-spec.schema.json` tồn tại (nếu không, Phần F chưa nạp đủ)
@@ -112,9 +113,20 @@ tuyên bố đã nghiệm thu; nếu cần chúng để quyết định một ca
   canvas-map, storyboard, preflight, timing, proof, render-manifest, qa-report, package,
   publication, metrics, analyst-note, license-ledger. Không khai `versions` thì kế thừa
   qua `episodeId`; có khai thì phải khớp bộ ba đã đóng băng. Không ghi bộ kế thừa trở
-  lại artifact, không đổi cấu hình để ép khớp. Không tự dựng cơ chế lấy bản lịch sử
-  hoặc dùng phiên bản visual tokens thay phiên bản Channel Pack; thiếu cách xác định
-  cấu hình đúng bộ phiên bản thì dừng, trình điểm thiếu.
+  lại artifact, không đổi cấu hình để ép khớp.
+  Nguồn `C` là commit đầy đủ được duyệt trước khi bắt đầu tập, có sẵn trong nguồn
+  cung cấp cho validator; không là SHA tự tham chiếu của commit chứa artifact.
+  Đọc channel tại `C` từ kênh trong episodeId, lấy genre từ chính channel đó và đọc
+  format-spec tại cùng `C`. Dựng đúng ba chuỗi theo D-21 mục 5:
+  `engine = <channel.engineVersion>@git-commit:<C>`;
+  `genre = <format-spec.version>@git-tree:<tree của toàn Genre Pack tại C>`;
+  `channel = git-tree:<tree của toàn Channel Pack tại C>`.
+  SHA đủ 40 ký tự hex thường; nhãn không rỗng. Đối chiếu nguyên chuỗi và cả hai pack tree.
+  Brief/state/đường dẫn phải cùng kênh/tập; bộ ba đủ, khớp nhau và khớp nguồn.
+  Thiếu commit/nhãn/pack, thiếu hoặc trùng ánh xạ tập, hoặc có sai khác thì fail.
+  Không dùng HEAD mới nhất, tự fetch lịch sử, suy pin từ nhãn đứng riêng hoặc dùng
+  visual-tokens.version thay phiên bản Channel Pack. Phiên bản thành phần giữ riêng.
+  Nguồn đã đóng băng không đổi khi pipeline chạy tiếp; không sửa data/schema để ép khớp.
 - Outline ghép beat theo `index`; thiếu/trùng index làm ghép mơ hồ thì fail.
   Với `T = tổng beats[].estimatedMs`, tính tỷ lệ từng beat `estimatedMs / T`.
   So với `beats[].shareOfDuration ± limits.beatShareTolerance` của Genre Pack.
@@ -146,7 +158,7 @@ Chưa duyệt, nguồn khác hoặc thiếu biên nhận thì giữ state và d�
 `engine/ops/backlog.md`
 
 `pipeline/state.json` chỉ thuộc phạm vi có điều kiện ở mục 3c và D-21 mục 2; việc liệt kê
-đường dẫn không cấp quyền sửa. Gói chuẩn bị D-21 có phạm vi năm file riêng theo phê duyệt
+đường dẫn không cấp quyền sửa. Gói chuẩn bị D-21 có phạm vi sáu file riêng theo phê duyệt
 của chủ dự án, không mở rộng phạm vi triển khai scaffold ở đây. Khi triển khai, không sửa
 chính file WP/DoD/quyết định/contracts; thiếu luật thì dừng và mở gói đặc tả riêng.
 
@@ -175,6 +187,18 @@ chính file WP/DoD/quyết định/contracts; thiếu luật thì dừng và m�
   phê duyệt riêng. Không thay settings/quota để làm workflow chạy được.
 - Dry-run log không ghi `pipeline/runs.jsonl` và không là biên nhận chi phí thật.
   Không triển khai store/provider thật hoặc thêm stage sản xuất trong WP này.
+
+### 5a. CI đặc tả riêng — không là Output/acceptance của WP
+
+`.github/workflows/review-wp000-spec.yml` chỉ thuộc gói đặc tả PR #9, theo D-21 mục 7.
+Delta từ head `50e7d39387015858ef9e5985d36ac95a6974ea1b` là bốn tài liệu sửa và
+workflow mới; schema allowlist giữ nguyên. Toàn PR có sáu file, mọi WP vẫn giữ trạng thái.
+Ngoại lệ JavaScript, bộ bảy gói tạm, Node 20.20.2 đã EOL, pin/hash/options và quyền chạy
+được giới hạn đúng một run đầu tiên/attempt 1, một job tối đa 10 phút, trần 0,10 USD.
+Không suy phê duyệt EOL/cài/chạy này sang triển khai WP; sáu dependency WP ở mục 5 không đổi.
+Cổng đặc tả kiểm cấu trúc schema/allowlist và guardrails, giữ state invalid, không thực
+hiện mục 6 bên dưới. Lỗi hoặc thiếu bằng chứng thì dừng, không tự sửa/rerun.
+Chỉ acceptance WP-000 sau phê duyệt triển khai riêng mới kiểm đầy đủ hai tầng và DoD.
 
 ### 5b. Điều kiện dừng
 - `main` bị đổi bởi nguồn khác giữa chừng
@@ -220,7 +244,10 @@ hai bước chuẩn bị không được ghi nhận là acceptance đạt. Trư�
    layout sai hướng, thiếu trường limits và thiếu/khác nguồn phiên bản.
 8. Kiểm D-19/D-20: đủ ba nhánh origin và từng trường đi kèm; model partial; từng chỉ số
    null có/thiếu/sai lý do; private/public có/thiếu thời điểm; đủ 17 nhóm phiên bản
-   khai/kế thừa/thiếu/lệch; tỷ lệ beat và tổng thời lượng. Kiểm trực tiếp hàm quan hệ
+   khai/kế thừa/thiếu/lệch; nguồn C thiếu/khác, nhãn trống/khác, pack tree khác,
+   channel/episodeId lệch, ánh xạ tập thiếu/trùng, và bản nguồn đã đóng băng khác HEAD
+   hiện tại. Ca đạt phải dùng đúng nguồn đã pin, không tự fetch hoặc lấy HEAD thay thế.
+   Kiểm tỷ lệ beat và tổng thời lượng. Kiểm trực tiếp hàm quan hệ
    tầng 2 để chứng minh riêng phần bị tầng 1 bắt trước; luồng thật luôn chạy tầng 1 trước.
    Ca thời lượng dương dưới sàn cũ được schema nhận đúng kiểu, nhưng vẫn phải kiểm miền;
    clip proof không bị áp một ngưỡng nội dung mới. Không gắn kết quả mới với 59 fixture

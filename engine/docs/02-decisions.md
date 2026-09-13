@@ -507,22 +507,30 @@ nhưng DoD còn bị chặn: `pipeline/state.json` chưa hợp schema và nằm 
 
 **Quyết định.**
 
-1. **Tách chuẩn bị đặc tả khỏi thực thi.** Gói chuẩn bị chỉ thay đúng năm file:
+1. **Tách chuẩn bị đặc tả khỏi thực thi.** Toàn PR đặc tả #9 có đúng sáu file:
    `engine/docs/02-decisions.md`, `engine/ops/work-packages/WP-000-scaffold.md`,
-   `engine/ops/definition-of-done.md`, `engine/contracts/README.md` và
-   `engine/contracts/publish-allowlist.schema.json`. D-21 chỉ nối thêm; D-01–D-20
-   giữ nguyên. PR mang `[wp-change]` và `[contract-change]`, do chủ dự án quyết định
-   merge. Chuẩn bị hoặc merge đặc tả không nghiệm thu WP-000, không đổi trạng thái
-   backlog, không cấp quyền cài dependency, chạy kiểm, dispatch/rerun, gọi provider,
-   chi tiêu hoặc đổi settings/quota. Không kế thừa ngoại lệ CI của PR Mốc 0.
-   Phải có quyết định này trên `main` và phê duyệt triển khai riêng trước khi thực thi.
+   `engine/ops/definition-of-done.md`, `engine/contracts/README.md`,
+   `engine/contracts/publish-allowlist.schema.json` và
+   `.github/workflows/review-wp000-spec.yml`. D-21 được nối sau D-20; các lần sửa
+   đặc tả tiếp theo chỉ sửa D-21, giữ nguyên văn D-01–D-20 và lịch sử commit.
+   PR mang `[wp-change]` và `[contract-change]`, do chủ dự án quyết định merge.
+   Chuẩn bị hoặc merge đặc tả không nghiệm thu WP-000, không đổi backlog và không
+   cấp quyền triển khai, chuẩn hóa state, gọi provider hoặc đổi settings/quota.
+   Quyền cài/chạy và ngân sách CI đặc tả chỉ có trong lượt được duyệt riêng ở mục 7;
+   không được suy thành quyền thực thi WP, dispatch/rerun hoặc quyền thường trực.
+   D-21 phải có trên `main` và phải có phê duyệt triển khai riêng trước khi thực thi
+   WP-000. CI đặc tả mục 7 được chạy trước merge sau phê duyệt riêng của chủ dự án.
+   Không kế thừa ngoại lệ CI của PR Mốc 0.
 
 2. **Chuẩn hóa state đúng một lần, có điều kiện.** Sau phê duyệt triển khai riêng cho
    checkpoint, phạm vi và lần chạy cụ thể, cho phép chuẩn bị bản sửa
    `pipeline/state.json` trên nhánh `wp/000` để nghiệm thu WP-000. Ngoại lệ này chỉ
-   thay thế hạn chế phạm vi của WP-000 và quy tắc chỉ reindex tạo chỉ mục ở
-   `01-architecture.md` mục Mô hình đồng thời, guardrails mục 1.7, trong lần
-   bootstrap đã duyệt; không tạo một writer thường trực hoặc triển khai WP-002.
+   thay thế hạn chế phạm vi của WP-000 và riêng quy tắc `pipeline/state.json` chỉ
+   do `reindex.yml` xây lại tại **D-15 mục 4**, `01-architecture.md` mục Mô hình
+   đồng thời và guardrails mục 1.7, trong đúng lần bootstrap đã duyệt.
+   Các quy tắc hàng đợi, ghi artifact và khử trùng còn lại của D-15 giữ nguyên.
+   Ngoại lệ không tạo writer thường trực, không triển khai WP-002 và không cấp
+   quyền chuẩn hóa từ PR đặc tả; nó chỉ có hiệu lực sau phê duyệt triển khai riêng.
    - Đối chiếu lại blob state `6f6eb4493fb6173b19bf2af126bf0b0cd68c5593` và việc
      chưa có state tập. Khác thì dừng, không chuyển thành một cuộc di trú khác.
    - Bản sửa được sinh trong Actions từ cây nguồn đã pin: giữ nguyên `note` và
@@ -583,6 +591,31 @@ nhưng DoD còn bị chặn: `pipeline/state.json` chưa hợp schema và nằm 
    Bộ ba của brief và episode-state phải đủ và khớp nhau. Artifact không khai thì
    kế thừa; nếu khai thì phải khớp bộ ba đã đóng băng. Thiếu nguồn hoặc lệch thì fail,
    không chọn một bên, không lấy phiên bản visual tokens làm phiên bản Channel Pack.
+
+   **Nguồn bất biến của bộ phiên bản.** `C` là commit nguồn đầy đủ được chủ dự án
+   duyệt trước khi bắt đầu tập; không phải SHA tự tham chiếu của commit chứa artifact.
+   `C` pin cả Engine và công cụ ở gốc repo. Từ `episodeId` xác định kênh; brief,
+   episode-state và đường dẫn phải cùng kênh/tập. Đọc `channels/{channel}/channel.json`
+   tại `C`, lấy genre từ chính file đó rồi đọc `genres/{genre}/format-spec.json` tại `C`.
+   Định danh là chuỗi nhãn kèm Git SHA, không phải semver range:
+
+   | Trường | Giá trị bắt buộc |
+   |---|---|
+   | `versions.engine` | `<channel.engineVersion>@git-commit:<C>` |
+   | `versions.genre` | `<format-spec.version>@git-tree:<tree của toàn Genre Pack tại C>` |
+   | `versions.channel` | `git-tree:<tree của toàn Channel Pack tại C>` |
+
+   Git SHA là đủ 40 ký tự hex thường của repo hiện tại. Đọc nhãn không rỗng và cả hai
+   pack tree tại cùng `C`, dựng bộ mong đợi rồi so khớp nguyên chuỗi. Nhãn đứng riêng
+   không xác định được nguồn; phiên bản layout/asset-policy/visual tokens là phiên bản
+   thành phần, không thay pin pack. Giữ nguyên cấu hình và schema, không thêm trường.
+   Brief và episode-state phải đủ bộ ba, khớp nhau và khớp nguồn; đủ 17 nhóm artifact
+   vẫn được kế thừa qua `episodeId` khi không khai. Không ghi ngược bộ kế thừa vào file.
+   Không có commit trong nguồn đã cung cấp, thiếu nhãn/pack, thiếu hoặc trùng ánh xạ tập,
+   hoặc có sai khác thì fail. Không tự dùng HEAD mới nhất, tự fetch lịch sử hoặc đoán pin.
+   Pipeline phải giữ `C` đã đóng băng khi chạy tiếp; nguồn triển khai tương lai được
+   duyệt riêng. Các pin Mốc 0 chỉ là bằng chứng nguồn, không nghiệm thu Engine sản xuất.
+
    Với outline, tỷ lệ beat là `estimatedMs / tổng estimatedMs`, ghép beat bằng
    `index`, đối chiếu `shareOfDuration ± limits.beatShareTolerance`; tổng thời lượng
    đổi sang phút kiểm riêng với `limits.targetDurationMin`. Thiếu hoặc trùng index
@@ -603,10 +636,84 @@ nhưng DoD còn bị chặn: `pipeline/state.json` chưa hợp schema và nằm 
    cùng phiên bản trong WP giữ nguyên; dependency gián tiếp phải được khóa và trình
    trong lockfile trước nghiệm thu. Không tự chuyển việc cài/chạy sang Codex.
 
+7. **Cổng CI riêng cho PR đặc tả #9, có phê duyệt giới hạn.** Review tại head
+   `50e7d39387015858ef9e5985d36ac95a6974ea1b`, tree
+   `121d12091b7dcecc8a9b13788741a17a1ad45f7f`, chưa có kết quả CI. Chủ dự án đã duyệt
+   sửa đúng bốn tài liệu ở mục 1 và thêm `review-wp000-spec.yml`; schema allowlist giữ
+   blob `a0de2c89a18bbe20e751dec69e5b508ee1a9efb9`. Delta là bốn sửa/một thêm;
+   toàn PR so với main có sáu file. Thêm đúng một commit có parent là head trên,
+   không amend/rebase/force-push, giữ PR Draft và cập nhật báo cáo năm mục.
+
+   **Thay thế có giới hạn.** Mục này mở rộng riêng phạm vi năm file của gói đặc tả
+   thành sáu file, cho phép JavaScript trong workflow/helper tạm thay quy ước TypeScript
+   của AGENTS.md chỉ ở CI này, và cho phép cài công cụ tạm trước khi D-21 lên main.
+   Nó không đổi phạm vi code WP-000, không đổi D-12 về nối khối sản xuất, không miễn
+   kiểm CI/contracts và không dùng ngoại lệ CI Mốc 0. Quyền này đến từ phê duyệt
+   cụ thể của chủ dự án, không phát sinh tự động từ việc đọc hoặc merge D-21.
+
+   **Một lượt tự động.** Workflow chỉ nhận `pull_request` loại `synchronize` vào main;
+   job chỉ chạy PR #9 còn Draft, head `wp/000` cùng repo, `run_number = 1` và
+   `run_attempt = 1`. Không có push, dispatch, rerun, pull_request_target, Ready hoặc
+   chuỗi gọi workflow khác. Checkout `pull_request.head.sha`, ghi riêng SHA sự kiện.
+   Kiểm main/tree đúng checkpoint Mốc 0 và parent ứng viên đúng head đã pin trước
+   cài/kiểm; đọc lại ref cuối lượt. Phạm vi lấy từ hai baseline bất biến và delta được
+   duyệt, không đọc phạm vi do WP trên ứng viên tự sửa. Ref khác thì dừng.
+
+   **Công cụ được khóa.** Node `20.20.2`, npm đi kèm `10.8.2`; chủ dự án chấp nhận
+   Node 20 đã EOL cho đúng lượt CI này, không suy sang triển khai WP-000.
+   Archive `node-v20.20.2-linux-x64.tar.xz` có SHA-256
+   `df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d`.
+   Action checkout v4.3.1 pin `34e114876b0b11c390a56381ad16ebd13914f8d5`;
+   upload-artifact v4.6.2 pin `ea165f8d65b6e75b540449e92b4886f43607fa02`.
+   Nguồn là nodejs.org, registry.npmjs.org và các action chính thức trên GitHub.
+
+   Bộ bảy gói tạm: `ajv@8.12.0`, `ajv-formats@2.1.1`, `fast-deep-equal@3.1.3`,
+   `json-schema-traverse@1.0.0`, `require-from-string@2.0.2`, `uri-js@4.4.1`,
+   `punycode@2.3.1`. Workflow ghi nguyên URL và SHA-512 integrity đã được duyệt;
+   tải, kiểm hash trước giải nén vào vùng tạm. Không chạy lifecycle script hoặc dùng
+   resolver npm chọn thêm phiên bản. Không tạo manifest/lockfile gốc. Sáu dependency
+   trực tiếp và yêu cầu lockfile của WP-000 giữ nguyên, chưa được cài bởi quyền này.
+
+   Ajv bật `allErrors`, `validateFormats`, `strictSchema`, `strictTypes`,
+   `strictTuples`, `strictNumbers`, `allowUnionTypes`; `strictRequired: false`.
+   Tắt `coerceTypes`, `useDefaults`, `removeAdditional`. Giữ kiểm required/if/then và
+   mọi kiểu/format của draft-07; không đổi option, schema hoặc dữ liệu sau lỗi để đạt.
+
+   **Nội dung kiểm.** Kiểm phạm vi, D-01–D-20, blob/mode dữ liệu/backlog/schema,
+   hai nhãn ở commit và tiêu đề PR; quét diff mới cho token/khóa riêng/gán secret,
+   kiểm hằng số nội dung trong code/schema Engine, có ca âm và đối chứng hợp lệ.
+   Kiểm đủ 38 schema bằng meta-schema draft-07 và Ajv; phân loại đủ 46 JSON.
+   Kiểm tầng 1 tám file cấu hình/dữ liệu: bảy file ngoài state phải đạt.
+   Allowlist có ca đạt có/không note, thiếu từng trường required, sai kiểu từng trường
+   và phần tử allow/deny, khóa thừa; kiểm đúng keyword/path, không chỉ nhận một lỗi bất kỳ.
+   JSON lạ, lỗi schema/ref/format, lỗi bất ngờ hoặc bị bỏ qua đều chặn cổng đặc tả.
+
+   State gốc vẫn phải bị từ chối đúng bốn lỗi: thiếu sourceCommit, rebuiltAt sai kiểu
+   vì null, hai khóa thừa engineVersion và aggregates. Ghi `state-current: invalid`,
+   `realDataAllValid: false` và `wp000Acceptance: blocked`; không đổi kết quả state thành
+   pass. Ca âm bắt đúng lỗi chứng minh schema từ chối dữ liệu sai. Cổng đặc tả chỉ
+   nghiệm thu phạm vi kiểm này, không chứng nhận toàn bộ dữ liệu thật hợp lệ.
+   Không chạy hoặc nghiệm thu tầng 2, scripts/validate.ts, fixture WP-000, hồi quy năm
+   brief hoặc sản xuất; không gắn kết quả CI này với bộ 59 fixture PR #5 trong Codex.
+
+   **Quyền, ngân sách và bằng chứng.** Một job GitHub-hosted `ubuntu-24.04` x64 tiêu
+   chuẩn, không matrix, timeout 10 phút; trần riêng 0,10 USD. Token chỉ
+   `contents: read`, `pull-requests: read`; checkout không lưu credentials; không
+   secret provider, OIDC hoặc quyền ghi repo. Artifact tối đa 1 MiB, retention một ngày,
+   không cache; agent đọc ngay và đưa kết quả vào báo cáo PR.
+   `ci-report.txt` và log ghi run/attempt, SHA/tree thực tế, phiên bản runner/công cụ,
+   các kết quả thật kể cả failure/skipped/cancelled. Thiếu báo cáo, sai SHA, lượt bị
+   skipped/cancelled hoặc một kiểm bắt buộc lỗi thì chưa có nghiệm thu đặc tả.
+   Báo cáo và dữ liệu thử chỉ ở vùng tạm; source tree phải sạch sau kiểm.
+   Thiếu quyền/policy/quota, lệch checkpoint/pin, vượt giới hạn hoặc lỗi thì dừng,
+   không đổi settings/credential, tự sửa, thêm lượt hoặc chuyển việc kiểm sang Codex.
+   Thành công chỉ đủ để trình chủ dự án review; không chuyển Ready, merge, đóng WP,
+   chuẩn hóa state, gọi provider hoặc cấp quyền/ngân sách tiếp theo.
+
 **Phương án bị loại.** Bỏ state khỏi danh mục hoặc sửa schema cho state đạt; coi JSON parse
 được là đã qua validator; merge code chưa kiểm để đăng ký workflow rồi gọi đó là done;
-dùng kết quả fixture cũ trong Codex thay cho Actions; sửa dữ liệu hoặc cấp quyền chạy
-ngay trong gói đặc tả. Các cách này che lỗi, thiếu bằng chứng hoặc vượt phê duyệt.
+dùng kết quả fixture cũ trong Codex thay cho Actions; sửa dữ liệu hoặc suy quyền thực thi
+WP từ phê duyệt đặc tả. Các cách này che lỗi, thiếu bằng chứng hoặc vượt phê duyệt.
 
 **Hệ quả và giới hạn.** Bỏ yêu cầu thủ công duy nhất cho bootstrap WP-000, thay bằng bằng
 chứng Actions gắn đúng commit trước merge; bỏ cách gọi mọi JSON là artifact, giữ kiểm
@@ -619,4 +726,5 @@ WP-000 vẫn chưa done khi chưa có kết quả Actions thực tế. Hồ sơ 
 schema trong Codex, không phải validator runtime hoặc Actions; hồi quy năm brief và các
 giới hạn nghiệm thu Mốc 0 giữ nguyên. D-21 không nghiệm thu chất lượng prompt, hình/giọng,
 C4 hoặc quyền tài khoản/provider, không thay giới hạn D-17, không sửa cấu hình đang chờ,
-không mở WP sau và không cấp ngân sách.
+không mở WP sau hoặc cấp ngân sách triển khai/provider. Phê duyệt giới hạn ở mục 7
+chỉ dành cho một lượt CI đặc tả; kết thúc lượt đó thì quyền/ngân sách ấy đóng lại.

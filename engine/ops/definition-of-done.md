@@ -45,3 +45,31 @@
 ## Bắt buộc với WP chạm hình ảnh
 
 13. Kiểm hồi quy thị giác chạy. Khác biệt phải được duyệt rõ ràng, không bỏ qua mặc định.
+
+## Cổng riêng của PR đặc tả #9 — D-21 mục 7
+
+PR đặc tả không đóng WP và không áp dụng một dòng backlog done. Nó có cổng Actions riêng
+`review-wp000-spec.yml`, sau phê duyệt một lượt cụ thể của chủ dự án, trước khi D-21
+lên main. Không gọi đây là bốn job WP đã đạt, không thay acceptance-wp000.yml, không
+kế thừa ngoại lệ CI Mốc 0.
+
+Cổng chỉ đạt khi đúng commit ứng viên có parent là
+`50e7d39387015858ef9e5985d36ac95a6974ea1b`; main/tree vẫn đúng checkpoint D-21;
+delta bốn tài liệu và một workflow, toàn PR sáu file; dữ liệu, cấu hình, schema hiện có,
+D-01–D-20, mọi dòng backlog và lịch sử được bảo toàn. Không dùng phạm vi do WP ở head
+ứng viên tự sửa. Kiểm nhãn/quyết định, secret và hằng số nội dung có ca âm/đối chứng.
+
+Bắt buộc có kết quả meta-schema/biên dịch 38 schema, phân loại 46 JSON, tầng 1 của tám
+file dữ liệu/cấu hình và fixture allowlist như D-21 mục 7. Bảy file ngoài state phải đạt.
+State thật giữ blob gốc, vẫn bị từ chối đúng bốn lỗi; báo `state-current: invalid`,
+`realDataAllValid: false`, `wp000Acceptance: blocked`. Bắt đúng lỗi trong ca âm không
+nghiệm thu state. Lỗi khác, file chưa phân loại hoặc thiếu bước bắt buộc thì fail.
+
+Báo cáo `ci-report.txt` và log phải ghi SHA/tree checkout thực, SHA sự kiện, run/attempt,
+công cụ/runner thực tế, từng nhóm kiểm và failure/skipped/cancelled; artifact tối đa
+1 MiB giữ một ngày, không cache. Một job tối đa 10 phút, trần 0,10 USD, chỉ run đầu
+tiên/attempt 1 đã duyệt. Thiếu bằng chứng thì chưa đạt; không sửa hoặc chạy lại tự động.
+Tầng 2, các fixture acceptance WP-000, typecheck, hồi quy năm brief và sản xuất ghi
+chưa chạy/chưa nghiệm thu. Source tree không được đổi trong khi kiểm.
+Chủ dự án đọc báo cáo năm mục và checkpoint mới rồi giao bước tiếp; CI đạt không cấp
+quyền Ready, merge, triển khai, chuẩn hóa state, provider hoặc ngân sách mới.

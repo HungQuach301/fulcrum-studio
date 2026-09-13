@@ -84,6 +84,51 @@ không ép kiểu, điền mặc định hoặc xóa trường thừa để đ�
 Schema allowlist chỉ kiểm cấu trúc; cấu hình chính sách, quyền truy cập và kiểm thực thi
 xuất bản theo D-16 vẫn phải được chứng minh ở công việc tương ứng.
 
+## Nguồn bộ phiên bản — D-21 mục 5, giữ D-19/D-20
+
+`C` là commit nguồn đầy đủ được duyệt trước khi bắt đầu tập. Đọc channel tại `C` từ
+kênh trong episodeId, lấy genre từ channel đó, rồi đọc format-spec tại cùng `C`.
+
+| Trường | Định danh nguồn |
+|---|---|
+| `versions.engine` | `<channel.engineVersion>@git-commit:<C>` |
+| `versions.genre` | `<format-spec.version>@git-tree:<tree của toàn Genre Pack tại C>` |
+| `versions.channel` | `git-tree:<tree của toàn Channel Pack tại C>` |
+
+SHA đủ 40 ký tự hex thường, nhãn không rỗng. Tầng 2 dựng bộ mong đợi từ nguồn rồi so
+nguyên chuỗi; brief và episode-state phải đủ bộ ba, cùng tập/kênh và khớp nhau.
+17 nhóm artifact của D-19/D-20 giữ versions tuỳ chọn và kế thừa qua episodeId;
+có khai thì phải khớp nguồn đã đóng băng, không ghi bộ kế thừa ngược vào artifact.
+Nhãn đứng riêng, visual-tokens.version và phiên bản thành phần không thay pin pack.
+Thiếu commit/nhãn/pack, ánh xạ tập thiếu/trùng hoặc lệch thì fail; không lấy HEAD hiện
+tại, tự fetch lịch sử hoặc sửa cấu hình/schema để ép khớp. Nguồn sản xuất phải được duyệt
+riêng; pin tài liệu Mốc 0 không nghiệm thu Engine. Schema chỉ nhận kiểu string hiện có;
+định danh nguồn và quan hệ thuộc tầng 2, không thêm trường hoặc regex vào schema.
+
+## CI của PR đặc tả #9 — D-21 mục 7
+
+Workflow `review-wp000-spec.yml` có phạm vi/nguồn pin và quyền chạy riêng. Nó kiểm
+38 schema bằng meta-schema draft-07 và Ajv, phân loại 46 JSON và kiểm tầng 1 tám file
+cấu hình/dữ liệu. Bảy file ngoài state phải đạt; allowlist có fixture đạt, thiếu từng
+required, sai kiểu từng trường/phần tử mảng và khóa thừa, kèm keyword/path mong đợi.
+
+State nguyên bản phải giữ blob và bị từ chối đúng bốn lỗi đã biết: thiếu sourceCommit,
+rebuiltAt null sai kiểu, thừa engineVersion và aggregates. Ghi `state-current: invalid`,
+`realDataAllValid: false`, `wp000Acceptance: blocked`. Ca âm bắt đúng lỗi có thể đạt;
+kết quả state vẫn invalid. Cổng này không chứng nhận toàn bộ dữ liệu hợp lệ và không
+thay nghĩa vụ chuẩn hóa có phê duyệt riêng trước acceptance WP-000.
+Không bỏ file, sửa dữ liệu trong bộ nhớ hoặc nới schema/options. Bất kỳ lỗi ngoài dự
+kiến hoặc JSON chưa phân loại đều chặn cổng đặc tả.
+
+Bộ công cụ, toàn bộ SHA/SRI, tùy chọn Ajv và giới hạn một run/attempt được ghi ở D-21
+mục 7 và workflow. Tải/cài/helper/report chỉ trong vùng tạm Actions, không tạo tooling
+JSON gốc; dữ liệu thử/dependency không được tính là dữ liệu nguồn. Báo cáo tách dữ liệu
+thật, fixture, guardrails và nhóm chưa chạy. Tầng 2, fixture WP-000, typecheck và hồi quy
+năm brief chưa được thực thi bởi CI đặc tả; kết quả mới không thay bộ 59 fixture PR #5.
+Schema allowlist giữ blob `a0de2c89a18bbe20e751dec69e5b508ee1a9efb9` ở lần sửa này.
+Cổng vẫn cần nhãn contract-change và quyết định được kiểm bằng máy; không dùng ngoại
+lệ CI Mốc 0, không cấp quyền chuẩn hóa state hoặc triển khai/xuất bản.
+
 ## Quy ước chung
 
 - Mọi schema dùng `additionalProperties: false`.
