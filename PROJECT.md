@@ -78,5 +78,8 @@ Nghi ngờ thì đẩy xuống Genre Pack. Nghi ngờ tiếp thì đẩy xuống
 
 ## Trạng thái
 
-Mốc 0 đang mở. Không sang Mốc 1 trước khi DoD Mốc 0 được xác nhận trong
-`engine/ops/backlog.md`.
+Mốc 0 đã đóng ở phạm vi tài liệu và cấu hình. Hồ sơ DoD, bằng chứng và các phần
+chưa nghiệm thu được ghi trong `engine/ops/backlog.md`.
+
+Mốc 1 chưa bắt đầu. WP-000 là việc tiếp theo; phạm vi và điều kiện thực thi phải
+được chủ dự án phê duyệt riêng.
