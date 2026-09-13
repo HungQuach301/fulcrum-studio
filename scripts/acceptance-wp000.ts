@@ -124,6 +124,69 @@ function contentLiterals(source: ValidationSource): Set<string> {
   return result;
 }
 
+/** Inspect complete syntax trees: a changed value can sit below an unchanged property-name line. */
+function contentRanges(path: string, text: string): string[] {
+  const source = ts.createSourceFile(path, text, ts.ScriptTarget.ES2022, true), matches: string[] = [];
+  const fields = new Set(["targetDurationMin", "beatCount", "scriptWordCount", "canvasRegionCount", "sceneCount",
+    "sceneMinDurationMs", "devicesMin", "lexiconMin", "proofStillsMin", "counterClaimsMin",
+    "beatShareTolerance", "fpsAllowed"]);
+  const unwrap = (node: ts.Expression): ts.Expression => {
+    while (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) ||
+        ts.isTypeAssertionExpression(node) || ts.isSatisfiesExpression(node)) node = node.expression;
+    return node;
+  };
+  const keyOf = (node: ts.Node): string | undefined => {
+    if (ts.isIdentifier(node) || ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+    if (ts.isComputedPropertyName(node) || ts.isElementAccessExpression(node)) {
+      const expression = ts.isComputedPropertyName(node) ? node.expression : node.argumentExpression;
+      if (!expression) return undefined;
+      const key = unwrap(expression);
+      return ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key) ? key.text : undefined;
+    }
+    if (ts.isPropertyAccessExpression(node)) return keyOf(node.name);
+    return undefined;
+  };
+  const numericData = (node: ts.Expression): boolean => {
+    const value = unwrap(node);
+    if (ts.isNumericLiteral(value)) return true;
+    if (ts.isPrefixUnaryExpression(value) &&
+        (value.operator === ts.SyntaxKind.PlusToken || value.operator === ts.SyntaxKind.MinusToken)) return numericData(value.operand);
+    return ts.isArrayLiteralExpression(value) && value.elements.some(element =>
+      ts.isSpreadElement(element) ? numericData(element.expression) : numericData(element));
+  };
+  const prescribedFixtureDatum = (node: ts.Node, key: string, expression: ts.Expression): boolean => {
+    const value = unwrap(expression);
+    if (path !== "scripts/acceptance-wp000.ts" || key !== "targetDurationMin" || !ts.isNumericLiteral(value) ||
+        !ts.isBinaryExpression(node) || !ts.isPropertyAccessExpression(node.left) ||
+        !ts.isIdentifier(node.left.expression) || node.left.expression.text !== "data") return false;
+    // WP 6.4 prescribes the scalar 5; D-20 exercises positive subunit artifact data.
+    // These exact named cases are not Genre Pack limits. No array or other context is exempted.
+    const call = value.text === "5" ? ["run", "DoD4:brief-duration-five"] :
+      value.text === "0.5" ? ["bad", "D20:brief-subunit-still-domain-fails"] : undefined;
+    if (!call) return false;
+    for (let parent: ts.Node | undefined = node.parent; parent; parent = parent.parent) {
+      if (!ts.isCallExpression(parent) || !ts.isIdentifier(parent.expression) || parent.expression.text !== call[0]) continue;
+      const label = parent.arguments[0];
+      if (!label || !ts.isStringLiteral(label) || label.text !== call[1]) continue;
+      for (let owner: ts.Node | undefined = parent.parent; owner; owner = owner.parent) {
+        if (ts.isFunctionDeclaration(owner) && owner.name?.text === "fixtureSuite") return true;
+      }
+    }
+    return false;
+  };
+  const record = (node: ts.Node, key: string | undefined, value: ts.Expression | undefined): void => {
+    if (key && fields.has(key) && value && numericData(value) && !prescribedFixtureDatum(node, key, value)) matches.push(node.getText(source));
+  };
+  const visit = (node: ts.Node): void => {
+    if (ts.isPropertyAssignment(node) || ts.isPropertyDeclaration(node)) record(node, keyOf(node.name), node.initializer);
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) record(node, keyOf(unwrap(node.left)), node.right);
+    if (ts.isVariableDeclaration(node)) record(node, keyOf(node.name), node.initializer);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return matches;
+}
+
 export function checkChanges(changes: readonly Change[], wpOnMain: string, literals: Set<string>, policy: BootstrapPolicy): string[] {
   const errors: string[] = [], scope = baselineScope(wpOnMain);
   for (const change of changes) {
@@ -156,7 +219,12 @@ export function checkChanges(changes: readonly Change[], wpOnMain: string, liter
         ts.forEachChild(node, visit);
       };
       visit(source);
-      if (/(?:targetDurationMin|beatCount|scriptWordCount|canvasRegionCount|sceneCount|sceneMinDurationMs|devicesMin|lexiconMin|proofStillsMin|counterClaimsMin)\s*:\s*(?:\[\s*\d|\d)/.test(addedLines)) errors.push(`content-range:${path}`);
+      const previousRanges = contentRanges(path, before ?? "");
+      for (const range of contentRanges(path, after)) {
+        const index = previousRanges.indexOf(range);
+        if (index < 0) errors.push(`content-range:${path}`);
+        else previousRanges.splice(index, 1);
+      }
     }
   }
   return [...new Set(errors)];
@@ -265,10 +333,18 @@ export function fixtureSuite(source: GitSource, schemas: Schemas, tempRoot: stri
     } finally { rmSync(root, { recursive: true, force: true }); }
   };
   const good = (name: string, trial: Trial): void => run(name, () => assert.deepEqual(exercise(trial), []));
-  const bad = (name: string, trial: Trial, tier: Issue["tier"], field: string, rule?: string): void => run(name, () => {
+  const bad = (name: string, trial: Trial, tier: Issue["tier"], field: string, rule?: string,
+    targetFile = pathFor(trial.kind)): void => run(name, () => {
     const issues = exercise(trial);
-    assert.ok(issues.some(error => error.tier === tier && error.field.includes(field) && (!rule || error.rule === rule)), JSON.stringify(issues));
+    assert.ok(issues.some(error => error.file === targetFile && error.tier === tier &&
+      error.field.includes(field) && (!rule || error.rule === rule)), JSON.stringify(issues));
   });
+  const exactFailure = (issues: Issue[], file: string, field: string, rule: string): Issue => {
+    const failure = issues.find(error => error.file === file && error.tier === "domain" &&
+      error.field === field && error.rule === rule);
+    assert.ok(failure, JSON.stringify(issues));
+    return failure;
+  };
   const modify = (kind: string, change: (data: ObjectValue) => void): ObjectValue => { const data = value(kind); change(data); return data; };
 
   for (const kind of ["brief", "episode-state", ...VERSIONED]) good(`positive:${kind}`, { kind });
@@ -276,7 +352,7 @@ export function fixtureSuite(source: GitSource, schemas: Schemas, tempRoot: stri
   // The value 5 is the exact mandatory DoD4 negative fixture, not a content limit in implementation.
   run("DoD4:brief-duration-five", () => {
     const issues = exercise({ kind: "brief", data: modify("brief", data => { data.targetDurationMin = 5; }) });
-    const failure = issues.find(error => error.tier === "domain" && error.field === "targetDurationMin");
+    const failure = exactFailure(issues, pathFor("brief"), "targetDurationMin", "domain");
     assert.ok(failure); assert.deepEqual(failure.expected, bounds("targetDurationMin"));
     assert.ok(failure.sources.includes(`${BASELINE}:${pinned.formatPath}`));
   });
@@ -354,9 +430,25 @@ export function fixtureSuite(source: GitSource, schemas: Schemas, tempRoot: stri
     const kinds: Record<string, string> = { targetDurationMin: "brief", beatCount: "outline", beatShareTolerance: "outline",
       scriptWordCount: "script", devicesMin: "script", lexiconMin: "script", canvasRegionCount: "canvas-map",
       sceneCount: "storyboard", sceneMinDurationMs: "storyboard", fpsAllowed: "storyboard", proofStillsMin: "proof", counterClaimsMin: "sources" };
-    bad(`source:missing-limit:${key}`, { kind: kinds[key], alterSource: fixture => {
-      const format = copy(pinned.format); delete object(format.limits)[key];
-      fixture.historical.set(`${BASELINE}:${pinned.formatPath}`, JSON.stringify(format)); } }, "domain", "");
+    run(`source:missing-limit:${key}`, () => {
+      const kind = kinds[key], format = copy(pinned.format);
+      delete object(format.limits)[key];
+      const issues = exercise({ kind, alterSource: fixture => {
+        fixture.historical.set(`${BASELINE}:${pinned.formatPath}`, JSON.stringify(format)); } });
+      const sourceRequired = list(object(object(schema("format-spec").properties).limits).required).includes(key);
+      const fields: Record<string, string> = { targetDurationMin: "targetDurationMin", beatCount: "beats.length",
+        beatShareTolerance: "beats", scriptWordCount: "wordCount", devicesMin: "devicesUsed.length",
+        lexiconMin: "lexiconUsed.length", canvasRegionCount: "regions.length", sceneCount: "scenes.length",
+        sceneMinDurationMs: "scenes[0].durationMs", fpsAllowed: "fps", proofStillsMin: "stills.length",
+        counterClaimsMin: "counterClaims.length" };
+      const failure = exactFailure(issues, pathFor(kind), sourceRequired ? "versions" : fields[key], "missing-source-field");
+      assert.deepEqual(failure.actual, { sourceField: `/limits/${key}`, value: "<missing>" });
+      const constraint: unknown = sourceRequired ?
+        { schema: "engine/contracts/format-spec.schema.json", rule: "required", details: { missingProperty: key } } :
+        key === "fpsAllowed" ? "array of finite numbers" : "finite number";
+      assert.deepEqual(failure.expected, { sourceField: `/limits/${key}`, constraint });
+      assert.ok(failure.sources.includes(`${BASELINE}:${pinned.formatPath}`));
+    });
   }
 
   const origins: Record<string, ObjectValue> = { snapshot: { kind: "snapshot", snapshotKey: "fixture/series/date" },
@@ -419,7 +511,25 @@ export function fixtureSuite(source: GitSource, schemas: Schemas, tempRoot: stri
     bad(`versions:${kind}:wrong-episode`, { kind, data: modify(kind, data => { data.episodeId = `${slug}/2099-02-other-fixture`; }) }, "domain", "versions");
   }
   bad("versions:duplicate-approval", { kind: "brief", approvals: [{ episodeId, commit: BASELINE }, { episodeId, commit: BASELINE }] }, "domain", "versions");
-  bad("versions:wrong-approved-C", { kind: "brief", approvals: [{ episodeId, commit: source.head }] }, "domain", "versions");
+  bad("versions:wrong-approved-C", { kind: "brief", approvals: [{ episodeId, commit: source.head }] },
+    "domain", "versions", "self-referencing-source");
+  for (const kind of ["brief", "episode-state", "sources"]) run(`versions:self-reference-coherent:${kind}`, () => {
+    // Construct a coherent source tuple at HEAD: rejection must come from the explicit relation,
+    // not from leaving the brief or state on the baseline tuple.
+    const headVersions = frozen(source, schemas, episodeId, source.head).versions;
+    const issues = exercise({ kind, approvals: [{ episodeId, commit: source.head }], alterFiles: files => {
+      for (const linked of ["brief", "episode-state"]) {
+        const data = object(JSON.parse(string(files.get(pathFor(linked)))));
+        data.versions = copy(headVersions);
+        assert.deepEqual(schemas.check(`${linked}.schema.json`, data, pathFor(linked)), []);
+        files.set(pathFor(linked), JSON.stringify(data));
+      }
+    } });
+    const failure = exactFailure(issues, pathFor(kind), "versions", "self-referencing-source");
+    assert.deepEqual(failure.actual, { approvedCommit: source.head, artifactCommit: source.head });
+    assert.equal(failure.expected, "Approved C must differ from the commit containing the artifact");
+    assert.ok(failure.sources.includes(`${source.head}:${pinned.formatPath}`));
+  });
   bad("versions:unavailable-C", { kind: "brief", alterSource: fixture => { fixture.deniedCommits.add(BASELINE); } }, "domain", "versions");
   bad("versions:source-channel-identity", { kind: "brief", alterSource: fixture => {
     fixture.historical.set(`${BASELINE}:${pinned.channelPath}`, JSON.stringify({ ...pinned.channel, slug: "fixture-other-channel" }));
@@ -438,7 +548,10 @@ export function fixtureSuite(source: GitSource, schemas: Schemas, tempRoot: stri
   }
   for (const kind of ["brief", "episode-state"]) bad(`versions:missing-artifact:${kind}`, { kind: "sources", alterFiles: files => { files.delete(pathFor(kind)); } }, "domain", "versions");
   bad("versions:duplicate-episode-mapping", { kind: "sources", alterFiles: files => { files.set(`episodes/${slug}/2099-02-duplicate/00-brief.json`, JSON.stringify(value("brief"))); } }, "domain", "versions");
-  run("versions:pinned-C-differs-from-HEAD", () => { assert.notEqual(source.head, BASELINE); assert.deepEqual(exercise({ kind: "brief" }), []); });
+  run("versions:pinned-C-differs-from-HEAD", () => {
+    assert.notEqual(source.head, BASELINE);
+    for (const kind of ["brief", "episode-state", "sources"]) assert.deepEqual(exercise({ kind }), []);
+  });
 
   const allowlistPath = "config/publish-allowlist.json", allowlist = object(JSON.parse(source.text(allowlistPath)));
   const allowlistProperties = object(schema("publish-allowlist").properties);
@@ -462,7 +575,8 @@ export function fixtureSuite(source: GitSource, schemas: Schemas, tempRoot: stri
     const errors = schemas.check("pipeline-state.schema.json", JSON.parse(raw), "fixture:original-state");
     assert.deepEqual(errors.map(error => `${error.rule}:${error.field}`).sort(), ["required:/sourceCommit", "type:/rebuiltAt", "additionalProperties:/engineVersion", "additionalProperties:/aggregates"].sort());
   });
-  bad("inventory:unknown-json", { kind: "brief", alterFiles: files => { files.set("fixture-unmapped.json", "{}"); } }, "inventory", "", "read-or-classify");
+  bad("inventory:unknown-json", { kind: "brief", alterFiles: files => { files.set("fixture-unmapped.json", "{}"); } },
+    "inventory", "", "read-or-classify", "fixture-unmapped.json");
   run("inventory:ambiguous-binding", () => {
     const root = mkdtempSync(inside(tempRoot, "ambiguous-"));
     try {
@@ -508,6 +622,38 @@ export function fixtureSuite(source: GitSource, schemas: Schemas, tempRoot: stri
   const literal = [...literals][0]; assert.ok(literal);
   guardBad("content-literal", { path: "engine/io/index.ts", after: `export const content = ${JSON.stringify(literal)};` }, "content-literal:");
   guardBad("content-range", { path: "scripts/validate.ts", after: `const limits = { beatCount: ${JSON.stringify(bounds("beatCount"))} };` }, "content-range:");
+  for (const key of ["sceneCount", "sceneMinDurationMs"]) {
+    const data = JSON.stringify(limits[key]); // Fixture thresholds come from the pinned Genre Pack.
+    const forms: Record<string, string> = {
+      identifier: `const limits = { ${key}: ${data} };`,
+      quoted: `const limits = { "${key}": ${data} };`,
+      singleQuoted: `const limits = { '${key}': ${data} };`,
+      computed: `const limits = { ["${key}"]: ${data} };`,
+      assignment: `limits.${key} = ${data};`,
+      elementAssignment: `limits["${key}"] = ${data};`
+    };
+    for (const [form, after] of Object.entries(forms)) guardBad(`content-range:${key}:${form}`,
+      { path: "engine/io/index.ts", after }, "content-range:");
+    guardBad(`content-range:${key}:changed-value-line`, { path: "engine/io/index.ts",
+      before: `const limits = {\n  "${key}":\n    sourceFormat.limits.${key}\n};\n`,
+      after: `const limits = {\n  "${key}":\n    ${data}\n};\n` }, "content-range:");
+    run(`guardrails:config-read-control:${key}`, () => assert.deepEqual(checkChanges([{ path: "engine/io/index.ts",
+      after: `const limits = { "${key}": sourceFormat.limits.${key} };\nlimits["${key}"] = sourceFormat.limits.${key};\n`
+    }], wp, literals, policy), []));
+  }
+  run("guardrails:structural-number-control", () => assert.deepEqual(checkChanges([{ path: "engine/io/index.ts",
+    after: "export const result = { artifactCount: 0 };\nconst bufferBytes = 1024;\n"
+  }], wp, literals, policy), []));
+  for (const [call, name, datum] of [["run", "DoD4:brief-duration-five", "5"],
+    ["bad", "D20:brief-subunit-still-domain-fails", "0.5"]]) {
+    const sample = `export function fixtureSuite() { ${call}("${name}", () => { data.targetDurationMin = ${datum}; }); }\n`;
+    run(`guardrails:prescribed-artifact-datum:${name}`, () => assert.deepEqual(checkChanges([
+      { path: "scripts/acceptance-wp000.ts", after: sample }
+    ], wp, literals, policy), []));
+    guardBad(`artifact-datum-wrong-file:${name}`, { path: "engine/io/index.ts", after: sample }, "content-range:");
+    guardBad(`artifact-datum-wrong-case:${name}`, { path: "scripts/acceptance-wp000.ts",
+      after: sample.replace(name, "fixture-unapproved-case") }, "content-range:");
+  }
   guardBad("persistent-run-log", { path: "pipeline/runs.jsonl", before: "", after: dryRun(schemas, SYNTHETIC_TIME) }, "real-run-log:");
   guardBad("symlink", { path: "scripts/validate.ts", after: "fixture-target", mode: "120000" }, "mode:");
   return results;
@@ -547,7 +693,7 @@ if (require.main === module) {
     report.fixtures = fixtureSuite(source, schemas, temp);
     const wp = source.textAt(BASELINE, WP_PATH), baselineSource = new GitSource(root, BASELINE);
     report.guardrails = checkChanges(actualChanges(source), wp, contentLiterals(baselineSource), { allowBacklogDone: false });
-    report.guardrailsMethod = "Baseline Output diff, token patterns, TypeScript literals and content-range patterns; manual diff review still required";
+    report.guardrailsMethod = "Baseline Output diff, token patterns, TypeScript literals and numeric content-field AST assignments; exact prescribed artifact datums retained; manual diff review still required";
     try {
       report.typecheckLog = execFileSync(process.execPath, [resolve(root, "node_modules/typescript/bin/tsc"), "--noEmit"], { cwd: root, encoding: "utf8" });
       report.typecheck = "pass";

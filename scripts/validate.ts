@@ -81,6 +81,23 @@ function issue(file: string, tier: Issue["tier"], field: string, rule: string, a
   expected: unknown, sources: string[] = []): Issue {
   return { file, tier, field, rule, actual: actual === undefined ? "<missing>" : actual, expected, sources };
 }
+/** Source diagnostics retain the exact JSON Pointer instead of replacing it with an artifact field. */
+class SourceFieldError extends Error {
+  constructor(readonly sourcePath: string, readonly sourceField: string, readonly value: unknown,
+    readonly constraint: unknown, readonly rule: "missing-source-field" | "invalid-source-field") {
+    super(`${sourcePath}#${sourceField}: ${rule}`);
+  }
+  asIssue(file: string, field: string, sources: string[] = []): Issue {
+    return issue(file, "domain", field, this.rule,
+      { sourceField: this.sourceField, value: this.value === undefined ? "<missing>" : this.value },
+      { sourceField: this.sourceField, constraint: this.constraint },
+      [...new Set([...sources, this.sourcePath])]);
+  }
+}
+class SelfReferenceError extends Error {
+  constructor(readonly commit: string) { super("Approved C is the commit containing the artifact"); }
+}
+
 export class Schemas {
   readonly definitions = new Map<string, ObjectValue>();
   private readonly validators = new Map<string, ValidateFunction<unknown>>();
@@ -185,7 +202,12 @@ export function frozen(source: ValidationSource, schemas: Schemas, episodeId: st
   const read = (path: string, schema: string): ObjectValue => {
     const value = object(JSON.parse(source.textAt(commit, path)));
     const errors = schemas.check(`${schema}.schema.json`, value, `${commit}:${path}`);
-    if (errors.length) throw new Error(JSON.stringify(errors));
+    if (errors.length) {
+      const missing = errors.find(error => error.rule === "required");
+      if (missing) throw new SourceFieldError(`${commit}:${path}`, missing.field, undefined,
+        { schema: `engine/contracts/${schema}.schema.json`, rule: missing.rule, details: missing.expected }, "missing-source-field");
+      throw new Error(JSON.stringify(errors));
+    }
     return value;
   };
   const channel = read(channelPath, "channel");
@@ -333,7 +355,11 @@ export class Validator {
     const episodeId = string(doc.value.episodeId);
     const approvals = this.approvals.filter(item => item.episodeId === episodeId);
     if (approvals.length !== 1) throw new Error(`Expected exactly one owner-approved source mapping for ${episodeId}; got ${approvals.length}`);
-    const context = frozen(this.source, this.schemas, episodeId, approvals[0].commit);
+    const commit = fullSha(approvals[0].commit);
+    // D-21: validate an artifact against a previously approved source, never its own commit.
+    // Keep frozen() usable for deriving fixture tuples; enforce this relation at artifact validation.
+    if (commit === this.source.head) throw new SelfReferenceError(commit);
+    const context = frozen(this.source, this.schemas, episodeId, commit);
     if (!doc.path.startsWith(`episodes/${episodeId}/`) || doc.path.slice(`episodes/${episodeId}/`.length).includes("/")) {
       throw new Error(`Path and episodeId disagree: ${doc.path}, ${episodeId}`);
     }
@@ -375,6 +401,13 @@ export class Validator {
           if (typeof channel.genre === "string" && /^[a-z0-9-]+$/.test(channel.genre)) formatPath = `genres/${channel.genre}/format-spec.json`;
         } catch { /* Missing source is the reported error; no fallback source is selected. */ }
       }
+      const sourcePaths = approval.length === 1 ?
+        [`${approval[0].commit}:${channelPath}`, `${approval[0].commit}:${formatPath}`] : [channelPath, formatPath];
+      const linkedPaths = [`episodes/${id}/00-brief.json`, `episodes/${id}/state.json`];
+      if (error instanceof SourceFieldError) return [error.asIssue(doc.path, "versions", [...sourcePaths, ...linkedPaths])];
+      if (error instanceof SelfReferenceError) return [issue(doc.path, "domain", "versions", "self-referencing-source",
+        { approvedCommit: error.commit, artifactCommit: this.source.head },
+        "Approved C must differ from the commit containing the artifact", [...sourcePaths, ...linkedPaths])];
       return [issue(doc.path, "domain", "versions", "frozen-source", String(error),
         "Unique brief/state and approved C; full matching engine/genre/channel strings and both pack trees",
         [channelPath, formatPath, `episodes/${id}/00-brief.json`, `episodes/${id}/state.json`])];
@@ -384,17 +417,33 @@ export class Validator {
       errors.push(issue(doc.path, "domain", field, rule, actual, expected, [...sources, ...extra]));
     };
     const checked = (field: string, fn: () => void): void => {
-      try { fn(); } catch (error) { fail(field, String(error), "Required source field with declared type", "missing-source-field"); }
+      try { fn(); } catch (error) {
+        if (error instanceof SourceFieldError) errors.push(error.asIssue(doc.path, field, sources));
+        else fail(field, String(error), "Required source field with declared type", "missing-source-field");
+      }
     };
-    const limits = (): ObjectValue => object(context.format.limits);
+    const readLimit = <T>(key: string, constraint: string, read: (value: unknown) => T): T => {
+      const value = object(context.format.limits)[key];
+      try { return read(value); }
+      catch {
+        throw new SourceFieldError(`${context.commit}:${context.formatPath}`, `/limits/${key}`, value,
+          constraint, value === undefined ? "missing-source-field" : "invalid-source-field");
+      }
+    };
+    const limitNumber = (key: string): number => readLimit(key, "finite number", numeric);
+    const limitNumbers = (key: string): number[] => readLimit(key, "array of finite numbers", value => list(value).map(numeric));
+    const limitRange = (key: string): number[] => readLimit(key, "two finite numbers in ascending order", value => {
+      const bounds = list(value).map(numeric);
+      if (bounds.length !== 2 || bounds[0] > bounds[1]) throw new Error("Invalid source range");
+      return bounds;
+    });
     const range = (field: string, value: unknown, key: string): void => checked(field, () => {
-      const bounds = list(limits()[key]).map(numeric);
-      if (bounds.length !== 2 || bounds[0] > bounds[1]) throw new Error(`Invalid limits.${key}`);
+      const bounds = limitRange(key);
       const n = numeric(value);
       if (n < bounds[0] || n > bounds[1]) fail(field, value, bounds);
     });
     const minimum = (field: string, value: unknown, key: string): void => checked(field, () => {
-      const bound = numeric(limits()[key]);
+      const bound = limitNumber(key);
       if (numeric(value) < bound) fail(field, value, { minimum: bound });
     });
     const member = (field: string, value: unknown, allowed: unknown, extra: string[] = []): void => checked(field, () => {
@@ -417,13 +466,12 @@ export class Validator {
       }
       const total = beats.reduce((sum, beat) => sum + numeric(beat.estimatedMs), 0);
       if (!Number.isSafeInteger(total) || total <= 0) { fail("beats.estimatedMs.total", total, "Positive safe integer total"); return; }
-      const bounds = list(limits().targetDurationMin).map(numeric);
-      if (bounds.length !== 2) throw new Error("Missing limits.targetDurationMin range");
+      const bounds = limitRange("targetDurationMin");
       const duration = { n: BigInt(total), d: 60000n };
       if (compare(duration, fraction(bounds[0])) < 0 || compare(duration, fraction(bounds[1])) > 0) {
         fail("beats.totalDurationMin", total / 60000, bounds);
       }
-      const tolerance = fraction(numeric(limits().beatShareTolerance));
+      const shareTolerance = limitNumber("beatShareTolerance"), tolerance = fraction(shareTolerance);
       for (const beat of beats) {
         const sourceBeat = template.find(item => item.index === beat.index);
         if (!sourceBeat) throw new Error("Beat index has no unique template match");
@@ -431,7 +479,7 @@ export class Validator {
         const difference = subtract({ n: BigInt(numeric(beat.estimatedMs)), d: BigInt(total) }, fraction(share));
         const absolute = { n: difference.n < 0n ? -difference.n : difference.n, d: difference.d };
         if (compare(absolute, tolerance) > 0) fail(`beats[index=${beat.index}].shareOfDuration`, numeric(beat.estimatedMs) / total,
-          { shareOfDuration: share, tolerance: numeric(limits().beatShareTolerance) }, "beat-share");
+          { shareOfDuration: share, tolerance: shareTolerance }, "beat-share");
       }
     });
     if (doc.schema === "script") checked("script", () => {
@@ -443,7 +491,7 @@ export class Validator {
     if (doc.schema === "storyboard") checked("scenes", () => {
       const scenes = list(v.scenes).map(object);
       range("scenes.length", scenes.length, "sceneCount");
-      member("fps", v.fps, limits().fpsAllowed);
+      checked("fps", () => member("fps", v.fps, limitNumbers("fpsAllowed")));
       const orientation = string(v.orientation);
       if (orientation !== "landscape" && orientation !== "vertical") throw new Error("Unknown orientation");
       const allowed = list(context.layouts[`${orientation}Layouts`]).map(item => object(item).id);

@@ -96,7 +96,11 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EVENT_HEAD"
           test "$(git rev-parse "$BASELINE^{tree}")" = "$BASELINE_TREE"
           test "$(git rev-parse "$SPEC_HEAD^{tree}")" = "$BASELINE_TREE"
-          test "$(git show -s --format=%P HEAD)" = "$BASELINE"
+          candidate_parent=ebfbf7841ebfb5c3bb229a6c2bba511dfdb729cc
+          candidate_parent_tree=ae28ba6c24937947363dd221686d9dd422ca2b10
+          test "$(git show -s --format=%P HEAD)" = "$candidate_parent"
+          test "$(git rev-parse "$candidate_parent^{tree}")" = "$candidate_parent_tree"
+          test "$(git show -s --format=%P "$candidate_parent")" = "$BASELINE"
           git merge-base --is-ancestor "$SPEC_HEAD" HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           test ! -e package-lock.json
