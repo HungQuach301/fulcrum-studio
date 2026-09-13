@@ -6,9 +6,17 @@
 
 1. **CI xanh trên commit cuối.** Bốn job `validate`, `typecheck`, `guardrails`, `report` đều
    pass. Không có bằng chứng CI thì WP chưa done, bất kể agent nói gì.
-   **Ngoại lệ bootstrap:** WP-000 chạy khi CI chưa tồn tại (WP-001 mới tạo nó). Với WP-000,
-   bằng chứng thay thế là một lần chạy Actions thủ công của workflow nghiệm thu khai trong
-   chính WP đó, log dán vào báo cáo. Không có ngoại lệ nào khác.
+   **Ngoại lệ bootstrap WP-000 theo D-21:** khi CI chưa tồn tại (WP-001 mới tạo nó),
+   bằng chứng thay thế phải là lần chạy thực tế của `acceptance-wp000.yml` trong Actions,
+   trên đúng commit ứng viên cuối. Được dùng `pull_request` vào main từ nhánh cùng repo
+   `wp/000` sau phê duyệt triển khai và các lượt tự động; giữ `workflow_dispatch` khi
+   workflow có trên main. Không tự dispatch/rerun hoặc coi phê duyệt đặc tả là quyền chạy.
+   Workflow bootstrap phải kiểm cả mục 3–6 bằng máy, đọc phạm vi từ WP trên main tại
+   SHA baseline đã pin. Báo cáo `ci-report.txt` ghi SHA/tree checkout thực, SHA sự kiện
+   nếu khác, run/attempt và kết quả kể cả failure/skipped/cancelled; log dán vào báo cáo.
+   Lượt chuẩn bị lockfile hoặc state không thay acceptance. Không có log đúng commit
+   thì WP chưa done. Gói chuẩn bị quyết định/đặc tả không được miễn CI bởi đoạn này;
+   ngoại lệ CI của PR Mốc 0 không chuyển sang WP-000 hoặc PR mới.
 2. **Acceptance test đã chạy trong Actions**, gồm cả bài kiểm âm, kết quả dán vào báo cáo.
 3. **Không file nào ngoài "Phạm vi cho phép" bị chạm** — job `guardrails` kiểm tự động.
 4. **Không secret trong diff** — job `guardrails` quét, không dựa vào agent tự khai.
@@ -21,6 +29,10 @@
    Mọi WP mặc nhiên được phép sửa **đúng một dòng** của chính nó trong `backlog.md`, kể cả
    khi mục "Phạm vi cho phép" không liệt kê file này. Job `guardrails` cho phép ngoại lệ một
    dòng đó và chặn mọi thay đổi khác trong backlog.
+   Riêng bootstrap WP-000 theo D-21: dòng `done` trên PR triển khai chỉ là đề nghị.
+   Commit ứng viên chứa dòng này cùng code/lockfile phải được Actions kiểm; sau đó
+   chủ dự án đọc báo cáo năm mục, xác nhận checkpoint và quyết định merge. Đổi commit
+   thì cần bằng chứng mới. PR chỉ chuẩn bị đặc tả giữ nguyên backlog, không đóng WP.
 
 ## Bắt buộc với WP có stage mới
 
