@@ -824,3 +824,26 @@ thay quyền nền tảng; thao tác agent trước/giữa các commit phải đ
 Giữ STOP lịch sử, timeout120s/exit124, HTTP403, thiếu ZIP run7, lệch đóng gói
 32,021 giây, B1/B2, Node và mọi lịch sử. Pin ZIP gốc 6634470 byte/SHA-256
 14ab6b95c34521d7093eb4b8b5204977bee9a8b7a7662dd1eb771db6e94e9ae1 không đổi.
+
+
+## D-23 — Gói FS23-WP001: bootstrap CI với quyền sửa–kiểm–thu gộp
+
+**Phạm vi.** Chỉ HungQuach301/fulcrum-studio, sau nghiệm thu kỹ thuật WP-000 tại H=33f64ff4835d2a84b4ea9b6960ab39c9ac130d09. Khi owner cấp toàn bộ FS23, cho Ready/merge-only PR10 bằng merge commit M có hai parent A=a7fecd4f8a614d10687b471f70f71a5d5e08685f và H, tree df4f39ccf146627643a19c925e8c56b65e88c3b5. Không sửa H, không merge WP001.
+
+**Thứ tự.** Sau M, commit policy S trên wp/001 chỉ nối PROJECT.md, AGENTS.md, engine/ops/guardrails.md, engine/docs/02-decisions.md, engine/ops/definition-of-done.md, engine/ops/work-packages/WP-001-ci-guardrails.md. Đọc lại parent/tree và chốt pin trước code. Sáu file không đổi sau S. Cho một PR Draft gồm S và implementation, không cần PR spec riêng; CI cuối phải kiểm toàn bộ diff. Không gọi S đã CI-pass khi chưa chạy.
+
+**Tiền đề bootstrap.** Thay riêng WP001 mục2b: tree M bằng H và bằng chứng H đã owner nghiệm thu đáp ứng tiền đề công cụ/validator, không giả có run M. Cho phát triển đến Draft khi main protected=false; không claim PR enforcement, không đổi settings. Runner không quyền ghi; owner giữ quyết định merge. Ngoại lệ này không tự áp cho WP002 hoặc quyền merge WP001.
+
+**Phạm vi implementation.** Chỉ .github/workflows/ci.yml, scripts/guardrails/index.ts, scripts/guardrails/scope.ts, scripts/guardrails/content.ts, scripts/guardrails/secrets.ts, scripts/guardrails/guardrails.test.ts, scripts/ci-report.ts, và một ô trạng thái WP001 trong engine/ops/backlog.md. Literal done trên PR là đề nghị. Cấm file .scope, dependency mới, sửa package/lock/tsconfig/validator/contracts/state hoặc workflow FS22.
+
+**Nguồn luật.** Giữ đọc allowlist code từ WP/CP trên main resolve SHA. Ngoại lệ docs chỉ sáu file S được owner định danh trước code, bảo toàn tiền tố M và freeze S; thay riêng điều kiện PR WP-change chỉ-docs cho trường hợp này. Docs thay sau S hoặc code ngoài main allowlist phải fail. Không tuyên bố cơ chế này thay được GitHub branch protection hoặc chống được tài khoản toàn quyền repo.
+
+**Kiểm và chứng cứ.** Bốn job validate/typecheck/guardrails/report. Cả push/PR chạy thật, checkout candidate SHA rõ ràng; giữ correctness D19/D20. Sáu ca acceptance WP001 chạy trong Actions bằng temporary Git fixtures qua scanner production, không commit lỗi thử vào repo. Report dưới 100 dòng, tối đa 20 dòng lỗi/job, đủ verdict thật; file chứng cứ đầy đủ riêng qua frame log. Thay upload-artifact bằng frame byte/hash/run/head/attempt/chunk/complete và nhận/lưu ngoài runner. Own report final/cleanup kiểm từ metadata/log sau cùng; thiếu output không suy success.
+
+**Quyền gộp.** Một commit S và tối đa sáu commit implementation/fix, tối đa 12 CI chính/48 runner jobs và 12 workflow FS22 skipped, tổng 24 run record mới. Agent được tạo branch/PR, blob/tree/commit, fast-forward force:false, cập nhật body/title giữ lịch sử, đọc refs/checks/runs/jobs/decoded logs và lưu bằng chứng. Không rerun/dispatch, không tạo nhánh test thật, không tự hạ gate để pass. Tự sửa lỗi đúng tám file implementation trong grant, không xin lại từng bước. Hết quyền chỉ chặn ghi/CI mới, vẫn thu/lưu kết quả đã có và trình delta tối thiểu.
+
+**Thời gian và checkpoint.** Không deadline task/job/phase hoặc ngưỡng im lặng gây STOP; giới hạn bắt buộc nền tảng vẫn tồn tại. M và chuỗi S/implementation của chính gói là checkpoint mới hợp lệ sau kiểm tree/parent. Ref bị nguồn khác đổi thì đối chiếu trước ghi, không tự reset/rebase. Blocker chỉ chặn phần phụ thuộc, không dừng công việc độc lập hữu ích.
+
+**Runtime/chi phí.** Chỉ sau owner duyệt dự phòng mới 30 USD và rủi ro B1/B2/billing chưa đủ, không hard-stop USD, hóa đơn có thể trễ/vượt dự phòng. Ngoại lệ Node20.20.2/npm10.8.2, archive SHA df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d; checkout/setup-node pin lần lượt 34e114876b0b11c390a56381ad16ebd13914f8d5 và 49933ea5288caeca8642d1e84afbd3f7d6820020. Giữ EOL/action Node24 patch chưa chứng minh; không kế thừa FS22 hoặc tự nâng pin. Cài theo lock, ignore-scripts/no-audit/no-fund, chỉ Actions. Token contents:read/pull-requests:read, không provider, settings hoặc credential mới.
+
+**Giới hạn.** Giữ nghiệm thu manifest/11 file/chuỗi input và WP000 đúng H. Giữ pin ZIP gốc 6634470 byte/SHA-256 14ab6b95c34521d7093eb4b8b5204977bee9a8b7a7662dd1eb771db6e94e9ae1, STOP lịch sử, timeout120s/exit124, HTTP403, ZIP run7 thiếu, lệch đóng gói 32,021 giây, billing/Node và mọi lịch sử. Không tải ZIP/artifact, retry403, dùng đường vòng, gửi hỗ trợ, merge WP001, gọi provider hoặc mở WP002. Gói mới không phải nghiệm thu lại ZIP thiếu.

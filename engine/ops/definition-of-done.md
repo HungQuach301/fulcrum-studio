@@ -89,3 +89,8 @@ commit cuối, toàn bộ correctness/ca âm và owner nghiệm thu. Thu đủ b
 qua frame log và đối soát hash, không coi metadata/success là toàn bộ bằng chứng.
 D-22 thay riêng các ràng buộc điều phối/scope/counter/ZIP đã nêu; giữ contracts,
 secret, dữ liệu, lịch sử và các quyền merge/provider/ngân sách chưa được cấp.
+
+
+## Gói FS23-WP001 — D-23
+
+Riêng FS23-WP001, giữ bốn job và acceptance chạy thật trên head cuối. Policy S được kiểm cùng candidate trong một PR, không miễn CI cuối. Bằng chứng nguyên văn qua frame log thay artifact ZIP; report ngắn dưới 100 dòng, log/fixture đầy đủ là chứng cứ riêng. Own report/cleanup kết luận bằng metadata/log cuối và receipt nhận. Fixture âm Git tạm trong Actions đáp ứng kiểm reject, không có claim webhook âm. Backlog done vẫn là đề nghị; owner đọc báo cáo năm mục, xác nhận checkpoint trước nghiệm thu. Branch protection chưa có phải ghi rõ, không được coi D-23 là cấu hình bảo vệ đã bật.

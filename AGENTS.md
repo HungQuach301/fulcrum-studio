@@ -113,3 +113,8 @@ commit cuối, toàn bộ correctness/ca âm và owner nghiệm thu. Thu đủ b
 qua frame log và đối soát hash, không coi metadata/success là toàn bộ bằng chứng.
 D-22 thay riêng các ràng buộc điều phối/scope/counter/ZIP đã nêu; giữ contracts,
 secret, dữ liệu, lịch sử và các quyền merge/provider/ngân sách chưa được cấp.
+
+
+## Gói FS23-WP001 — D-23
+
+Riêng FS23-WP001, áp dụng D-23 sau khi owner cấp gói. Cấp gộp sửa–kiểm–thu đúng phạm vi; không deadline task/job/phase hoặc ngưỡng im lặng gây STOP. Không xin lại sửa nhỏ đã được duyệt. Commit của chính gói trở thành checkpoint sau kiểm parent/tree; nguồn ngoài gói cần đối chiếu trước ghi. Sáu tài liệu S đóng băng trước code, code theo WP main. Blocker chỉ chặn phần phụ thuộc; hoàn tất phần độc lập và trình delta tối thiểu. Không tự mở quyền settings, merge WP001, provider hoặc ngân sách ngoài grant.
