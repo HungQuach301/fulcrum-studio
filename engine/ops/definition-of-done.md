@@ -73,3 +73,19 @@ Tầng 2, các fixture acceptance WP-000, typecheck, hồi quy năm brief và s�
 chưa chạy/chưa nghiệm thu. Source tree không được đổi trong khi kiểm.
 Chủ dự án đọc báo cáo năm mục và checkpoint mới rồi giao bước tiếp; CI đạt không cấp
 quyền Ready, merge, triển khai, chuẩn hóa state, provider hoặc ngân sách mới.
+
+
+## Gói phát triển nhanh — D-22
+
+Áp dụng D-22 cho FS22-20260914 khi chủ dự án cấp quyền ghi/CI của gói.
+Không đặt deadline task/job/phase hoặc ngưỡng im lặng gây STOP. Cấp quyền gộp
+sửa–kiểm–thu kết quả trong đúng tám file và số lượt được duyệt, không xin lại
+cho từng lỗi có thể sửa trong phạm vi. Gate lịch sử chỉ chặn phần phụ thuộc;
+không dùng thiếu ZIP run7 để chặn kiểm độc lập mới đã có kênh chứng cứ được duyệt.
+Tái dùng tính toàn vẹn đã nghiệm thu trên cùng bytes. B1/B2/Node chưa biết vẫn
+ghi chưa biết; chỉ ngoại lệ đúng gói do owner duyệt mới cho phép chạy.
+Spec CI phải đạt trên quyết định đã commit trước acceptance; giữ kiểm đúng
+commit cuối, toàn bộ correctness/ca âm và owner nghiệm thu. Thu đủ byte chứng cứ
+qua frame log và đối soát hash, không coi metadata/success là toàn bộ bằng chứng.
+D-22 thay riêng các ràng buộc điều phối/scope/counter/ZIP đã nêu; giữ contracts,
+secret, dữ liệu, lịch sử và các quyền merge/provider/ngân sách chưa được cấp.

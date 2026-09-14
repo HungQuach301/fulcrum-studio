@@ -728,3 +728,99 @@ giới hạn nghiệm thu Mốc 0 giữ nguyên. D-21 không nghiệm thu chất
 C4 hoặc quyền tài khoản/provider, không thay giới hạn D-17, không sửa cấu hình đang chờ,
 không mở WP sau hoặc cấp ngân sách triển khai/provider. Phê duyệt giới hạn ở mục 7
 chỉ dành cho một lượt CI đặc tả; kết thúc lượt đó thì quyền/ngân sách ấy đóng lại.
+
+
+---
+
+## D-22 · Gói phát triển nhanh FS22-20260914
+
+**Bối cảnh.** Cấp quyền từng lỗi, gate cố định run7/run8 và thời lượng tự đặt gây
+gián đoạn phát triển. Quyết định này thay các ràng buộc điều phối được liệt kê dưới
+đây; tính đúng theo D-19/D-20 và toàn bộ acceptance WP-000 không giảm.
+
+**Không đặt deadline** task/job/phase, ngưỡng im lặng hoặc mốc phải đóng hồ sơ.
+Tiếp tục việc được duyệt và lưu tiến triển hữu ích. Giới hạn bắt buộc của nền tảng
+vẫn áp dụng, không phải quyền chi tiêu hoặc quyền chạy vô hạn. Không kế thừa mốc
+thời lượng của CI đặc tả PR #9 hoặc các chế độ lịch sử sang gói mới.
+
+**Phạm vi và quyền gộp.** Gói trên nhánh wp/000, PR #10 Draft gồm chuẩn bị đặc tả,
+sửa lỗi trong phạm vi, CI và thu/lưu bằng chứng. Chỉ khi chủ dự án duyệt gói ghi/CI
+thì agent được ghi tối đa ba commit nối tiếp từ
+900833d041486643540ea794bbe0bbad80f557bb, mỗi commit một lượt CI chủ động và một
+workflow đồng hành skipped. Không rerun; run_number chỉ để nhận diện lịch sử.
+Mỗi commit có đúng ba trailer Fulcrum-Grant, Fulcrum-Slot, Fulcrum-Phase.
+Slot 1–3 là số lượt trong gói, không phải deadline; failure vẫn tiêu tốn lượt.
+Các sửa nhỏ đúng phạm vi không cần xin lại. Thiếu quyền,403 hoặc vượt phạm vi
+chặn thao tác liên quan; agent tiếp tục phần độc lập hữu ích, không dùng đường vòng.
+
+Cho phép đúng tám file: AGENTS.md; engine/ops/guardrails.md;
+engine/docs/02-decisions.md; engine/ops/work-packages/WP-000-scaffold.md;
+engine/ops/definition-of-done.md; .github/workflows/acceptance-wp000.yml;
+scripts/acceptance-wp000.ts; .github/workflows/review-wp000-spec.yml.
+Mọi file khác giữ blob/mode C, kể cả state, backlog, contracts và dependency.
+Năm tài liệu chỉ nối cuối, giữ D-01–D-21. Thay riêng AGENTS phần STOP chung,
+guardrails 14–15 và 26–27, WP-000 lệnh cấm sửa WP/DoD/quyết định trong triển khai
+bằng phạm vi đặc tả/triển khai gộp này; không cho phép agent tự mở allowlist.
+
+**Checkpoint gói.** Main giữ a7fecd4f8a614d10687b471f70f71a5d5e08685f/tree
+ddb16f67fbf246e669dc28fc50718de75a365f11; C là điểm bắt đầu, không phải head
+bất biến sau commit hợp lệ của agent. Sau mỗi ghi, xác minh tree/parent thật rồi
+cập nhật expected head trong ledger. Không coi commit của chính gói là lệch
+checkpoint để xin lại quyền. Thay điều kiện “chưa có package.json” tại WP-000
+mục 2b cho gói tiếp tục này bằng bảo toàn package/lockfile/state đã có tại C.
+Không cố định tổng số commit/file/dòng PR sau khi thêm delta được duyệt.
+Ref đổi bởi nguồn ngoài gói phải đối chiếu trước ghi, không tự reset/rebase.
+
+**Hai chặng trong cùng grant.** Commit đặc tả có title PR bắt đầu
+[FS22-20260914:spec]. Cổng đặc tả mới thay giới hạn PR #9/run1 của D-21/DoD cho
+riêng gói này, không dùng success #9 thay bằng chứng mới. Kiểm scope/bảo toàn,
+secret, lịch sử quyết định, 38 schema, 8 cấu hình miền, 3 JSON công cụ chỉ parse,
+fixture allowlist, state C hợp lệ tầng 1 và state main cũ âm đúng bốn lỗi.
+Spec không nghiệm thu typecheck, tầng 2 hoặc WP-000. Có thể dùng JavaScript tạm
+và công cụ shell hiện có của runner cho checker/đóng khung byte, không thêm dependency.
+
+Sau spec success và agent nhận đủ bằng chứng nguyên nội dung, commit tiếp theo
+chỉ sửa workflow acceptance để gắn FS_SPEC_COMMIT/FS_SPEC_RUN vào commit/run đã
+đối soát; title PR bắt đầu [FS22-20260914:acceptance]. Có thể sửa lỗi helper/workflow
+acceptance cùng chặng trong số lượt còn lại. Năm tài liệu và workflow đặc tả phải
+giống spec commit đã đạt. CI kiểm ancestor, spec run success và đúng repo/PR/commit
+trước cài/chạy. D-14 được giữ: quyết định đã commit và qua spec trước acceptance;
+không cần merge quyết định hoặc tự merge WP trong gói này. Nếu spec chưa đạt thì
+chỉ sửa chặng spec; hết ba lượt mà chưa đủ thì trình delta gỡ tối thiểu.
+
+**Bằng chứng.** Với kiểm thuần văn bản, thay tiền đề luôn phải tải/lưu nguyên ZIP
+bằng log job chứa toàn bộ report và byte các file chứng cứ mã hóa base64, có số
+thứ tự chunk, byte/SHA-256 và marker kết thúc; đối soát run/job/checks đúng commit.
+Connector trả decoded log không là raw HTTP/ZIP; giải mã các frame chỉ khôi phục
+đúng byte đầu ra mới và phải khớp hash do runner in. Thiếu frame/hash sai thì chưa
+nghiệm thu phần đó, không suy từ status xanh. Không upload/download ZIP trong gói.
+ZIP run7 và ZIP review gốc thiếu không còn là tiền đề của kiểm độc lập mới; giữ
+failure/evidence-incomplete, pin gốc và không giả làm đã nhận. Kiểm cần binary
+chưa có kênh phù hợp vẫn chưa được nghiệm thu. Tái dùng nghiệm thu manifest,
+11 file đối chứng và chuỗi input trên cùng bytes, không lặp CRC lịch sử.
+
+**B1/B2, runtime và chi phí.** Gói ghi/CI đề nghị tối đa ba job Ubuntu 24.04 x64
+tiêu chuẩn, dự phòng tổng 20 USD; đây là mức owner cần duyệt, không phải giá đo.
+Không có hard-stop USD đã được chứng minh; billing có thể trễ và hóa đơn có thể
+vượt dự phòng nếu job kéo dài. Agent không tự cấp/nâng ngân sách hoặc settings.
+B1/B2 chưa biết vẫn ghi chưa biết; owner có thể chấp nhận riêng việc khởi chạy
+gói nhỏ mà chưa đủ dữ liệu tài khoản. Từ chối quyền/quota/403 thì không retry.
+Đề nghị ngoại lệ Node20.20.2/npm10.8.2 và action SHA hiện tại chỉ cho gói này;
+Node20 EOL và patch Node24 của action chưa chứng minh vẫn là bảo lưu. Không tự
+đổi pin/runtime. Actions token chỉ contents:read, pull-requests:read và
+actions:read cho đọc spec run, không provider hoặc quyền ghi từ runner.
+
+**Điều kiện nghiệm thu.** Giữ toàn bộ mục 6 WP-000, DoD kiểm thật đúng commit cuối,
+ca âm và guardrails. Lỗi làm job fail; sửa đúng phạm vi dùng lượt tiếp theo đã duyệt.
+Spec thành công không làm acceptance pass. Kết quả kỹ thuật đầy đủ chỉ đủ trình
+owner nghiệm thu; không tự Ready/merge/đóng WP, provider, deploy hoặc mở WP khác.
+
+**Phương án bị loại và bảo đảm giảm.** Không đổi timeout thành mốc dài hơn; không
+vòng xin phép từng sửa nhỏ; không giả nhận ZIP thiếu; không đổi failure thành pass.
+Giảm pháp chứng ZIP nguyên gói cho kiểm văn bản, không bảo đảm deadline, quota hay
+hóa đơn trong dự phòng, không owner review mỗi sửa nhỏ. Bù bằng grant có scope,
+commit/run identity, bằng chứng đầy đủ và kiểm kết quả thật. Cơ chế trong repo không
+thay quyền nền tảng; thao tác agent trước/giữa các commit phải đối soát ledger thật.
+Giữ STOP lịch sử, timeout120s/exit124, HTTP403, thiếu ZIP run7, lệch đóng gói
+32,021 giây, B1/B2, Node và mọi lịch sử. Pin ZIP gốc 6634470 byte/SHA-256
+14ab6b95c34521d7093eb4b8b5204977bee9a8b7a7662dd1eb771db6e94e9ae1 không đổi.
