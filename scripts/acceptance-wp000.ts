@@ -1397,7 +1397,7 @@ if (require.main === module && process.argv[2] === "--prepare-state") {
     report.workflowId = "requires-API-readback:356972316";
     report.backlog = "single-WP000-done-proposal; not-owner-acceptance-or-merge";
     for (const path of source.files()) {
-      const bytes = Buffer.from(source.text(path), "utf8");
+      const bytes: Buffer = Buffer.from(source.text(path), "utf8");
       for (const dir of [root, installRoot]) {
         const file = inside(dir, repoPath(path)); assert.ok(lstatSync(file).isFile() && !lstatSync(file).isSymbolicLink());
         assert.deepEqual(readFileSync(file), bytes, `${path}: original/mirror bytes differ`);
@@ -1477,7 +1477,7 @@ if (require.main === module && process.argv[2] === "--prepare-state") {
           git(source.root, "rev-parse", "HEAD").trim() === source.head;
         const mirror = inside(realpathSync(process.env.TASK_ROOT ?? ""), "manifest");
         for (const path of source.files()) {
-          const bytes = Buffer.from(source.text(path), "utf8");
+          const bytes: Buffer = Buffer.from(source.text(path), "utf8");
           assert.deepEqual(readFileSync(inside(source.root, path)), bytes);
           assert.deepEqual(readFileSync(inside(mirror, path)), bytes);
         }
