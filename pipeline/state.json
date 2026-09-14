@@ -1,11 +1,6 @@
 {
   "note": "CHỈ MỤC DẪN XUẤT. Không stage nào ghi trực tiếp. Chỉ workflow reindex.yml xây lại từ các /episodes/{channel}/{id}/state.json. Xem D-01 và D-07.",
-  "rebuiltAt": null,
-  "engineVersion": "1.0",
-  "episodes": [],
-  "aggregates": {
-    "monthlySpendUsd": 0,
-    "fpyByStage": {},
-    "thesisBankAvailable": {}
-  }
+  "rebuiltAt": "2026-09-14T01:24:30.332Z",
+  "sourceCommit": "f7e959f95de470e2d6bef461e17b42c3218ec74f",
+  "episodes": []
 }
