@@ -1,0 +1,959 @@
+name: Fulcrum CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: fulcrum-ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+env:
+  FS_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  FS_BRANCH: ${{ github.head_ref || github.ref_name }}
+  FS_TITLE: ${{ github.event.pull_request.title || '' }}
+  FS_EVENT: ${{ github.event_name }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  validate:
+    if: ${{ !github.event.deleted }}
+    runs-on: ubuntu-24.04
+    # No project deadline or silence threshold; platform limits still apply.
+    env:
+      FS_JOB: validate
+    outputs:
+      summary: ${{ steps.evidence.outputs.summary }}
+    steps:
+      - name: Initialize evidence directory
+        id: init
+        shell: bash
+        run: |
+          set -euo pipefail
+          task_root="$(mktemp -d "$RUNNER_TEMP/fs23-$FS_JOB.XXXXXX")"
+          mkdir "$task_root/evidence"
+          printf 'TASK_ROOT=%s
+          FS_EVIDENCE=%s/evidence
+          ' "$task_root" "$task_root" >> "$GITHUB_ENV"
+      - name: Checkout exact candidate
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ env.FS_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Preflight scope secret policy and checkpoint
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,json,subprocess,pathlib,hashlib,re,urllib.request
+          root=pathlib.Path(os.environ['GITHUB_WORKSPACE']); evidence=pathlib.Path(os.environ['FS_EVIDENCE'])
+          def git(*args):return subprocess.check_output(['git','-C',str(root),*args]).decode()
+          head=os.environ['FS_HEAD'];branch=os.environ['FS_BRANCH'];event=os.environ['FS_EVENT']
+          assert os.environ['GITHUB_REPOSITORY']=='HungQuach301/fulcrum-studio'
+          assert os.environ['GITHUB_RUN_ATTEMPT']=='1'
+          assert re.fullmatch('[a-f0-9]{40}',head) and git('rev-parse','HEAD').strip()==head
+          request=urllib.request.Request('https://api.github.com/repos/HungQuach301/fulcrum-studio/git/ref/heads/main',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(request) as response:raw=response.read()
+          (evidence/'main-ref.before.json').write_bytes(raw);main=json.loads(raw)['object']['sha']
+          base=git('rev-parse',head+'^1').strip() if branch=='main' and event=='push' else main
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write('FS_BASE='+base+'\n')
+          boot={'base': '48bdbe2932ab012ae3edcaf4eabe54b7af21f223', 'files': {'AGENTS.md': '2933f22521c1c8789e93e79959e9fe16c1108956', 'PROJECT.md': '31121b2db859cb01b52e55fec8bb91890a0a5fa5', 'engine/docs/02-decisions.md': '7c9fb2b11bc6560f7a9d45b5e012d1556b768700', 'engine/ops/definition-of-done.md': 'f7a9d16655700594e1e1580932b416754a0b26c6', 'engine/ops/guardrails.md': 'e33413e64af7dab996b78b7c358416ea0248949c', 'engine/ops/work-packages/WP-001-ci-guardrails.md': '4fd0949a13f7fa36b75fed052984e2ac42145758'}, 'policy': '754d90c4632c6771d8a81e3c6c5b78f7a5ed3812'}
+          impl=['.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/content.ts', 'scripts/guardrails/secrets.ts', 'scripts/guardrails/guardrails.test.ts', 'scripts/ci-report.ts', 'engine/ops/backlog.md']
+          diff=git('diff','--no-renames','--name-only','-z',base,head).split('\0')[:-1]
+          if branch=='wp/001':
+           assert base==boot['base'];git('merge-base','--is-ancestor',boot['policy'],head)
+           assert git('rev-list','--parents','-n','1',boot['policy']).strip()==boot['policy']+' '+boot['base']
+           changes=git('diff','--no-renames','--name-only','-z',base,boot['policy']).split('\0')[:-1]
+           assert set(changes)==set(boot['files'])
+           for path,blob in boot['files'].items():
+            assert git('rev-parse',head+':'+path).strip()==blob
+            assert git('rev-parse',boot['policy']+':'+path).strip()==blob
+            assert git('show',boot['policy']+':'+path).startswith(git('show',base+':'+path))
+           chain=git('rev-list','--reverse',boot['policy']+'..'+head).splitlines();assert 1<=len(chain)<=6
+           parent=boot['policy']
+           for number,sha in enumerate(chain,1):
+            assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+parent
+            msg=git('show','-s','--format=%B',sha)
+            assert re.findall(r'^Fulcrum-Grant: (.*)$',msg,re.M)==['FS23-WP001']
+            assert re.findall(r'^Fulcrum-Phase: (.*)$',msg,re.M)==['implementation']
+            assert re.findall(r'^Fulcrum-Iteration: (.*)$',msg,re.M)==[str(number)]
+            parent=sha
+           assert set(diff)<=set(impl+list(boot['files']))
+          if branch!='main':
+           match=re.fullmatch(r'(wp|cp)/([0-9]{3}[a-z]?)',branch);assert match,'branch-context'
+           code=match[1].upper()+'-'+match[2]
+           assert all(x==code for x in re.findall(r'\b(?:WP|CP)-[0-9]{3}[a-z]?\b',os.environ.get('FS_TITLE',''))),'title-context'
+           paths=git('ls-tree','-r','--name-only',base).splitlines()
+           wp=[x for x in paths if x.startswith('engine/ops/') and x.endswith('.md') and (pathlib.PurePosixPath(x).name==code+'.md' or pathlib.PurePosixPath(x).name.startswith(code+'-'))];assert len(wp)==1
+           text=git('show',base+':'+wp[0]);part=re.search(r'^###?\s+4\.\s+Phạm vi cho phép\s*\n(.*?)(?=^###?\s|\Z)',text,re.M|re.S);assert part
+           patterns=re.findall(r'`([^`]+)`',part[1]);assert patterns
+           for path in diff:
+            if branch=='wp/001' and path in boot['files']:continue
+            if path=='engine/ops/backlog.md':
+             old=git('show',base+':'+path);new=git('show',head+':'+path);lines=old.splitlines(keepends=True);count=0
+             for i,line in enumerate(lines):
+              if line.startswith('| '+code+' |') and re.search(r'\| (todo|doing|blocked) \|\n?$',line):lines[i]=re.sub(r'\| (todo|doing|blocked) \|(\n?)$',r'| done |\2',line);count+=1
+             assert count==1 and ''.join(lines)==new;continue
+            assert any(path==p or p.endswith('/**') and path.startswith(p[:-2]) for p in patterns),('outside-scope',path,wp[0])
+            assert path!=wp[0],'candidate-policy-change'
+          for path in diff:
+           assert not path.startswith('/') and not any(x in ['..','.',''] for x in path.split('/')) and '\\' not in path
+           patch=git('diff','--no-ext-diff','--unified=0',base,head,'--',path)
+           for line in patch.splitlines():
+            if not line.startswith('+') or line.startswith('+++'):continue
+            value=line[1:]
+            assert not re.search(r'\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})\b',value),('secret-redacted',path)
+            assert ('PRIVATE'+' KEY') not in value,('private-key-redacted',path)
+            assert all(re.fullmatch('[a-fA-F0-9]+',x) for x in re.findall(r'[A-Za-z0-9+/]{80,}={0,2}',value)),('base64-redacted',path)
+          names=git('ls-files','-z').split('\0')[:-1]
+          assert not git('status','--porcelain=v1','--untracked-files=all').strip()
+          snapshot={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in names}
+          (evidence/'source.before.json').write_text(json.dumps(snapshot,sort_keys=True)+'\n')
+          (evidence/'preflight.json').write_text(json.dumps({'result':'pass','head':head,'base':base,'branch':branch,'event':event,'eventSha':os.environ['GITHUB_SHA'],'grant':'FS23-WP001','policy':boot['policy'] if branch=='wp/001' else None,'paths':diff,'sourceFiles':len(names)})+'\n')
+          PY
+      - name: Checksum-pinned runtime
+        id: runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz -o "$TASK_ROOT/node.tar.xz"
+          printf '%s  %s\n' df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d "$TASK_ROOT/node.tar.xz" | sha256sum -c -
+          tar -xJf "$TASK_ROOT/node.tar.xz" -C "$TASK_ROOT"
+          node_path="$TASK_ROOT/node-v20.20.2-linux-x64/bin/node"
+          npm_cli="$TASK_ROOT/node-v20.20.2-linux-x64/lib/node_modules/npm/bin/npm-cli.js"
+          test "$($node_path --version)" = v20.20.2
+          test "$($node_path "$npm_cli" --version)" = 10.8.2
+          printf 'FS_NODE=%s\nFS_NPM=%s\n' "$node_path" "$npm_cli" >> "$GITHUB_ENV"
+          python3 - <<'PY'
+          import os,json,pathlib
+          pathlib.Path(os.environ['FS_EVIDENCE'],'runtime.json').write_text(json.dumps({'node':'20.20.2','npm':'10.8.2','archiveSha256':'df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d','archiveChecksum':'pass','node20EolException':'FS23-only','actionNode24Patch':'unproven','runnerOS':os.environ.get('RUNNER_OS'),'runnerArch':os.environ.get('RUNNER_ARCH'),'imageVersion':os.environ.get('ImageVersion'),'billedCostUsd':None,'B1B2':'unverified'})+'\n')
+          PY
+      - name: Set up action runtime tooling
+        id: setup
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '20'
+      - name: Install exact lockfile without lifecycle scripts
+        id: install
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir "$TASK_ROOT/mirror"
+          git archive "$FS_HEAD" | tar -x -C "$TASK_ROOT/mirror"
+          printf 'FS_TSX=%s/mirror/node_modules/tsx/dist/cli.mjs\n' "$TASK_ROOT" >> "$GITHUB_ENV"
+          export npm_config_cache="$TASK_ROOT/npm-cache"
+          set +e
+          "$FS_NODE" "$FS_NPM" ci --prefix "$TASK_ROOT/mirror" --ignore-scripts --no-audit --no-fund --include=dev --include=optional > "$FS_EVIDENCE/npm-ci.stdout.txt" 2> "$FS_EVIDENCE/npm-ci.stderr.txt"
+          code=$?
+          set -e
+          printf '%s\n' "$code" > "$FS_EVIDENCE/npm-ci.exit.txt"
+          exit "$code"
+      - name: Run validate checks
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,json,pathlib,subprocess,hashlib
+          e=pathlib.Path(os.environ['FS_EVIDENCE']);mirror=pathlib.Path(os.environ['TASK_ROOT'],'mirror');node=os.environ['FS_NODE'];tsx=os.environ['FS_TSX'];root=os.environ['GITHUB_WORKSPACE'];head=os.environ['FS_HEAD'];base=os.environ['FS_BASE'];job=os.environ['FS_JOB']
+          commands={'validate':[('validator',[node,tsx,'scripts/validate.ts','--root',root,'--commit',head])],'typecheck':[('typecheck',[node,str(mirror/'node_modules/typescript/bin/tsc'),'--noEmit'])],'guardrails':[('guardrails',[node,tsx,'scripts/guardrails/index.ts','--root',root,'--base',base,'--head',head,'--branch',os.environ['FS_BRANCH'],'--event',os.environ['FS_EVENT']]),('guardrails-tests',[node,tsx,'scripts/guardrails/guardrails.test.ts'])],'report':[('report',[node,tsx,'scripts/ci-report.ts'])]}[job]
+          receipts=[];failed=False
+          for name,args in commands:
+           with (e/(name+'.stdout.txt')).open('wb') as out,(e/(name+'.stderr.txt')).open('wb') as err:
+            r=subprocess.run(args,cwd=mirror,stdout=out,stderr=err,env=os.environ.copy())
+           row={'name':name,'args':args,'cwd':str(mirror),'status':r.returncode}
+           for stream in ['stdout','stderr']:
+            data=(e/(name+'.'+stream+'.txt')).read_bytes();row[stream+'Bytes']=len(data);row[stream+'Sha256']=hashlib.sha256(data).hexdigest()
+           receipts.append(row);failed|=r.returncode!=0
+          (e/'commands.json').write_text(json.dumps(receipts,indent=2)+'\n')
+          raise SystemExit(1 if failed else 0)
+          PY
+      - name: Verify source mirror and live main unchanged
+        id: preservation
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,pathlib,json,hashlib,subprocess,urllib.request
+          e=pathlib.Path(os.environ['FS_EVIDENCE']);root=pathlib.Path(os.environ['GITHUB_WORKSPACE']);mirror=pathlib.Path(os.environ['TASK_ROOT'],'mirror')
+          before=json.loads((e/'source.before.json').read_text());after={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in before}
+          (e/'source.after.json').write_text(json.dumps(after,sort_keys=True)+'\n');assert before==after
+          if mirror.exists():assert all(hashlib.sha256((mirror/p).read_bytes()).hexdigest()==v for p,v in before.items())
+          assert subprocess.check_output(['git','rev-parse','HEAD']).decode().strip()==os.environ['FS_HEAD']
+          assert not subprocess.check_output(['git','status','--porcelain=v1','--untracked-files=all']).strip()
+          request=urllib.request.Request('https://api.github.com/repos/HungQuach301/fulcrum-studio/git/ref/heads/main',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(request) as response:raw=response.read()
+          (e/'main-ref.after.json').write_bytes(raw);assert json.loads(raw)['object']['sha']==json.loads((e/'main-ref.before.json').read_text())['object']['sha']
+          (e/'preservation.json').write_text(json.dumps({'result':'pass','sourceUnchanged':True,'mirrorUnchanged':mirror.exists(),'mainUnchanged':True,'sourceFiles':len(before),'stateAndDependencyBytesUnchanged':True})+'\n')
+          PY
+      - name: Remove temporary execution data
+        id: cleanup
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,pathlib,shutil,json
+          p=pathlib.Path(os.environ['TASK_ROOT']);assert p.parent==pathlib.Path(os.environ['RUNNER_TEMP']) and p.name.startswith('fs23-')
+          for x in p.iterdir():
+           if x.name=='evidence':continue
+           if x.is_dir():shutil.rmtree(x)
+           else:x.unlink()
+          (p/'evidence/cleanup.json').write_text(json.dumps({'executionDataRemoved':True,'reportDataRemainingUntilFrame':True})+'\n')
+          PY
+      - name: Emit complete evidence bytes
+        id: evidence
+        if: ${{ always() }}
+        shell: bash
+        env:
+          FS_STEPS: ${{ toJSON(steps) }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,pathlib,json,hashlib,base64,re
+          p=pathlib.Path(os.environ['FS_EVIDENCE']);steps=json.loads(os.environ['FS_STEPS']);(p/'steps-at-emission.json').write_text(json.dumps(steps,indent=2)+'\n')
+          required=['preflight','runtime','setup','install','check','preservation','cleanup'];ok=all(steps.get(s,{}).get('outcome')=='success' for s in required)
+          errors=[]
+          for f in sorted(p.glob('*.stderr.txt')):
+           for line in f.read_text(errors='replace').splitlines():
+            if line.strip():errors.append(line[:400])
+          for f in sorted(p.glob('*.stdout.txt')):
+           for line in f.read_text(errors='replace').splitlines():
+            if re.search(r'error TS\d+|AssertionError|Error:',line):errors.append(line[:400])
+          def redact(x):
+           if re.search(r'\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})\b',x) or ('PRIVATE'+' KEY') in x:return '[redacted]'
+           if any(not re.fullmatch('[a-fA-F0-9]+',v) for v in re.findall(r'[A-Za-z0-9+/]{80,}={0,2}',x)):return '[redacted]'
+           return x
+          summary={'head':os.environ['FS_HEAD'],'base':os.environ.get('FS_BASE',''),'job':os.environ['FS_JOB'],'result':'success' if ok else 'failure','errors':[redact(x) for x in errors[:20]],'finalJobStatus':'requires-API-readback'}
+          (p/'job-summary.json').write_text(json.dumps(summary,ensure_ascii=False)+'\n')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write('summary='+json.dumps(summary,ensure_ascii=True)+'\n')
+          identity=['FS23-WP001',os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_RUN_ATTEMPT'],os.environ['FS_HEAD'],os.environ['FS_JOB'],os.environ['FS_EVENT'],os.environ.get('FS_BASE','')]
+          print('FS23_BEGIN\t'+'\t'.join(identity))
+          files=sorted(p.iterdir())
+          for f in files:
+           assert f.is_file() and re.fullmatch('[A-Za-z0-9_.-]+',f.name)
+           data=f.read_bytes();name=base64.b64encode(f.name.encode()).decode();print('FS23_FILE\t'+name+'\t'+str(len(data))+'\t'+hashlib.sha256(data).hexdigest());value=base64.b64encode(data).decode()
+           for i in range(0,len(value),2048):print('FS23_DATA\t'+str(i//2048+1)+'\t'+value[i:i+2048])
+           print('FS23_END\t'+name)
+          print('FS23_COMPLETE\t'+str(len(files)))
+          PY
+      - name: Remove final report data
+        id: final_cleanup
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$TASK_ROOT" in "$RUNNER_TEMP"/fs23-*) rm -rf -- "$TASK_ROOT" ;; *) exit 1 ;; esac
+          test ! -e "$TASK_ROOT"
+          printf 'FS23_FINAL_REPORT_CLEANUP=pass;job=%s\n' "$FS_JOB"
+  typecheck:
+    if: ${{ !github.event.deleted }}
+    runs-on: ubuntu-24.04
+    # No project deadline or silence threshold; platform limits still apply.
+    env:
+      FS_JOB: typecheck
+    outputs:
+      summary: ${{ steps.evidence.outputs.summary }}
+    steps:
+      - name: Initialize evidence directory
+        id: init
+        shell: bash
+        run: |
+          set -euo pipefail
+          task_root="$(mktemp -d "$RUNNER_TEMP/fs23-$FS_JOB.XXXXXX")"
+          mkdir "$task_root/evidence"
+          printf 'TASK_ROOT=%s
+          FS_EVIDENCE=%s/evidence
+          ' "$task_root" "$task_root" >> "$GITHUB_ENV"
+      - name: Checkout exact candidate
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ env.FS_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Preflight scope secret policy and checkpoint
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,json,subprocess,pathlib,hashlib,re,urllib.request
+          root=pathlib.Path(os.environ['GITHUB_WORKSPACE']); evidence=pathlib.Path(os.environ['FS_EVIDENCE'])
+          def git(*args):return subprocess.check_output(['git','-C',str(root),*args]).decode()
+          head=os.environ['FS_HEAD'];branch=os.environ['FS_BRANCH'];event=os.environ['FS_EVENT']
+          assert os.environ['GITHUB_REPOSITORY']=='HungQuach301/fulcrum-studio'
+          assert os.environ['GITHUB_RUN_ATTEMPT']=='1'
+          assert re.fullmatch('[a-f0-9]{40}',head) and git('rev-parse','HEAD').strip()==head
+          request=urllib.request.Request('https://api.github.com/repos/HungQuach301/fulcrum-studio/git/ref/heads/main',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(request) as response:raw=response.read()
+          (evidence/'main-ref.before.json').write_bytes(raw);main=json.loads(raw)['object']['sha']
+          base=git('rev-parse',head+'^1').strip() if branch=='main' and event=='push' else main
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write('FS_BASE='+base+'\n')
+          boot={'base': '48bdbe2932ab012ae3edcaf4eabe54b7af21f223', 'files': {'AGENTS.md': '2933f22521c1c8789e93e79959e9fe16c1108956', 'PROJECT.md': '31121b2db859cb01b52e55fec8bb91890a0a5fa5', 'engine/docs/02-decisions.md': '7c9fb2b11bc6560f7a9d45b5e012d1556b768700', 'engine/ops/definition-of-done.md': 'f7a9d16655700594e1e1580932b416754a0b26c6', 'engine/ops/guardrails.md': 'e33413e64af7dab996b78b7c358416ea0248949c', 'engine/ops/work-packages/WP-001-ci-guardrails.md': '4fd0949a13f7fa36b75fed052984e2ac42145758'}, 'policy': '754d90c4632c6771d8a81e3c6c5b78f7a5ed3812'}
+          impl=['.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/content.ts', 'scripts/guardrails/secrets.ts', 'scripts/guardrails/guardrails.test.ts', 'scripts/ci-report.ts', 'engine/ops/backlog.md']
+          diff=git('diff','--no-renames','--name-only','-z',base,head).split('\0')[:-1]
+          if branch=='wp/001':
+           assert base==boot['base'];git('merge-base','--is-ancestor',boot['policy'],head)
+           assert git('rev-list','--parents','-n','1',boot['policy']).strip()==boot['policy']+' '+boot['base']
+           changes=git('diff','--no-renames','--name-only','-z',base,boot['policy']).split('\0')[:-1]
+           assert set(changes)==set(boot['files'])
+           for path,blob in boot['files'].items():
+            assert git('rev-parse',head+':'+path).strip()==blob
+            assert git('rev-parse',boot['policy']+':'+path).strip()==blob
+            assert git('show',boot['policy']+':'+path).startswith(git('show',base+':'+path))
+           chain=git('rev-list','--reverse',boot['policy']+'..'+head).splitlines();assert 1<=len(chain)<=6
+           parent=boot['policy']
+           for number,sha in enumerate(chain,1):
+            assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+parent
+            msg=git('show','-s','--format=%B',sha)
+            assert re.findall(r'^Fulcrum-Grant: (.*)$',msg,re.M)==['FS23-WP001']
+            assert re.findall(r'^Fulcrum-Phase: (.*)$',msg,re.M)==['implementation']
+            assert re.findall(r'^Fulcrum-Iteration: (.*)$',msg,re.M)==[str(number)]
+            parent=sha
+           assert set(diff)<=set(impl+list(boot['files']))
+          if branch!='main':
+           match=re.fullmatch(r'(wp|cp)/([0-9]{3}[a-z]?)',branch);assert match,'branch-context'
+           code=match[1].upper()+'-'+match[2]
+           assert all(x==code for x in re.findall(r'\b(?:WP|CP)-[0-9]{3}[a-z]?\b',os.environ.get('FS_TITLE',''))),'title-context'
+           paths=git('ls-tree','-r','--name-only',base).splitlines()
+           wp=[x for x in paths if x.startswith('engine/ops/') and x.endswith('.md') and (pathlib.PurePosixPath(x).name==code+'.md' or pathlib.PurePosixPath(x).name.startswith(code+'-'))];assert len(wp)==1
+           text=git('show',base+':'+wp[0]);part=re.search(r'^###?\s+4\.\s+Phạm vi cho phép\s*\n(.*?)(?=^###?\s|\Z)',text,re.M|re.S);assert part
+           patterns=re.findall(r'`([^`]+)`',part[1]);assert patterns
+           for path in diff:
+            if branch=='wp/001' and path in boot['files']:continue
+            if path=='engine/ops/backlog.md':
+             old=git('show',base+':'+path);new=git('show',head+':'+path);lines=old.splitlines(keepends=True);count=0
+             for i,line in enumerate(lines):
+              if line.startswith('| '+code+' |') and re.search(r'\| (todo|doing|blocked) \|\n?$',line):lines[i]=re.sub(r'\| (todo|doing|blocked) \|(\n?)$',r'| done |\2',line);count+=1
+             assert count==1 and ''.join(lines)==new;continue
+            assert any(path==p or p.endswith('/**') and path.startswith(p[:-2]) for p in patterns),('outside-scope',path,wp[0])
+            assert path!=wp[0],'candidate-policy-change'
+          for path in diff:
+           assert not path.startswith('/') and not any(x in ['..','.',''] for x in path.split('/')) and '\\' not in path
+           patch=git('diff','--no-ext-diff','--unified=0',base,head,'--',path)
+           for line in patch.splitlines():
+            if not line.startswith('+') or line.startswith('+++'):continue
+            value=line[1:]
+            assert not re.search(r'\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})\b',value),('secret-redacted',path)
+            assert ('PRIVATE'+' KEY') not in value,('private-key-redacted',path)
+            assert all(re.fullmatch('[a-fA-F0-9]+',x) for x in re.findall(r'[A-Za-z0-9+/]{80,}={0,2}',value)),('base64-redacted',path)
+          names=git('ls-files','-z').split('\0')[:-1]
+          assert not git('status','--porcelain=v1','--untracked-files=all').strip()
+          snapshot={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in names}
+          (evidence/'source.before.json').write_text(json.dumps(snapshot,sort_keys=True)+'\n')
+          (evidence/'preflight.json').write_text(json.dumps({'result':'pass','head':head,'base':base,'branch':branch,'event':event,'eventSha':os.environ['GITHUB_SHA'],'grant':'FS23-WP001','policy':boot['policy'] if branch=='wp/001' else None,'paths':diff,'sourceFiles':len(names)})+'\n')
+          PY
+      - name: Checksum-pinned runtime
+        id: runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz -o "$TASK_ROOT/node.tar.xz"
+          printf '%s  %s\n' df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d "$TASK_ROOT/node.tar.xz" | sha256sum -c -
+          tar -xJf "$TASK_ROOT/node.tar.xz" -C "$TASK_ROOT"
+          node_path="$TASK_ROOT/node-v20.20.2-linux-x64/bin/node"
+          npm_cli="$TASK_ROOT/node-v20.20.2-linux-x64/lib/node_modules/npm/bin/npm-cli.js"
+          test "$($node_path --version)" = v20.20.2
+          test "$($node_path "$npm_cli" --version)" = 10.8.2
+          printf 'FS_NODE=%s\nFS_NPM=%s\n' "$node_path" "$npm_cli" >> "$GITHUB_ENV"
+          python3 - <<'PY'
+          import os,json,pathlib
+          pathlib.Path(os.environ['FS_EVIDENCE'],'runtime.json').write_text(json.dumps({'node':'20.20.2','npm':'10.8.2','archiveSha256':'df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d','archiveChecksum':'pass','node20EolException':'FS23-only','actionNode24Patch':'unproven','runnerOS':os.environ.get('RUNNER_OS'),'runnerArch':os.environ.get('RUNNER_ARCH'),'imageVersion':os.environ.get('ImageVersion'),'billedCostUsd':None,'B1B2':'unverified'})+'\n')
+          PY
+      - name: Set up action runtime tooling
+        id: setup
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '20'
+      - name: Install exact lockfile without lifecycle scripts
+        id: install
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir "$TASK_ROOT/mirror"
+          git archive "$FS_HEAD" | tar -x -C "$TASK_ROOT/mirror"
+          printf 'FS_TSX=%s/mirror/node_modules/tsx/dist/cli.mjs\n' "$TASK_ROOT" >> "$GITHUB_ENV"
+          export npm_config_cache="$TASK_ROOT/npm-cache"
+          set +e
+          "$FS_NODE" "$FS_NPM" ci --prefix "$TASK_ROOT/mirror" --ignore-scripts --no-audit --no-fund --include=dev --include=optional > "$FS_EVIDENCE/npm-ci.stdout.txt" 2> "$FS_EVIDENCE/npm-ci.stderr.txt"
+          code=$?
+          set -e
+          printf '%s\n' "$code" > "$FS_EVIDENCE/npm-ci.exit.txt"
+          exit "$code"
+      - name: Run typecheck checks
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,json,pathlib,subprocess,hashlib
+          e=pathlib.Path(os.environ['FS_EVIDENCE']);mirror=pathlib.Path(os.environ['TASK_ROOT'],'mirror');node=os.environ['FS_NODE'];tsx=os.environ['FS_TSX'];root=os.environ['GITHUB_WORKSPACE'];head=os.environ['FS_HEAD'];base=os.environ['FS_BASE'];job=os.environ['FS_JOB']
+          commands={'validate':[('validator',[node,tsx,'scripts/validate.ts','--root',root,'--commit',head])],'typecheck':[('typecheck',[node,str(mirror/'node_modules/typescript/bin/tsc'),'--noEmit'])],'guardrails':[('guardrails',[node,tsx,'scripts/guardrails/index.ts','--root',root,'--base',base,'--head',head,'--branch',os.environ['FS_BRANCH'],'--event',os.environ['FS_EVENT']]),('guardrails-tests',[node,tsx,'scripts/guardrails/guardrails.test.ts'])],'report':[('report',[node,tsx,'scripts/ci-report.ts'])]}[job]
+          receipts=[];failed=False
+          for name,args in commands:
+           with (e/(name+'.stdout.txt')).open('wb') as out,(e/(name+'.stderr.txt')).open('wb') as err:
+            r=subprocess.run(args,cwd=mirror,stdout=out,stderr=err,env=os.environ.copy())
+           row={'name':name,'args':args,'cwd':str(mirror),'status':r.returncode}
+           for stream in ['stdout','stderr']:
+            data=(e/(name+'.'+stream+'.txt')).read_bytes();row[stream+'Bytes']=len(data);row[stream+'Sha256']=hashlib.sha256(data).hexdigest()
+           receipts.append(row);failed|=r.returncode!=0
+          (e/'commands.json').write_text(json.dumps(receipts,indent=2)+'\n')
+          raise SystemExit(1 if failed else 0)
+          PY
+      - name: Verify source mirror and live main unchanged
+        id: preservation
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,pathlib,json,hashlib,subprocess,urllib.request
+          e=pathlib.Path(os.environ['FS_EVIDENCE']);root=pathlib.Path(os.environ['GITHUB_WORKSPACE']);mirror=pathlib.Path(os.environ['TASK_ROOT'],'mirror')
+          before=json.loads((e/'source.before.json').read_text());after={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in before}
+          (e/'source.after.json').write_text(json.dumps(after,sort_keys=True)+'\n');assert before==after
+          if mirror.exists():assert all(hashlib.sha256((mirror/p).read_bytes()).hexdigest()==v for p,v in before.items())
+          assert subprocess.check_output(['git','rev-parse','HEAD']).decode().strip()==os.environ['FS_HEAD']
+          assert not subprocess.check_output(['git','status','--porcelain=v1','--untracked-files=all']).strip()
+          request=urllib.request.Request('https://api.github.com/repos/HungQuach301/fulcrum-studio/git/ref/heads/main',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(request) as response:raw=response.read()
+          (e/'main-ref.after.json').write_bytes(raw);assert json.loads(raw)['object']['sha']==json.loads((e/'main-ref.before.json').read_text())['object']['sha']
+          (e/'preservation.json').write_text(json.dumps({'result':'pass','sourceUnchanged':True,'mirrorUnchanged':mirror.exists(),'mainUnchanged':True,'sourceFiles':len(before),'stateAndDependencyBytesUnchanged':True})+'\n')
+          PY
+      - name: Remove temporary execution data
+        id: cleanup
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,pathlib,shutil,json
+          p=pathlib.Path(os.environ['TASK_ROOT']);assert p.parent==pathlib.Path(os.environ['RUNNER_TEMP']) and p.name.startswith('fs23-')
+          for x in p.iterdir():
+           if x.name=='evidence':continue
+           if x.is_dir():shutil.rmtree(x)
+           else:x.unlink()
+          (p/'evidence/cleanup.json').write_text(json.dumps({'executionDataRemoved':True,'reportDataRemainingUntilFrame':True})+'\n')
+          PY
+      - name: Emit complete evidence bytes
+        id: evidence
+        if: ${{ always() }}
+        shell: bash
+        env:
+          FS_STEPS: ${{ toJSON(steps) }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,pathlib,json,hashlib,base64,re
+          p=pathlib.Path(os.environ['FS_EVIDENCE']);steps=json.loads(os.environ['FS_STEPS']);(p/'steps-at-emission.json').write_text(json.dumps(steps,indent=2)+'\n')
+          required=['preflight','runtime','setup','install','check','preservation','cleanup'];ok=all(steps.get(s,{}).get('outcome')=='success' for s in required)
+          errors=[]
+          for f in sorted(p.glob('*.stderr.txt')):
+           for line in f.read_text(errors='replace').splitlines():
+            if line.strip():errors.append(line[:400])
+          for f in sorted(p.glob('*.stdout.txt')):
+           for line in f.read_text(errors='replace').splitlines():
+            if re.search(r'error TS\d+|AssertionError|Error:',line):errors.append(line[:400])
+          def redact(x):
+           if re.search(r'\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})\b',x) or ('PRIVATE'+' KEY') in x:return '[redacted]'
+           if any(not re.fullmatch('[a-fA-F0-9]+',v) for v in re.findall(r'[A-Za-z0-9+/]{80,}={0,2}',x)):return '[redacted]'
+           return x
+          summary={'head':os.environ['FS_HEAD'],'base':os.environ.get('FS_BASE',''),'job':os.environ['FS_JOB'],'result':'success' if ok else 'failure','errors':[redact(x) for x in errors[:20]],'finalJobStatus':'requires-API-readback'}
+          (p/'job-summary.json').write_text(json.dumps(summary,ensure_ascii=False)+'\n')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write('summary='+json.dumps(summary,ensure_ascii=True)+'\n')
+          identity=['FS23-WP001',os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_RUN_ATTEMPT'],os.environ['FS_HEAD'],os.environ['FS_JOB'],os.environ['FS_EVENT'],os.environ.get('FS_BASE','')]
+          print('FS23_BEGIN\t'+'\t'.join(identity))
+          files=sorted(p.iterdir())
+          for f in files:
+           assert f.is_file() and re.fullmatch('[A-Za-z0-9_.-]+',f.name)
+           data=f.read_bytes();name=base64.b64encode(f.name.encode()).decode();print('FS23_FILE\t'+name+'\t'+str(len(data))+'\t'+hashlib.sha256(data).hexdigest());value=base64.b64encode(data).decode()
+           for i in range(0,len(value),2048):print('FS23_DATA\t'+str(i//2048+1)+'\t'+value[i:i+2048])
+           print('FS23_END\t'+name)
+          print('FS23_COMPLETE\t'+str(len(files)))
+          PY
+      - name: Remove final report data
+        id: final_cleanup
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$TASK_ROOT" in "$RUNNER_TEMP"/fs23-*) rm -rf -- "$TASK_ROOT" ;; *) exit 1 ;; esac
+          test ! -e "$TASK_ROOT"
+          printf 'FS23_FINAL_REPORT_CLEANUP=pass;job=%s\n' "$FS_JOB"
+  guardrails:
+    if: ${{ !github.event.deleted }}
+    runs-on: ubuntu-24.04
+    # No project deadline or silence threshold; platform limits still apply.
+    env:
+      FS_JOB: guardrails
+    outputs:
+      summary: ${{ steps.evidence.outputs.summary }}
+    steps:
+      - name: Initialize evidence directory
+        id: init
+        shell: bash
+        run: |
+          set -euo pipefail
+          task_root="$(mktemp -d "$RUNNER_TEMP/fs23-$FS_JOB.XXXXXX")"
+          mkdir "$task_root/evidence"
+          printf 'TASK_ROOT=%s
+          FS_EVIDENCE=%s/evidence
+          ' "$task_root" "$task_root" >> "$GITHUB_ENV"
+      - name: Checkout exact candidate
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ env.FS_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Preflight scope secret policy and checkpoint
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,json,subprocess,pathlib,hashlib,re,urllib.request
+          root=pathlib.Path(os.environ['GITHUB_WORKSPACE']); evidence=pathlib.Path(os.environ['FS_EVIDENCE'])
+          def git(*args):return subprocess.check_output(['git','-C',str(root),*args]).decode()
+          head=os.environ['FS_HEAD'];branch=os.environ['FS_BRANCH'];event=os.environ['FS_EVENT']
+          assert os.environ['GITHUB_REPOSITORY']=='HungQuach301/fulcrum-studio'
+          assert os.environ['GITHUB_RUN_ATTEMPT']=='1'
+          assert re.fullmatch('[a-f0-9]{40}',head) and git('rev-parse','HEAD').strip()==head
+          request=urllib.request.Request('https://api.github.com/repos/HungQuach301/fulcrum-studio/git/ref/heads/main',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(request) as response:raw=response.read()
+          (evidence/'main-ref.before.json').write_bytes(raw);main=json.loads(raw)['object']['sha']
+          base=git('rev-parse',head+'^1').strip() if branch=='main' and event=='push' else main
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write('FS_BASE='+base+'\n')
+          boot={'base': '48bdbe2932ab012ae3edcaf4eabe54b7af21f223', 'files': {'AGENTS.md': '2933f22521c1c8789e93e79959e9fe16c1108956', 'PROJECT.md': '31121b2db859cb01b52e55fec8bb91890a0a5fa5', 'engine/docs/02-decisions.md': '7c9fb2b11bc6560f7a9d45b5e012d1556b768700', 'engine/ops/definition-of-done.md': 'f7a9d16655700594e1e1580932b416754a0b26c6', 'engine/ops/guardrails.md': 'e33413e64af7dab996b78b7c358416ea0248949c', 'engine/ops/work-packages/WP-001-ci-guardrails.md': '4fd0949a13f7fa36b75fed052984e2ac42145758'}, 'policy': '754d90c4632c6771d8a81e3c6c5b78f7a5ed3812'}
+          impl=['.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/content.ts', 'scripts/guardrails/secrets.ts', 'scripts/guardrails/guardrails.test.ts', 'scripts/ci-report.ts', 'engine/ops/backlog.md']
+          diff=git('diff','--no-renames','--name-only','-z',base,head).split('\0')[:-1]
+          if branch=='wp/001':
+           assert base==boot['base'];git('merge-base','--is-ancestor',boot['policy'],head)
+           assert git('rev-list','--parents','-n','1',boot['policy']).strip()==boot['policy']+' '+boot['base']
+           changes=git('diff','--no-renames','--name-only','-z',base,boot['policy']).split('\0')[:-1]
+           assert set(changes)==set(boot['files'])
+           for path,blob in boot['files'].items():
+            assert git('rev-parse',head+':'+path).strip()==blob
+            assert git('rev-parse',boot['policy']+':'+path).strip()==blob
+            assert git('show',boot['policy']+':'+path).startswith(git('show',base+':'+path))
+           chain=git('rev-list','--reverse',boot['policy']+'..'+head).splitlines();assert 1<=len(chain)<=6
+           parent=boot['policy']
+           for number,sha in enumerate(chain,1):
+            assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+parent
+            msg=git('show','-s','--format=%B',sha)
+            assert re.findall(r'^Fulcrum-Grant: (.*)$',msg,re.M)==['FS23-WP001']
+            assert re.findall(r'^Fulcrum-Phase: (.*)$',msg,re.M)==['implementation']
+            assert re.findall(r'^Fulcrum-Iteration: (.*)$',msg,re.M)==[str(number)]
+            parent=sha
+           assert set(diff)<=set(impl+list(boot['files']))
+          if branch!='main':
+           match=re.fullmatch(r'(wp|cp)/([0-9]{3}[a-z]?)',branch);assert match,'branch-context'
+           code=match[1].upper()+'-'+match[2]
+           assert all(x==code for x in re.findall(r'\b(?:WP|CP)-[0-9]{3}[a-z]?\b',os.environ.get('FS_TITLE',''))),'title-context'
+           paths=git('ls-tree','-r','--name-only',base).splitlines()
+           wp=[x for x in paths if x.startswith('engine/ops/') and x.endswith('.md') and (pathlib.PurePosixPath(x).name==code+'.md' or pathlib.PurePosixPath(x).name.startswith(code+'-'))];assert len(wp)==1
+           text=git('show',base+':'+wp[0]);part=re.search(r'^###?\s+4\.\s+Phạm vi cho phép\s*\n(.*?)(?=^###?\s|\Z)',text,re.M|re.S);assert part
+           patterns=re.findall(r'`([^`]+)`',part[1]);assert patterns
+           for path in diff:
+            if branch=='wp/001' and path in boot['files']:continue
+            if path=='engine/ops/backlog.md':
+             old=git('show',base+':'+path);new=git('show',head+':'+path);lines=old.splitlines(keepends=True);count=0
+             for i,line in enumerate(lines):
+              if line.startswith('| '+code+' |') and re.search(r'\| (todo|doing|blocked) \|\n?$',line):lines[i]=re.sub(r'\| (todo|doing|blocked) \|(\n?)$',r'| done |\2',line);count+=1
+             assert count==1 and ''.join(lines)==new;continue
+            assert any(path==p or p.endswith('/**') and path.startswith(p[:-2]) for p in patterns),('outside-scope',path,wp[0])
+            assert path!=wp[0],'candidate-policy-change'
+          for path in diff:
+           assert not path.startswith('/') and not any(x in ['..','.',''] for x in path.split('/')) and '\\' not in path
+           patch=git('diff','--no-ext-diff','--unified=0',base,head,'--',path)
+           for line in patch.splitlines():
+            if not line.startswith('+') or line.startswith('+++'):continue
+            value=line[1:]
+            assert not re.search(r'\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})\b',value),('secret-redacted',path)
+            assert ('PRIVATE'+' KEY') not in value,('private-key-redacted',path)
+            assert all(re.fullmatch('[a-fA-F0-9]+',x) for x in re.findall(r'[A-Za-z0-9+/]{80,}={0,2}',value)),('base64-redacted',path)
+          names=git('ls-files','-z').split('\0')[:-1]
+          assert not git('status','--porcelain=v1','--untracked-files=all').strip()
+          snapshot={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in names}
+          (evidence/'source.before.json').write_text(json.dumps(snapshot,sort_keys=True)+'\n')
+          (evidence/'preflight.json').write_text(json.dumps({'result':'pass','head':head,'base':base,'branch':branch,'event':event,'eventSha':os.environ['GITHUB_SHA'],'grant':'FS23-WP001','policy':boot['policy'] if branch=='wp/001' else None,'paths':diff,'sourceFiles':len(names)})+'\n')
+          PY
+      - name: Checksum-pinned runtime
+        id: runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz -o "$TASK_ROOT/node.tar.xz"
+          printf '%s  %s\n' df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d "$TASK_ROOT/node.tar.xz" | sha256sum -c -
+          tar -xJf "$TASK_ROOT/node.tar.xz" -C "$TASK_ROOT"
+          node_path="$TASK_ROOT/node-v20.20.2-linux-x64/bin/node"
+          npm_cli="$TASK_ROOT/node-v20.20.2-linux-x64/lib/node_modules/npm/bin/npm-cli.js"
+          test "$($node_path --version)" = v20.20.2
+          test "$($node_path "$npm_cli" --version)" = 10.8.2
+          printf 'FS_NODE=%s\nFS_NPM=%s\n' "$node_path" "$npm_cli" >> "$GITHUB_ENV"
+          python3 - <<'PY'
+          import os,json,pathlib
+          pathlib.Path(os.environ['FS_EVIDENCE'],'runtime.json').write_text(json.dumps({'node':'20.20.2','npm':'10.8.2','archiveSha256':'df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d','archiveChecksum':'pass','node20EolException':'FS23-only','actionNode24Patch':'unproven','runnerOS':os.environ.get('RUNNER_OS'),'runnerArch':os.environ.get('RUNNER_ARCH'),'imageVersion':os.environ.get('ImageVersion'),'billedCostUsd':None,'B1B2':'unverified'})+'\n')
+          PY
+      - name: Set up action runtime tooling
+        id: setup
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '20'
+      - name: Install exact lockfile without lifecycle scripts
+        id: install
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir "$TASK_ROOT/mirror"
+          git archive "$FS_HEAD" | tar -x -C "$TASK_ROOT/mirror"
+          printf 'FS_TSX=%s/mirror/node_modules/tsx/dist/cli.mjs\n' "$TASK_ROOT" >> "$GITHUB_ENV"
+          export npm_config_cache="$TASK_ROOT/npm-cache"
+          set +e
+          "$FS_NODE" "$FS_NPM" ci --prefix "$TASK_ROOT/mirror" --ignore-scripts --no-audit --no-fund --include=dev --include=optional > "$FS_EVIDENCE/npm-ci.stdout.txt" 2> "$FS_EVIDENCE/npm-ci.stderr.txt"
+          code=$?
+          set -e
+          printf '%s\n' "$code" > "$FS_EVIDENCE/npm-ci.exit.txt"
+          exit "$code"
+      - name: Run guardrails checks
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,json,pathlib,subprocess,hashlib
+          e=pathlib.Path(os.environ['FS_EVIDENCE']);mirror=pathlib.Path(os.environ['TASK_ROOT'],'mirror');node=os.environ['FS_NODE'];tsx=os.environ['FS_TSX'];root=os.environ['GITHUB_WORKSPACE'];head=os.environ['FS_HEAD'];base=os.environ['FS_BASE'];job=os.environ['FS_JOB']
+          commands={'validate':[('validator',[node,tsx,'scripts/validate.ts','--root',root,'--commit',head])],'typecheck':[('typecheck',[node,str(mirror/'node_modules/typescript/bin/tsc'),'--noEmit'])],'guardrails':[('guardrails',[node,tsx,'scripts/guardrails/index.ts','--root',root,'--base',base,'--head',head,'--branch',os.environ['FS_BRANCH'],'--event',os.environ['FS_EVENT']]),('guardrails-tests',[node,tsx,'scripts/guardrails/guardrails.test.ts'])],'report':[('report',[node,tsx,'scripts/ci-report.ts'])]}[job]
+          receipts=[];failed=False
+          for name,args in commands:
+           with (e/(name+'.stdout.txt')).open('wb') as out,(e/(name+'.stderr.txt')).open('wb') as err:
+            r=subprocess.run(args,cwd=mirror,stdout=out,stderr=err,env=os.environ.copy())
+           row={'name':name,'args':args,'cwd':str(mirror),'status':r.returncode}
+           for stream in ['stdout','stderr']:
+            data=(e/(name+'.'+stream+'.txt')).read_bytes();row[stream+'Bytes']=len(data);row[stream+'Sha256']=hashlib.sha256(data).hexdigest()
+           receipts.append(row);failed|=r.returncode!=0
+          (e/'commands.json').write_text(json.dumps(receipts,indent=2)+'\n')
+          raise SystemExit(1 if failed else 0)
+          PY
+      - name: Verify source mirror and live main unchanged
+        id: preservation
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,pathlib,json,hashlib,subprocess,urllib.request
+          e=pathlib.Path(os.environ['FS_EVIDENCE']);root=pathlib.Path(os.environ['GITHUB_WORKSPACE']);mirror=pathlib.Path(os.environ['TASK_ROOT'],'mirror')
+          before=json.loads((e/'source.before.json').read_text());after={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in before}
+          (e/'source.after.json').write_text(json.dumps(after,sort_keys=True)+'\n');assert before==after
+          if mirror.exists():assert all(hashlib.sha256((mirror/p).read_bytes()).hexdigest()==v for p,v in before.items())
+          assert subprocess.check_output(['git','rev-parse','HEAD']).decode().strip()==os.environ['FS_HEAD']
+          assert not subprocess.check_output(['git','status','--porcelain=v1','--untracked-files=all']).strip()
+          request=urllib.request.Request('https://api.github.com/repos/HungQuach301/fulcrum-studio/git/ref/heads/main',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(request) as response:raw=response.read()
+          (e/'main-ref.after.json').write_bytes(raw);assert json.loads(raw)['object']['sha']==json.loads((e/'main-ref.before.json').read_text())['object']['sha']
+          (e/'preservation.json').write_text(json.dumps({'result':'pass','sourceUnchanged':True,'mirrorUnchanged':mirror.exists(),'mainUnchanged':True,'sourceFiles':len(before),'stateAndDependencyBytesUnchanged':True})+'\n')
+          PY
+      - name: Remove temporary execution data
+        id: cleanup
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,pathlib,shutil,json
+          p=pathlib.Path(os.environ['TASK_ROOT']);assert p.parent==pathlib.Path(os.environ['RUNNER_TEMP']) and p.name.startswith('fs23-')
+          for x in p.iterdir():
+           if x.name=='evidence':continue
+           if x.is_dir():shutil.rmtree(x)
+           else:x.unlink()
+          (p/'evidence/cleanup.json').write_text(json.dumps({'executionDataRemoved':True,'reportDataRemainingUntilFrame':True})+'\n')
+          PY
+      - name: Emit complete evidence bytes
+        id: evidence
+        if: ${{ always() }}
+        shell: bash
+        env:
+          FS_STEPS: ${{ toJSON(steps) }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,pathlib,json,hashlib,base64,re
+          p=pathlib.Path(os.environ['FS_EVIDENCE']);steps=json.loads(os.environ['FS_STEPS']);(p/'steps-at-emission.json').write_text(json.dumps(steps,indent=2)+'\n')
+          required=['preflight','runtime','setup','install','check','preservation','cleanup'];ok=all(steps.get(s,{}).get('outcome')=='success' for s in required)
+          errors=[]
+          for f in sorted(p.glob('*.stderr.txt')):
+           for line in f.read_text(errors='replace').splitlines():
+            if line.strip():errors.append(line[:400])
+          for f in sorted(p.glob('*.stdout.txt')):
+           for line in f.read_text(errors='replace').splitlines():
+            if re.search(r'error TS\d+|AssertionError|Error:',line):errors.append(line[:400])
+          def redact(x):
+           if re.search(r'\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})\b',x) or ('PRIVATE'+' KEY') in x:return '[redacted]'
+           if any(not re.fullmatch('[a-fA-F0-9]+',v) for v in re.findall(r'[A-Za-z0-9+/]{80,}={0,2}',x)):return '[redacted]'
+           return x
+          summary={'head':os.environ['FS_HEAD'],'base':os.environ.get('FS_BASE',''),'job':os.environ['FS_JOB'],'result':'success' if ok else 'failure','errors':[redact(x) for x in errors[:20]],'finalJobStatus':'requires-API-readback'}
+          (p/'job-summary.json').write_text(json.dumps(summary,ensure_ascii=False)+'\n')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write('summary='+json.dumps(summary,ensure_ascii=True)+'\n')
+          identity=['FS23-WP001',os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_RUN_ATTEMPT'],os.environ['FS_HEAD'],os.environ['FS_JOB'],os.environ['FS_EVENT'],os.environ.get('FS_BASE','')]
+          print('FS23_BEGIN\t'+'\t'.join(identity))
+          files=sorted(p.iterdir())
+          for f in files:
+           assert f.is_file() and re.fullmatch('[A-Za-z0-9_.-]+',f.name)
+           data=f.read_bytes();name=base64.b64encode(f.name.encode()).decode();print('FS23_FILE\t'+name+'\t'+str(len(data))+'\t'+hashlib.sha256(data).hexdigest());value=base64.b64encode(data).decode()
+           for i in range(0,len(value),2048):print('FS23_DATA\t'+str(i//2048+1)+'\t'+value[i:i+2048])
+           print('FS23_END\t'+name)
+          print('FS23_COMPLETE\t'+str(len(files)))
+          PY
+      - name: Remove final report data
+        id: final_cleanup
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$TASK_ROOT" in "$RUNNER_TEMP"/fs23-*) rm -rf -- "$TASK_ROOT" ;; *) exit 1 ;; esac
+          test ! -e "$TASK_ROOT"
+          printf 'FS23_FINAL_REPORT_CLEANUP=pass;job=%s\n' "$FS_JOB"
+  report:
+    needs: [validate, typecheck, guardrails]
+    if: ${{ always() && !github.event.deleted }}
+    runs-on: ubuntu-24.04
+    # No project deadline or silence threshold; platform limits still apply.
+    env:
+      FS_JOB: report
+      FS_NEEDS: ${{ toJSON(needs) }}
+    outputs:
+      summary: ${{ steps.evidence.outputs.summary }}
+    steps:
+      - name: Initialize evidence directory
+        id: init
+        shell: bash
+        run: |
+          set -euo pipefail
+          task_root="$(mktemp -d "$RUNNER_TEMP/fs23-$FS_JOB.XXXXXX")"
+          mkdir "$task_root/evidence"
+          printf 'TASK_ROOT=%s
+          FS_EVIDENCE=%s/evidence
+          ' "$task_root" "$task_root" >> "$GITHUB_ENV"
+      - name: Checkout exact candidate
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ env.FS_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Preflight scope secret policy and checkpoint
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,json,subprocess,pathlib,hashlib,re,urllib.request
+          root=pathlib.Path(os.environ['GITHUB_WORKSPACE']); evidence=pathlib.Path(os.environ['FS_EVIDENCE'])
+          def git(*args):return subprocess.check_output(['git','-C',str(root),*args]).decode()
+          head=os.environ['FS_HEAD'];branch=os.environ['FS_BRANCH'];event=os.environ['FS_EVENT']
+          assert os.environ['GITHUB_REPOSITORY']=='HungQuach301/fulcrum-studio'
+          assert os.environ['GITHUB_RUN_ATTEMPT']=='1'
+          assert re.fullmatch('[a-f0-9]{40}',head) and git('rev-parse','HEAD').strip()==head
+          request=urllib.request.Request('https://api.github.com/repos/HungQuach301/fulcrum-studio/git/ref/heads/main',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(request) as response:raw=response.read()
+          (evidence/'main-ref.before.json').write_bytes(raw);main=json.loads(raw)['object']['sha']
+          base=git('rev-parse',head+'^1').strip() if branch=='main' and event=='push' else main
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write('FS_BASE='+base+'\n')
+          boot={'base': '48bdbe2932ab012ae3edcaf4eabe54b7af21f223', 'files': {'AGENTS.md': '2933f22521c1c8789e93e79959e9fe16c1108956', 'PROJECT.md': '31121b2db859cb01b52e55fec8bb91890a0a5fa5', 'engine/docs/02-decisions.md': '7c9fb2b11bc6560f7a9d45b5e012d1556b768700', 'engine/ops/definition-of-done.md': 'f7a9d16655700594e1e1580932b416754a0b26c6', 'engine/ops/guardrails.md': 'e33413e64af7dab996b78b7c358416ea0248949c', 'engine/ops/work-packages/WP-001-ci-guardrails.md': '4fd0949a13f7fa36b75fed052984e2ac42145758'}, 'policy': '754d90c4632c6771d8a81e3c6c5b78f7a5ed3812'}
+          impl=['.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/content.ts', 'scripts/guardrails/secrets.ts', 'scripts/guardrails/guardrails.test.ts', 'scripts/ci-report.ts', 'engine/ops/backlog.md']
+          diff=git('diff','--no-renames','--name-only','-z',base,head).split('\0')[:-1]
+          if branch=='wp/001':
+           assert base==boot['base'];git('merge-base','--is-ancestor',boot['policy'],head)
+           assert git('rev-list','--parents','-n','1',boot['policy']).strip()==boot['policy']+' '+boot['base']
+           changes=git('diff','--no-renames','--name-only','-z',base,boot['policy']).split('\0')[:-1]
+           assert set(changes)==set(boot['files'])
+           for path,blob in boot['files'].items():
+            assert git('rev-parse',head+':'+path).strip()==blob
+            assert git('rev-parse',boot['policy']+':'+path).strip()==blob
+            assert git('show',boot['policy']+':'+path).startswith(git('show',base+':'+path))
+           chain=git('rev-list','--reverse',boot['policy']+'..'+head).splitlines();assert 1<=len(chain)<=6
+           parent=boot['policy']
+           for number,sha in enumerate(chain,1):
+            assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+parent
+            msg=git('show','-s','--format=%B',sha)
+            assert re.findall(r'^Fulcrum-Grant: (.*)$',msg,re.M)==['FS23-WP001']
+            assert re.findall(r'^Fulcrum-Phase: (.*)$',msg,re.M)==['implementation']
+            assert re.findall(r'^Fulcrum-Iteration: (.*)$',msg,re.M)==[str(number)]
+            parent=sha
+           assert set(diff)<=set(impl+list(boot['files']))
+          if branch!='main':
+           match=re.fullmatch(r'(wp|cp)/([0-9]{3}[a-z]?)',branch);assert match,'branch-context'
+           code=match[1].upper()+'-'+match[2]
+           assert all(x==code for x in re.findall(r'\b(?:WP|CP)-[0-9]{3}[a-z]?\b',os.environ.get('FS_TITLE',''))),'title-context'
+           paths=git('ls-tree','-r','--name-only',base).splitlines()
+           wp=[x for x in paths if x.startswith('engine/ops/') and x.endswith('.md') and (pathlib.PurePosixPath(x).name==code+'.md' or pathlib.PurePosixPath(x).name.startswith(code+'-'))];assert len(wp)==1
+           text=git('show',base+':'+wp[0]);part=re.search(r'^###?\s+4\.\s+Phạm vi cho phép\s*\n(.*?)(?=^###?\s|\Z)',text,re.M|re.S);assert part
+           patterns=re.findall(r'`([^`]+)`',part[1]);assert patterns
+           for path in diff:
+            if branch=='wp/001' and path in boot['files']:continue
+            if path=='engine/ops/backlog.md':
+             old=git('show',base+':'+path);new=git('show',head+':'+path);lines=old.splitlines(keepends=True);count=0
+             for i,line in enumerate(lines):
+              if line.startswith('| '+code+' |') and re.search(r'\| (todo|doing|blocked) \|\n?$',line):lines[i]=re.sub(r'\| (todo|doing|blocked) \|(\n?)$',r'| done |\2',line);count+=1
+             assert count==1 and ''.join(lines)==new;continue
+            assert any(path==p or p.endswith('/**') and path.startswith(p[:-2]) for p in patterns),('outside-scope',path,wp[0])
+            assert path!=wp[0],'candidate-policy-change'
+          for path in diff:
+           assert not path.startswith('/') and not any(x in ['..','.',''] for x in path.split('/')) and '\\' not in path
+           patch=git('diff','--no-ext-diff','--unified=0',base,head,'--',path)
+           for line in patch.splitlines():
+            if not line.startswith('+') or line.startswith('+++'):continue
+            value=line[1:]
+            assert not re.search(r'\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})\b',value),('secret-redacted',path)
+            assert ('PRIVATE'+' KEY') not in value,('private-key-redacted',path)
+            assert all(re.fullmatch('[a-fA-F0-9]+',x) for x in re.findall(r'[A-Za-z0-9+/]{80,}={0,2}',value)),('base64-redacted',path)
+          names=git('ls-files','-z').split('\0')[:-1]
+          assert not git('status','--porcelain=v1','--untracked-files=all').strip()
+          snapshot={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in names}
+          (evidence/'source.before.json').write_text(json.dumps(snapshot,sort_keys=True)+'\n')
+          (evidence/'preflight.json').write_text(json.dumps({'result':'pass','head':head,'base':base,'branch':branch,'event':event,'eventSha':os.environ['GITHUB_SHA'],'grant':'FS23-WP001','policy':boot['policy'] if branch=='wp/001' else None,'paths':diff,'sourceFiles':len(names)})+'\n')
+          PY
+      - name: Checksum-pinned runtime
+        id: runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz -o "$TASK_ROOT/node.tar.xz"
+          printf '%s  %s\n' df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d "$TASK_ROOT/node.tar.xz" | sha256sum -c -
+          tar -xJf "$TASK_ROOT/node.tar.xz" -C "$TASK_ROOT"
+          node_path="$TASK_ROOT/node-v20.20.2-linux-x64/bin/node"
+          npm_cli="$TASK_ROOT/node-v20.20.2-linux-x64/lib/node_modules/npm/bin/npm-cli.js"
+          test "$($node_path --version)" = v20.20.2
+          test "$($node_path "$npm_cli" --version)" = 10.8.2
+          printf 'FS_NODE=%s\nFS_NPM=%s\n' "$node_path" "$npm_cli" >> "$GITHUB_ENV"
+          python3 - <<'PY'
+          import os,json,pathlib
+          pathlib.Path(os.environ['FS_EVIDENCE'],'runtime.json').write_text(json.dumps({'node':'20.20.2','npm':'10.8.2','archiveSha256':'df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d','archiveChecksum':'pass','node20EolException':'FS23-only','actionNode24Patch':'unproven','runnerOS':os.environ.get('RUNNER_OS'),'runnerArch':os.environ.get('RUNNER_ARCH'),'imageVersion':os.environ.get('ImageVersion'),'billedCostUsd':None,'B1B2':'unverified'})+'\n')
+          PY
+      - name: Set up action runtime tooling
+        id: setup
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '20'
+      - name: Install exact lockfile without lifecycle scripts
+        id: install
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir "$TASK_ROOT/mirror"
+          git archive "$FS_HEAD" | tar -x -C "$TASK_ROOT/mirror"
+          printf 'FS_TSX=%s/mirror/node_modules/tsx/dist/cli.mjs\n' "$TASK_ROOT" >> "$GITHUB_ENV"
+          export npm_config_cache="$TASK_ROOT/npm-cache"
+          set +e
+          "$FS_NODE" "$FS_NPM" ci --prefix "$TASK_ROOT/mirror" --ignore-scripts --no-audit --no-fund --include=dev --include=optional > "$FS_EVIDENCE/npm-ci.stdout.txt" 2> "$FS_EVIDENCE/npm-ci.stderr.txt"
+          code=$?
+          set -e
+          printf '%s\n' "$code" > "$FS_EVIDENCE/npm-ci.exit.txt"
+          exit "$code"
+      - name: Run report checks
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,json,pathlib,subprocess,hashlib
+          e=pathlib.Path(os.environ['FS_EVIDENCE']);mirror=pathlib.Path(os.environ['TASK_ROOT'],'mirror');node=os.environ['FS_NODE'];tsx=os.environ['FS_TSX'];root=os.environ['GITHUB_WORKSPACE'];head=os.environ['FS_HEAD'];base=os.environ['FS_BASE'];job=os.environ['FS_JOB']
+          commands={'validate':[('validator',[node,tsx,'scripts/validate.ts','--root',root,'--commit',head])],'typecheck':[('typecheck',[node,str(mirror/'node_modules/typescript/bin/tsc'),'--noEmit'])],'guardrails':[('guardrails',[node,tsx,'scripts/guardrails/index.ts','--root',root,'--base',base,'--head',head,'--branch',os.environ['FS_BRANCH'],'--event',os.environ['FS_EVENT']]),('guardrails-tests',[node,tsx,'scripts/guardrails/guardrails.test.ts'])],'report':[('report',[node,tsx,'scripts/ci-report.ts'])]}[job]
+          receipts=[];failed=False
+          for name,args in commands:
+           with (e/(name+'.stdout.txt')).open('wb') as out,(e/(name+'.stderr.txt')).open('wb') as err:
+            r=subprocess.run(args,cwd=mirror,stdout=out,stderr=err,env=os.environ.copy())
+           row={'name':name,'args':args,'cwd':str(mirror),'status':r.returncode}
+           for stream in ['stdout','stderr']:
+            data=(e/(name+'.'+stream+'.txt')).read_bytes();row[stream+'Bytes']=len(data);row[stream+'Sha256']=hashlib.sha256(data).hexdigest()
+           receipts.append(row);failed|=r.returncode!=0
+          (e/'commands.json').write_text(json.dumps(receipts,indent=2)+'\n')
+          raise SystemExit(1 if failed else 0)
+          PY
+      - name: Verify source mirror and live main unchanged
+        id: preservation
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,pathlib,json,hashlib,subprocess,urllib.request
+          e=pathlib.Path(os.environ['FS_EVIDENCE']);root=pathlib.Path(os.environ['GITHUB_WORKSPACE']);mirror=pathlib.Path(os.environ['TASK_ROOT'],'mirror')
+          before=json.loads((e/'source.before.json').read_text());after={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in before}
+          (e/'source.after.json').write_text(json.dumps(after,sort_keys=True)+'\n');assert before==after
+          if mirror.exists():assert all(hashlib.sha256((mirror/p).read_bytes()).hexdigest()==v for p,v in before.items())
+          assert subprocess.check_output(['git','rev-parse','HEAD']).decode().strip()==os.environ['FS_HEAD']
+          assert not subprocess.check_output(['git','status','--porcelain=v1','--untracked-files=all']).strip()
+          request=urllib.request.Request('https://api.github.com/repos/HungQuach301/fulcrum-studio/git/ref/heads/main',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(request) as response:raw=response.read()
+          (e/'main-ref.after.json').write_bytes(raw);assert json.loads(raw)['object']['sha']==json.loads((e/'main-ref.before.json').read_text())['object']['sha']
+          (e/'preservation.json').write_text(json.dumps({'result':'pass','sourceUnchanged':True,'mirrorUnchanged':mirror.exists(),'mainUnchanged':True,'sourceFiles':len(before),'stateAndDependencyBytesUnchanged':True})+'\n')
+          PY
+      - name: Remove temporary execution data
+        id: cleanup
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,pathlib,shutil,json
+          p=pathlib.Path(os.environ['TASK_ROOT']);assert p.parent==pathlib.Path(os.environ['RUNNER_TEMP']) and p.name.startswith('fs23-')
+          for x in p.iterdir():
+           if x.name=='evidence':continue
+           if x.is_dir():shutil.rmtree(x)
+           else:x.unlink()
+          (p/'evidence/cleanup.json').write_text(json.dumps({'executionDataRemoved':True,'reportDataRemainingUntilFrame':True})+'\n')
+          PY
+      - name: Emit complete evidence bytes
+        id: evidence
+        if: ${{ always() }}
+        shell: bash
+        env:
+          FS_STEPS: ${{ toJSON(steps) }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,pathlib,json,hashlib,base64,re
+          p=pathlib.Path(os.environ['FS_EVIDENCE']);steps=json.loads(os.environ['FS_STEPS']);(p/'steps-at-emission.json').write_text(json.dumps(steps,indent=2)+'\n')
+          required=['preflight','runtime','setup','install','check','preservation','cleanup'];ok=all(steps.get(s,{}).get('outcome')=='success' for s in required)
+          errors=[]
+          for f in sorted(p.glob('*.stderr.txt')):
+           for line in f.read_text(errors='replace').splitlines():
+            if line.strip():errors.append(line[:400])
+          for f in sorted(p.glob('*.stdout.txt')):
+           for line in f.read_text(errors='replace').splitlines():
+            if re.search(r'error TS\d+|AssertionError|Error:',line):errors.append(line[:400])
+          def redact(x):
+           if re.search(r'\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})\b',x) or ('PRIVATE'+' KEY') in x:return '[redacted]'
+           if any(not re.fullmatch('[a-fA-F0-9]+',v) for v in re.findall(r'[A-Za-z0-9+/]{80,}={0,2}',x)):return '[redacted]'
+           return x
+          summary={'head':os.environ['FS_HEAD'],'base':os.environ.get('FS_BASE',''),'job':os.environ['FS_JOB'],'result':'success' if ok else 'failure','errors':[redact(x) for x in errors[:20]],'finalJobStatus':'requires-API-readback'}
+          (p/'job-summary.json').write_text(json.dumps(summary,ensure_ascii=False)+'\n')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write('summary='+json.dumps(summary,ensure_ascii=True)+'\n')
+          identity=['FS23-WP001',os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_RUN_ATTEMPT'],os.environ['FS_HEAD'],os.environ['FS_JOB'],os.environ['FS_EVENT'],os.environ.get('FS_BASE','')]
+          print('FS23_BEGIN\t'+'\t'.join(identity))
+          files=sorted(p.iterdir())
+          for f in files:
+           assert f.is_file() and re.fullmatch('[A-Za-z0-9_.-]+',f.name)
+           data=f.read_bytes();name=base64.b64encode(f.name.encode()).decode();print('FS23_FILE\t'+name+'\t'+str(len(data))+'\t'+hashlib.sha256(data).hexdigest());value=base64.b64encode(data).decode()
+           for i in range(0,len(value),2048):print('FS23_DATA\t'+str(i//2048+1)+'\t'+value[i:i+2048])
+           print('FS23_END\t'+name)
+          print('FS23_COMPLETE\t'+str(len(files)))
+          PY
+      - name: Remove final report data
+        id: final_cleanup
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$TASK_ROOT" in "$RUNNER_TEMP"/fs23-*) rm -rf -- "$TASK_ROOT" ;; *) exit 1 ;; esac
+          test ! -e "$TASK_ROOT"
+          printf 'FS23_FINAL_REPORT_CLEANUP=pass;job=%s\n' "$FS_JOB"
