@@ -60,6 +60,43 @@ try {
   scenario("domain-pillar", "engine/io/index.ts", "export const pillar = 'housing';\n", "content-domain-token");
   scenario("content-number-property", "engine/io/index.ts", "export const item = { wordCount: 3200 };\n", "content-number-assignment");
   scenario("content-number-variable", "engine/io/index.ts", "export const durationMs = 1200;\n", "content-number-assignment");
+  // FS23-R1: run new rejects through the production CLI in isolated Git fixtures.
+  function numberCase(name: string, path: string, source: string, expectedLines: number[], before?: string): void {
+    test("F1:" + name, () => {
+      const f = fixture();
+      write(f.root, wp, at(f.root, f.base, wp).replace("### 5.", "`.github/workflows/fixture.yml`\n### 5."));
+      if (before !== undefined) write(f.root, path, before);
+      const base = commit(f.root, "fixture baseline for numeric coverage");
+      write(f.root, path, source); const head = commit(f.root, "fixture numeric assignment");
+      const r = cli(f.root, base, head);
+      assert.equal(r.result, expectedLines.length ? "fail" : "pass");
+      assert.deepEqual(r.errors.map(e => ({ path: e.path, line: e.line, rule: e.rule })).sort((a,b) => a.line-b.line), expectedLines.map(line => ({ path, line, rule: "content-number-assignment" })));
+      return { exit: r.exit, expectedLines, errors: r.errors, wpPath: r.wpPath };
+    });
+  }
+  for (const value of [180, 220, 3200, 3600, 1200]) {
+    numberCase("arbitrary-variable-" + value, "engine/io/index.ts", "export const minWords = " + value + ";\n", [1]);
+    numberCase("arbitrary-property-" + value, "engine/io/index.ts", "export const settings = { limit: " + value + " };\n", [1]);
+    numberCase("yaml-arbitrary-key-" + value, ".github/workflows/fixture.yml", "customLimit: " + value + "\n", [1]);
+  }
+  numberCase("ts-multiline-literal-only", "engine/io/index.ts", "export const minWords =\n  3200;\n", [2], "export const minWords =\n  1000;\n");
+  numberCase("ts-property-literal-only", "engine/io/index.ts", "export const config = {\n  minWords:\n    3600\n};\n", [3], "export const config = {\n  minWords:\n    1000\n};\n");
+  numberCase("known-key-multiline", "engine/io/index.ts", "export const durationMs =\n  77;\n", [2], "export const durationMs =\n  76;\n");
+  numberCase("ts-reassignment", "engine/io/index.ts", "let quota = 10;\nquota = 220;\n", [2]);
+  numberCase("ts-class-field", "engine/io/index.ts", "class Config { limit = 1200; }\n", [1]);
+  numberCase("ts-array", "engine/io/index.ts", "const limits = [180,\n  3200];\n", [1,2]);
+  numberCase("yaml-multiline-literal-only", ".github/workflows/fixture.yml", "customLimit:\n  3200\n", [2], "customLimit:\n  1000\n");
+  numberCase("yaml-array", ".github/workflows/fixture.yml", "customLimits: [180,\n  3200]\n", [1,2]);
+  numberCase("yaml-flow-map", ".github/workflows/fixture.yml", "settings: { minWords: 3200, maxWords: 3600 }\n", [1]);
+  numberCase("yaml-quoted-key", ".github/workflows/fixture.yml", '"minWords": 3200\n', [1]);
+  numberCase("yaml-quoted-before-number", ".github/workflows/fixture.yml", 'label: "3200"\nminWords: 3200\n', [2]);
+  numberCase("docs-excluded", "engine/docs/01-architecture.md", "const minWords = 3200;\n", []);
+  numberCase("ts-comments-strings-and-sha", "engine/io/index.ts", '// minWords = 3200\n/* durationMs = 1200 */\nconst text = "minWords = 3200";\nconst pin = "' + "a1".repeat(20) + '";\n', []);
+  numberCase("ts-unrelated-numbers", "engine/io/index.ts", "const retries = 3;\nconst request = call(3200);\n", []);
+  numberCase("yaml-comments-strings-and-sha", ".github/workflows/fixture.yml", '# minWords: 3200\nlabel: "minWords: 3200"\nsingle: \'durationMs: 1200\'\npin: ' + "a1".repeat(20) + '\nretries: 3\n', []);
+  numberCase("yaml-block-string", ".github/workflows/fixture.yml", "description: |\n  minWords: 3200\n  durationMs: 1200\nretries: 3\n", []);
+  numberCase("yaml-comment-after-number", ".github/workflows/fixture.yml", "minWords: 3200 # numeric value\n", [1]);
+  numberCase("yaml-known-key", ".github/workflows/fixture.yml", "durationMs: 77\n", [1]);
   scenario("WP001-5:housing-docs-not-false-positive", "engine/docs/01-architecture.md", "Architecture housing fixture.\n");
   scenario("WP001-6:synthetic-secret", "scripts/ci-report.ts", "const fixture = '" + "sk-" + "A".repeat(24) + "';\n", "secret-pattern-redacted");
   test("secret-values-redacted", () => { const f=fixture();const secret="sk-"+"B".repeat(24);write(f.root,"scripts/ci-report.ts",secret+"\n");const r=cli(f.root,f.base,commit(f.root,"fixture"));assert.equal(r.result,"fail");assert.ok(!JSON.stringify(r).includes(secret)); });
