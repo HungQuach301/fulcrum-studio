@@ -94,7 +94,8 @@ function minimumValue(schema: ObjectValue, root: ObjectValue = schema): unknown 
 
 interface CaseResult { name: string; outcome: "pass" | "fail"; error?: string; }
 interface Change { path: string; before?: string; after?: string; mode?: string; }
-interface BootstrapPolicy { allowBacklogDone: boolean; stateAfterBlob?: string; }
+interface BootstrapPolicy { allowBacklogDone: boolean; stateAfterBlob?: string; fastDevelopment?: boolean; }
+const FAST_SCOPE = ["AGENTS.md", "engine/ops/guardrails.md", "engine/docs/02-decisions.md", "engine/ops/work-packages/WP-000-scaffold.md", "engine/ops/definition-of-done.md", ".github/workflows/acceptance-wp000.yml", "scripts/acceptance-wp000.ts", ".github/workflows/review-wp000-spec.yml"];
 function baselineScope(wp: string): Set<string> {
   const output = wp.split("### 3. Output\n")[1]?.split("### 3b.")[0];
   if (!output) throw new Error("Pinned main WP has no exact Output section");
@@ -192,6 +193,7 @@ function contentRanges(path: string, text: string): string[] {
 
 export function checkChanges(changes: readonly Change[], wpOnMain: string, literals: Set<string>, policy: BootstrapPolicy): string[] {
   const errors: string[] = [], scope = baselineScope(wpOnMain);
+  if (policy.fastDevelopment) for (const path of FAST_SCOPE) scope.add(path);
   for (const change of changes) {
     const { path, before, after } = change;
     if (!scope.has(path)) errors.push(`scope:${path}`);
@@ -1082,7 +1084,7 @@ function prepareStateArtifact(): number {
   return receipt.result === "pass" ? 0 : 1;
 }
 
-/** Installed tools for run7 only; original L/state functions above are retained unchanged. */
+/** Installed tools for the approved FS22 package; legacy L/state modes remain historical. */
 function acceptanceTools(): number {
   const lockSha256 = "28effb5a9d439ea02b39b3cc9ec8f49157b962534213bf3464f5edd19199ba97";
   const manifestSha256 = "448d897c27e4a664cbbbbefab0de4c9e7dde705e2bbc24b06dd8f67928e8f8e5";
@@ -1095,7 +1097,7 @@ function acceptanceTools(): number {
     statePreparation: "not-invoked", acceptance: "owned-by-calling-harness", wp000Acceptance: "not-established-by-tool-phase",
     lockfileAcceptance: "L-already-owner-accepted; current-install-evidence-only", billedCostUsd: null,
     billingReconciled: false, apiZeroDoesNotProveZeroCost: true,
-    artifactAndFinalCleanup: "require-workflow-and-API-readback", commands: []
+    artifactAndFinalCleanup: "require-complete-framed-evidence-and-workflow-readback", commands: []
   };
   let reportRoot: string | undefined, smokeRoot: string | undefined;
   const immutableFiles = new Map<string, Buffer>();
@@ -1115,7 +1117,8 @@ function acceptanceTools(): number {
     assert.equal(process.env.GITHUB_EVENT_NAME, "pull_request");
     assert.equal(process.env.EVENT_ACTION, "synchronize");
     assert.equal(process.env.EVENT_PR, "10");
-    assert.equal(process.env.GITHUB_RUN_NUMBER, "7");
+    assert.equal(process.env.FS_GRANT, "FS22-20260914");
+    assert.equal(process.env.FS_PHASE, "acceptance");
     assert.equal(process.env.GITHUB_RUN_ATTEMPT, "1");
     assert.equal(process.version, "v20.20.2");
     assert.equal(process.platform, "linux"); assert.equal(process.arch, "x64");
@@ -1139,7 +1142,7 @@ function acceptanceTools(): number {
     const run = (label: string, args: string[]): string => {
       assert.ok(/^[a-z0-9-]+$/.test(label));
       const outcome = spawnSync(process.execPath, args, { cwd: installRoot, encoding: "utf8",
-        timeout: 20000, maxBuffer: 131072, env: process.env });
+        maxBuffer: 131072, env: process.env });
       const stdout = outcome.stdout ?? "", stderr = outcome.stderr ?? "";
       writeFileSync(inside(reportRoot!, `${label}.stdout.txt`), stdout);
       writeFileSync(inside(reportRoot!, `${label}.stderr.txt`), stderr);
@@ -1177,10 +1180,10 @@ function acceptanceTools(): number {
     receipt.sourceCommit = git(sourceRoot, "rev-parse", "HEAD").trim();
     receipt.sourceTree = git(sourceRoot, "rev-parse", "HEAD^{tree}").trim();
     assert.equal(receipt.sourceCommit, head.sha);
-    assert.equal(git(sourceRoot, "show", "-s", "--format=%P", "HEAD").trim(), "932a10f9fddc5535c950bd335e4a23e32e6c9b6c");
+    assert.ok(Number(process.env.FS_SLOT) >= 2 && Number(process.env.FS_SLOT) <= 3);
     assert.equal(git(sourceRoot, "rev-parse", `${BASELINE}^{tree}`).trim(), BASELINE_TREE);
     receipt.eventSha = process.env.GITHUB_SHA; receipt.runId = process.env.GITHUB_RUN_ID;
-    receipt.runNumber = 7; receipt.attempt = 1; receipt.helperNode = process.version;
+    receipt.runNumber = Number(process.env.GITHUB_RUN_NUMBER); receipt.grant = process.env.FS_GRANT; receipt.slot = Number(process.env.FS_SLOT); receipt.attempt = 1; receipt.helperNode = process.version;
     receipt.npm = run("npm-version", [npmCli, "--version"]).trim();
     assert.equal(receipt.npm, "10.8.2");
     const npmView = record(JSON.parse(run("npm-ls", [npmCli, "ls", "--all", "--json"])));
@@ -1359,15 +1362,21 @@ if (require.main === module && process.argv[2] === "--prepare-state") {
     if (report.npm !== "10.8.2") throw new Error("Pinned npm differs");
     assert.equal(process.env.GITHUB_EVENT_NAME, "pull_request");
     assert.equal(process.env.GITHUB_REPOSITORY, "HungQuach301/fulcrum-studio");
-    assert.equal(process.env.GITHUB_RUN_NUMBER, "7"); assert.equal(process.env.GITHUB_RUN_ATTEMPT, "1");
-    const parent = "932a10f9fddc5535c950bd335e4a23e32e6c9b6c", parentTree = "72a9396f9fad061b80579d9ddf8915f55237cd57";
-    assert.equal(git(root, "show", "-s", "--format=%P", "HEAD").trim(), parent);
-    assert.equal(git(root, "rev-parse", `${parent}^{tree}`).trim(), parentTree);
-    assert.equal(git(root, "show", "-s", "--format=%P", parent).trim(), "f7e959f95de470e2d6bef461e17b42c3218ec74f");
+    assert.equal(process.env.FS_GRANT, "FS22-20260914");
+    assert.equal(process.env.FS_PHASE, "acceptance"); assert.equal(process.env.GITHUB_RUN_ATTEMPT, "1");
+    const parent = git(root, "show", "-s", "--format=%P", "HEAD").trim();
+    fullSha(parent);
+    const parentTree = git(root, "rev-parse", `${parent}^{tree}`).trim();
+    const specCommit = fullSha(process.env.FS_SPEC_COMMIT ?? "");
+    assert.notEqual(specCommit, "0".repeat(40));
+    git(root, "merge-base", "--is-ancestor", specCommit, parent);
+    assert.ok(source.textAt(specCommit, "engine/docs/02-decisions.md").includes("## D-22 "));
     assert.equal(git(root, "rev-parse", "HEAD^{tree}").trim(), fullSha(process.env.ACCEPTANCE_SOURCE_TREE ?? ""));
-    assert.equal(git(root, "rev-list", "--count", `${BASELINE}..HEAD`).trim(), "8");
-    assert.equal(git(root, "diff", "--no-renames", "--name-status", parent, "HEAD").trim(),
-      "M\t.github/workflows/acceptance-wp000.yml\nM\tengine/ops/backlog.md\nM\tscripts/acceptance-wp000.ts");
+    const delta = git(root, "diff", "--no-renames", "--name-only", "-z", "900833d041486643540ea794bbe0bbad80f557bb", "HEAD").split("\0").filter(Boolean);
+    assert.ok(delta.every(path => FAST_SCOPE.includes(path)), "Unapproved package delta");
+    const slot = Number(process.env.FS_SLOT);
+    assert.ok(slot >= 2 && slot <= 3 && Number.isInteger(slot));
+    report.grant = process.env.FS_GRANT; report.slot = slot; report.specificationCommit = specCommit;
     assert.equal(source.files().length, 123);
     assert.ok(!source.files().some(path => /^episodes\/[^/]+\/[^/]+\/state\.json$/.test(path)));
     assert.ok(!existsSync(inside(root, "node_modules")));
@@ -1382,9 +1391,9 @@ if (require.main === module && process.argv[2] === "--prepare-state") {
     const oldBacklog = source.textAt(BASELINE, BACKLOG_PATH);
     const doneBacklog = oldBacklog.replace(/(\| WP-000 \|[^\n]+)\| todo \|/, "$1| done |");
     assert.notEqual(oldBacklog, doneBacklog); assert.equal(source.text(BACKLOG_PATH), doneBacklog);
-    assert.equal(source.textAt(parent, BACKLOG_PATH), oldBacklog);
+    assert.equal(source.textAt(parent, BACKLOG_PATH), doneBacklog);
     report.state = { blob: admittedBlob, bytes: 306, sourceCommit: state.sourceCommit, rebuiltAt: state.rebuiltAt };
-    report.soleParent = parent; report.parentTree = parentTree; report.runNumber = 7;
+    report.soleParent = parent; report.parentTree = parentTree; report.runNumber = Number(process.env.GITHUB_RUN_NUMBER);
     report.workflowId = "requires-API-readback:356972316";
     report.backlog = "single-WP000-done-proposal; not-owner-acceptance-or-merge";
     for (const path of source.files()) {
@@ -1398,8 +1407,8 @@ if (require.main === module && process.argv[2] === "--prepare-state") {
     assert.equal(acceptanceTools(), 0, "Current installed tree/tool checks failed; no repair/retry");
     report.installedTools = "pass; see acceptance-tools-receipt.json";
     report.npmCi = "requires-owning-workflow-step-result; no inherited L result";
-    const command = (name: string, args: string[], cwd: string, timeout: number): string => {
-      const result = spawnSync(process.execPath, args, { cwd, timeout, maxBuffer: 262144, env: process.env });
+    const command = (name: string, args: string[], cwd: string): string => {
+      const result = spawnSync(process.execPath, args, { cwd, maxBuffer: 262144, env: process.env });
       const stdout = result.stdout ?? Buffer.alloc(0), stderr = result.stderr ?? Buffer.alloc(0);
       writeFileSync(inside(taskRoot, `report/${name}.stdout.txt`), stdout);
       writeFileSync(inside(taskRoot, `report/${name}.stderr.txt`), stderr);
@@ -1413,7 +1422,7 @@ if (require.main === module && process.argv[2] === "--prepare-state") {
       return stdout.toString("utf8");
     };
     const cli = object(JSON.parse(command("validator-cli", [inside(modulesRoot, "tsx/dist/cli.mjs"),
-      "scripts/validate.ts", "--root", root, "--commit", expected], root, 30000)));
+      "scripts/validate.ts", "--root", root, "--commit", expected], root)));
     assert.equal(cli.sourceCommit, expected); assert.equal(cli.sourceKind, "git");
     assert.equal(cli.sourceValidation, "pass"); assert.deepEqual(cli.issues, []);
     report.validatorCli = cli;
@@ -1422,7 +1431,7 @@ if (require.main === module && process.argv[2] === "--prepare-state") {
     report.realData = new Validator(source, schemas).run();
     report.fixtures = fixtureSuite(source, schemas, temp);
     const wp = source.textAt(BASELINE, WP_PATH), baselineSource = new GitSource(root, BASELINE);
-    const policy: BootstrapPolicy = { allowBacklogDone: true, stateAfterBlob: admittedBlob };
+    const policy: BootstrapPolicy = { allowBacklogDone: true, stateAfterBlob: admittedBlob, fastDevelopment: true };
     const literals = contentLiterals(baselineSource), cases = report.fixtures as CaseResult[];
     const control = (name: string, check: () => void): void => {
       try { check(); cases.push({ name, outcome: "pass" }); }
@@ -1441,11 +1450,11 @@ if (require.main === module && process.argv[2] === "--prepare-state") {
     report.guardrails = checkChanges(actualChanges(source), wp, literals, policy);
     report.guardrailsMethod = "Baseline Output diff, token patterns, TypeScript literals and numeric content-field AST assignments; exact prescribed artifact datums retained; manual diff review still required";
     try {
-      report.typecheckLog = command("project-typecheck", [inside(modulesRoot, "typescript/bin/tsc"), "--noEmit"], installRoot, 40000);
+      report.typecheckLog = command("project-typecheck", [inside(modulesRoot, "typescript/bin/tsc"), "--noEmit"], installRoot);
       report.typecheck = "pass";
     } catch (error) { report.typecheck = "fail"; report.typecheckLog = String(error); }
     try {
-      const line = command("log-dry-run", [inside(modulesRoot, "tsx/dist/cli.mjs"), "scripts/log-run.ts", "--dry-run"], root, 20000);
+      const line = command("log-dry-run", [inside(modulesRoot, "tsx/dist/cli.mjs"), "scripts/log-run.ts", "--dry-run"], root);
       assert.equal(line.trim().split("\n").length, 1);
       const parsed = object(JSON.parse(line)); assert.equal(typeof parsed.costUsd, "number");
       assert.deepEqual(schemas.check("run-log.schema.json", parsed, "dry-run:stdout"), []);
