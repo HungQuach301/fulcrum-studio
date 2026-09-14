@@ -1,13 +1,13 @@
 name: WP-000 bootstrap
 
-# Offline L candidate only. Preparing this file does not authorize execution or spending.
-# Updating wp/000 requires a separate owner grant for PR #10 synchronize, run 4 / attempt 1,
-# Node 20.20.2 EOL, managed action Node 24 (patch unproven), and the proposed limits below.
-# Historical run 34745712444 remains a failure; run 2 success prepared a lockfile only.
-# Both run 3 jobs remain skipped, with no steps, runner or artifact.
-# Before a future fast-forward: compare BOTH files with the approved offline bytes,
-# then read the created commit/tree/sole parent. No candidate SHA is embedded here.
-# State and acceptance routes have not been activated.
+# Offline state-preparation candidate. No execution, budget or Node exception is granted by preparation.
+# L technical results at 7135c4d8279bb3d48ad20b4bb30b1e91a59eb630 were accepted by the owner.
+# All billing/policy/Node reservations, failures, STOPs and timestamp deviations remain in force.
+# Future authority: one separately approved PR #10 synchronize, state run 5 / attempt 1 only.
+# Before fast-forward: compare BOTH files with the reviewed offline bytes; read the created
+# commit/tree and sole parent. The source commit is that read-back commit, not a self-reference.
+# This job emits an artifact only. Admitting its exact state bytes needs separate owner approval.
+# Full acceptance, backlog changes and permanent state writers remain inactive.
 on:
   pull_request:
     branches: [main]
@@ -19,7 +19,7 @@ permissions:
   pull-requests: read
 
 jobs:
-  check-lockfile-l:
+  prepare-state:
     if: >-
       github.event_name == 'pull_request' &&
       github.event.action == 'synchronize' &&
@@ -29,22 +29,23 @@ jobs:
       github.event.pull_request.head.ref == 'wp/000' &&
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.draft == true &&
-      github.run_number == 4 && github.run_attempt == 1
+      github.run_number == 5 && github.run_attempt == 1
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
       BASELINE: a7fecd4f8a614d10687b471f70f71a5d5e08685f
       BASELINE_TREE: ddb16f67fbf246e669dc28fc50718de75a365f11
       SPEC_HEAD: 69e1ea78c51370d221edc9179dfd573340b63d5b
-      L_PARENT: d149efe64b0ed33b73d57a6e806c61d2fa24b340
-      L_PARENT_TREE: d415dabb0bcd5123af9dab5680cac301cb719956
-      L_WORKFLOW_ID: '356972316'
+      STATE_PARENT: 7135c4d8279bb3d48ad20b4bb30b1e91a59eb630
+      STATE_PARENT_TREE: 68fd7c479872b1692202c27cae63b70d9721e376
+      STATE_WORKFLOW_ID: '356972316'
       LOCKFILE_BYTES: '22948'
       LOCKFILE_SHA256: 28effb5a9d439ea02b39b3cc9ec8f49157b962534213bf3464f5edd19199ba97
       MANIFEST_SHA256: 448d897c27e4a664cbbbbefab0de4c9e7dde705e2bbc24b06dd8f67928e8f8e5
       EVENT_ACTION: ${{ github.event.action }}
       EVENT_PR: ${{ github.event.pull_request.number }}
       EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+      STATE_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha }}
       EVENT_BASE: ${{ github.event.pull_request.base.sha }}
       EVENT_SHA: ${{ github.sha }}
       NODE_VERSION: 20.20.2
@@ -58,31 +59,33 @@ jobs:
       NPM_CONFIG_IGNORE_SCRIPTS: 'true'
       NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
     steps:
-      - name: Initialize lockfile L receipt
+      - name: Initialize state preparation receipt
         id: init
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_RUN_NUMBER" = 4
+          test "$GITHUB_RUN_NUMBER" = 5
           test "$GITHUB_RUN_ATTEMPT" = 1
           test "$(uname -m)" = x86_64
-          task_root="$(mktemp -d "$RUNNER_TEMP/wp000-lockfile-l.XXXXXX")"
+          task_root="$(mktemp -d "$RUNNER_TEMP/wp000-state.XXXXXX")"
           trap 'init_status=$?; if [ "$init_status" -ne 0 ]; then rm -rf -- "$task_root"; fi' EXIT
           mkdir -p "$task_root/report" "$task_root/tools" "$task_root/manifest" "$task_root/cache"
           printf 'TASK_ROOT=%s\n' "$task_root" >> "$GITHUB_ENV"
           printf 'NPM_CONFIG_CACHE=%s/cache\n' "$task_root" >> "$GITHUB_ENV"
           {
-            printf 'purpose=lockfile-L-install-and-tool-feasibility-only\n'
+            printf 'purpose=state-bootstrap-preparation-only\n'
             printf 'event=%s\naction=%s\npullRequest=%s\n' "$GITHUB_EVENT_NAME" "$EVENT_ACTION" "$EVENT_PR"
             printf 'runId=%s\nrunNumber=%s\nattempt=%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_ATTEMPT"
             printf 'eventHead=%s\neventBase=%s\neventSha=%s\n' "$EVENT_HEAD" "$EVENT_BASE" "$EVENT_SHA"
             printf 'baseline=%s\nbaselineTree=%s\n' "$BASELINE" "$BASELINE_TREE"
-            printf 'lParent=%s\nlParentTree=%s\npreviousFailedRun=34745712444\n' "$L_PARENT" "$L_PARENT_TREE"
+            printf 'stateParent=%s\nstateParentTree=%s\npreviousFailedRun=34745712444\n' "$STATE_PARENT" "$STATE_PARENT_TREE"
             printf 'proposedBudgetUsd=%s\nnewGrantRequiredBeforeSynchronize=true\n' "$PROPOSED_BUDGET_USD"
             printf 'billedCostUsd=unknown\ninvoiceReconciled=false\napiZeroDoesNotProveZeroCost=true\n'
-            printf 'statePreparation=not-activated\nacceptance=not-activated\nwp000Acceptance=blocked\n'
+            printf 'statePreparationInitial=not-run\nstateAdmission=not-authorized-by-this-job\nacceptance=not-activated\nwp000Acceptance=blocked\n'
             printf 'npmCiInitial=not-run\nprojectTypecheck=not-run\nvalidator=not-run\nfullFixtures=not-run\n'
-            printf 'minimalToolCaseInitial=not-run\nplatformTreeInitial=not-run\nlockfileAcceptance=not-established\n'
+            printf 'stateSchemaInitial=not-run\nstateCandidateInitial=not-created\nlockfileTechnicalAcceptance=owner-confirmed-L-only\n'
+            printf 'acceptedLCommit=7135c4d8279bb3d48ad20b4bb30b1e91a59eb630\nacceptedLRun=34790828977\n'
+            printf 'preFastForwardByteApproval=external-readback-required\n'
             printf 'lockfileBytes=%s\nlockfileSha256=%s\n' "$LOCKFILE_BYTES" "$LOCKFILE_SHA256"
             printf 'nodeEolException=requires-separate-current-grant\n'
             printf 'actionRuntime=managed-by-GitHub; Node24-override-possible\nnode24Patch=unproven\n'
@@ -121,13 +124,13 @@ jobs:
           test "$observed_checkout_sha" = "$EVENT_HEAD"
           test "$(git rev-parse "$BASELINE^{tree}")" = "$BASELINE_TREE"
           test "$(git rev-parse "$SPEC_HEAD^{tree}")" = "$BASELINE_TREE"
-          test "$observed_parent" = "$L_PARENT"
-          test "$(git rev-parse "$L_PARENT^{tree}")" = "$L_PARENT_TREE"
-          test "$(git show -s --format=%P "$L_PARENT")" = 21016357f0454b15dfd9e135b6db1501ddfc2386
-          test "$(git rev-list --count "$BASELINE..HEAD")" = 5
-          test "$(git diff --no-renames --name-status "$L_PARENT" HEAD)" = $'M\t.github/workflows/acceptance-wp000.yml\nM\tscripts/acceptance-wp000.ts'
+          test "$observed_parent" = "$STATE_PARENT"
+          test "$(git rev-parse "$STATE_PARENT^{tree}")" = "$STATE_PARENT_TREE"
+          test "$(git show -s --format=%P "$STATE_PARENT")" = d149efe64b0ed33b73d57a6e806c61d2fa24b340
+          test "$(git rev-list --count "$BASELINE..HEAD")" = 6
+          test "$(git diff --no-renames --name-status "$STATE_PARENT" HEAD)" = $'M\t.github/workflows/acceptance-wp000.yml\nM\tscripts/acceptance-wp000.ts'
           for path in .github/workflows/acceptance-wp000.yml scripts/acceptance-wp000.ts; do
-            test "$(git ls-tree "$L_PARENT" -- "$path" | awk '{print $1}')" = 100644
+            test "$(git ls-tree "$STATE_PARENT" -- "$path" | awk '{print $1}')" = 100644
             test "$(git ls-tree HEAD -- "$path" | awk '{print $1}')" = 100644
           done
           test "$(git ls-tree -r "$BASELINE" | wc -l)" -eq 108
@@ -140,19 +143,23 @@ jobs:
           test -f package-lock.json
           test "$(wc -c < package-lock.json)" -eq "$LOCKFILE_BYTES"
           printf '%s  package-lock.json\n%s  package.json\n' "$LOCKFILE_SHA256" "$MANIFEST_SHA256" | sha256sum --check --strict
-          git show "$L_PARENT:package-lock.json" > "$TASK_ROOT/lockfile.parent"
+          git show "$STATE_PARENT:package-lock.json" > "$TASK_ROOT/lockfile.parent"
           cmp "$TASK_ROOT/lockfile.parent" package-lock.json
           test ! -e node_modules
+          test "$(git rev-parse HEAD:pipeline/state.json)" = 6f6eb4493fb6173b19bf2af126bf0b0cd68c5593
+          test -z "$(git ls-tree -r --name-only HEAD | awk '/^episodes\/[^/]+\/[^/]+\/state\.json$/ {print}')"
+          # Runtime tree is recorded here; approval of these exact bytes/tree remains an external pre-FF gate.
+          printf 'STATE_SOURCE_TREE=%s\n' "$observed_checkout_tree" >> "$GITHUB_ENV"
           # jq is a preinstalled runner utility; never install or repair it if unavailable.
           jq --version >> "$TASK_ROOT/report/ci-report.txt"
           case "$GITHUB_WORKFLOW_REF" in "$GITHUB_REPOSITORY/.github/workflows/acceptance-wp000.yml@"*) ;; *) exit 1 ;; esac
           # Actual workflow ID and ZIP metadata are read back by the agent: the job token has no Actions permission.
-          printf 'expectedWorkflowId=%s\nworkflowRef=%s\nactualWorkflowId=requires-API-readback\n' "$L_WORKFLOW_ID" "$GITHUB_WORKFLOW_REF" >> "$TASK_ROOT/report/ci-report.txt"
+          printf 'expectedWorkflowId=%s\nworkflowRef=%s\nactualWorkflowId=requires-API-readback\n' "$STATE_WORKFLOW_ID" "$GITHUB_WORKFLOW_REF" >> "$TASK_ROOT/report/ci-report.txt"
           curl --fail --silent --show-error --proto '=https' --tlsv1.2 --max-time 20 \
             -H "Authorization: Bearer $READ_TOKEN" -H 'Accept: application/vnd.github+json' \
             "https://api.github.com/repos/$GITHUB_REPOSITORY/pulls/10" > "$TASK_ROOT/pr.json"
           jq -e --arg head "$EVENT_HEAD" --arg base "$BASELINE" --arg repo "$GITHUB_REPOSITORY" \
-            '.number == 10 and .state == "open" and .draft == true and .head.sha == $head and .head.ref == "wp/000" and .head.repo.full_name == $repo and .base.sha == $base and .base.ref == "main" and .base.repo.full_name == $repo and .commits == 5 and .changed_files == 15' "$TASK_ROOT/pr.json"
+            '.number == 10 and .state == "open" and .draft == true and .head.sha == $head and .head.ref == "wp/000" and .head.repo.full_name == $repo and .base.sha == $base and .base.ref == "main" and .base.repo.full_name == $repo and .commits == 6 and .changed_files == 15' "$TASK_ROOT/pr.json"
           jq '{number, state, draft, commits, changed_files, additions, deletions, head: {sha: .head.sha, ref: .head.ref}, base: {sha: .base.sha, ref: .base.ref}}' \
             "$TASK_ROOT/pr.json" > "$TASK_ROOT/report/pr-observed.json"
           # Read-only token in environment; no persisted checkout credentials or token in URL/logs.
@@ -169,7 +176,7 @@ jobs:
           {
             printf 'checkoutSha=%s\ncheckoutTree=%s\nparent=%s\n' "$(git rev-parse HEAD)" "$(git rev-parse HEAD^{tree})" "$(git show -s --format=%P HEAD)"
             printf 'stateBlob=%s\n' "$(git rev-parse HEAD:pipeline/state.json)"
-            printf 'checkpoint=pass\nlScope=pass\nlDeltaFiles=2\nlModes=100644\ncandidateCommitCount=5\npreservedParentFiles=121\npreservedBaselineFiles=108\n'
+            printf 'checkpoint=pass\nstatePreparationScope=pass\nstatePreparationDeltaFiles=2\nstatePreparationModes=100644\ncandidateCommitCount=6\npreservedParentFiles=121\npreservedBaselineFiles=108\n'
           } >> "$TASK_ROOT/report/ci-report.txt"
 
       - name: Fetch checksum-pinned Node archive into temporary storage
@@ -229,8 +236,8 @@ jobs:
           test "$install_status" -eq 0
           printf 'npmCi=pass\nlifecycleScripts=disabled\n' >> "$TASK_ROOT/report/ci-report.txt"
 
-      - name: Check installed dependency tree and minimal local tools only
-        id: lockfile
+      - name: Prepare and validate only the temporary state candidate
+        id: state
         shell: bash
         run: |
           set -euo pipefail
@@ -239,11 +246,13 @@ jobs:
           export TSX_DISABLE_CACHE=1
           test -z "${ESBUILD_BINARY_PATH:-}"
           cd "$TASK_ROOT/manifest"
-          # tsx and every imported dependency resolve from this local installation.
-          # Importing the existing modules does not invoke their guarded CLI or Validator.run.
+          # Local pinned tools only. This route does not call Validator.run, fixtures or --acceptance.
           "$VERIFIED_NODE_ROOT/bin/node" "$TASK_ROOT/manifest/node_modules/tsx/dist/cli.mjs" \
-            "$GITHUB_WORKSPACE/scripts/acceptance-wp000.ts" --lockfile-l \
+            "$GITHUB_WORKSPACE/scripts/acceptance-wp000.ts" --prepare-state \
             > "$TASK_ROOT/report/helper.stdout.txt" 2> "$TASK_ROOT/report/helper.stderr.txt"
+          jq -e --arg head "$STATE_SOURCE_COMMIT" --arg tree "$STATE_SOURCE_TREE" \
+            '.result == "pass" and .sourceCommit == $head and .sourceTree == $tree and .candidateSchema == "pass" and .sourceUnchanged == true and .manifestAndLockUnchanged == true' \
+            "$TASK_ROOT/report/state-preparation-receipt.json"
 
       - name: Read back source and live refs without changes
         id: preservation
@@ -280,12 +289,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          case "$TASK_ROOT" in "$RUNNER_TEMP"/wp000-lockfile-l.*) ;; *) exit 1 ;; esac
+          case "$TASK_ROOT" in "$RUNNER_TEMP"/wp000-state.*) ;; *) exit 1 ;; esac
           rm -rf -- "$TASK_ROOT/manifest" "$TASK_ROOT/tools" "$TASK_ROOT/cache" "$TASK_ROOT/smoke"
           for path in manifest tools cache smoke; do test ! -e "$TASK_ROOT/$path"; done
           printf 'temporaryInstallCleanup=pass\n' >> "$TASK_ROOT/report/ci-report.txt"
 
-      - name: Finalize bounded lockfile L report
+      - name: Finalize bounded state preparation report
         id: report
         if: ${{ always() && steps.init.outcome == 'success' }}
         shell: bash
@@ -297,7 +306,7 @@ jobs:
           SETUP_OUTCOME: ${{ steps.setup.outcome }}
           TOOLS_OUTCOME: ${{ steps.tools.outcome }}
           INSTALL_OUTCOME: ${{ steps.install.outcome }}
-          LOCKFILE_OUTCOME: ${{ steps.lockfile.outcome }}
+          STATE_OUTCOME: ${{ steps.state.outcome }}
           CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
           PRESERVATION_OUTCOME: ${{ steps.preservation.outcome }}
         run: |
@@ -305,13 +314,15 @@ jobs:
           {
             printf 'jobStatusBeforeUpload=%s\ncheckoutOutcome=%s\ncheckpointOutcome=%s\n' "$JOB_STATUS" "$CHECKOUT_OUTCOME" "$CHECKPOINT_OUTCOME"
             printf 'archiveOutcome=%s\nsetupOutcome=%s\ntoolsOutcome=%s\n' "$ARCHIVE_OUTCOME" "$SETUP_OUTCOME" "$TOOLS_OUTCOME"
-            printf 'npmCiStepOutcome=%s\nlCheckOutcome=%s\npreservationOutcome=%s\ncleanupOutcome=%s\n' "$INSTALL_OUTCOME" "$LOCKFILE_OUTCOME" "$PRESERVATION_OUTCOME" "$CLEANUP_OUTCOME"
-            printf 'state-current=not-validated\nstateBaseline=known-invalid\nstateValidation=not-run\nrealDataAllValid=false\nwp000Acceptance=blocked\n'
+            printf 'npmCiStepOutcome=%s\nstatePreparationOutcome=%s\npreservationOutcome=%s\ncleanupOutcome=%s\n' "$INSTALL_OUTCOME" "$STATE_OUTCOME" "$PRESERVATION_OUTCOME" "$CLEANUP_OUTCOME"
+            printf 'state-current=unchanged-known-invalid\nstateValidation=see-state-preparation-receipt\nrealDataAllValid=false\nwp000Acceptance=blocked\n'
             printf 'ciSpecPR9Acceptance=separate-historical-evidence-only\n'
-            printf 'lockfileAcceptance=requires-exact-run-readback-and-owner-review\nprojectTypecheck=not-run\nvalidator=not-run\nfullFixtures=not-run\n'
-            printf 'companionSpecExpected=356875747;run4;attempt1;skipped;readback-required\n'
+            printf 'stateCandidateAcceptance=requires-exact-run-artifact-readback-and-owner-review\nprojectTypecheck=not-run\nvalidator=not-run\nfullFixtures=not-run\n'
+            printf 'companionSpecExpected=356875747;run5;attempt1;skipped;readback-required\n'
             printf 'recoveryDeviationMs=301132;unwaived\nlateSaveStartMs=19288;lateResponseMs=25607;unwaived\n'
             printf 'historicalRun3CompletedBeforeStartedSeconds=1;unmodified;no-runtime-or-cost-inference\n'
+            printf 'historicalSpecRun4CompletedBeforeStartedSeconds=1;unwaived\n'
+            printf 'historicalLArtifactExpiryOffsetSeconds=-1;unmodified\n'
             printf 'finishedAt=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } >> "$TASK_ROOT/report/ci-report.txt"
           cat "$TASK_ROOT/report/ci-report.txt"
@@ -328,12 +339,12 @@ jobs:
           test "$final_bytes" -le "$((ARTIFACT_MAX_BYTES - 65536))"
           printf 'artifactReady=true\n' >> "$GITHUB_OUTPUT"
 
-      - name: Upload one bounded lockfile L artifact
+      - name: Upload one bounded state preparation artifact
         id: upload
         if: ${{ always() && steps.report.outputs.artifactReady == 'true' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: wp000-lockfile-l-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          name: wp000-state-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           path: ${{ env.TASK_ROOT }}/report/
           if-no-files-found: error
           retention-days: 1
@@ -351,12 +362,12 @@ jobs:
           set -euo pipefail
           printf 'uploadOutcome=%s\nartifactId=%s\nartifactDigest=%s\n' "$UPLOAD_OUTCOME" "$ARTIFACT_ID" "$ARTIFACT_DIGEST"
           printf 'artifactMetadataAndBilledCost=requires-read-back; missing evidence blocks the next phase\n'
-          case "$TASK_ROOT" in "$RUNNER_TEMP"/wp000-lockfile-l.*) rm -rf -- "$TASK_ROOT" ;; *) exit 1 ;; esac
+          case "$TASK_ROOT" in "$RUNNER_TEMP"/wp000-state.*) rm -rf -- "$TASK_ROOT" ;; *) exit 1 ;; esac
           test "$UPLOAD_OUTCOME" = success
 
-# No state/acceptance job, automatic write, provider secret, cache, dispatch execution or retry loop.
+# State artifact generation only; no source write, full acceptance, provider secret, persistent cache or retry loop.
 # A failed/skipped/cancelled run, missing receipt, changed checkpoint or exceeded limit stops progression.
 # Final run/job status, action runtime warnings, artifact size/expiry and billing evidence are read back
 # from GitHub separately, including BOTH ZIP and extracted byte limits. This report cannot certify
 # its own future upload, cleanup after upload, companion skipped run, Node 24 patch or invoice.
-# Historical runtime exceptions and budgets are closed; preparing this file grants none.
+# Historical runtime exceptions and budgets are closed; state execution and artifact admission each need separate grants.

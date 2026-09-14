@@ -5,6 +5,8 @@ import { createRequire } from "node:module";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import ts from "typescript";
+import Ajv from "ajv";
+import addFormats from "ajv-formats";
 import { dryRun } from "./log-run";
 import { GitSource, Schemas, Validator, VERSIONED, frozen, fullSha, git, list, numeric, object, repoPath, string,
   type Binding, type Document, type Issue, type ObjectValue, type SourceApproval, type ValidationSource } from "./validate";
@@ -240,7 +242,7 @@ function actualChanges(source: GitSource): Change[] {
     mode: headNames.has(path) ? git(source.root, "ls-tree", source.head, "--", path).split(" ")[0] : undefined }));
 }
 
-/** Pure preparation helper only. No CLI route or workflow invokes it in this candidate. */
+/** Pure preparation helper; only the separately gated --prepare-state route invokes it. */
 export function makeStateCandidate(source: GitSource, approvedCommit: string, approvedTree: string, generatedAt: string): string {
   if (source.head !== fullSha(approvedCommit) || git(source.root, "rev-parse", `${source.head}^{tree}`).trim() !== fullSha(approvedTree)) throw new Error("State source checkpoint differs");
   const raw = source.text("pipeline/state.json"), original = object(JSON.parse(raw));
@@ -901,7 +903,188 @@ function lockfileCheckL(): number {
   return receipt.result === "pass" ? 0 : 1;
 }
 
-if (require.main === module && process.argv[2] === "--lockfile-l") {
+/**
+ * One separately authorized state-artifact preparation only (D-21.2 / WP-000.3c).
+ * This route never writes the checkout, calls Validator.run/fixtureSuite/--acceptance,
+ * installs packages, or admits a state artifact into Git.
+ */
+function prepareStateArtifact(): number {
+  const parent = "7135c4d8279bb3d48ad20b4bb30b1e91a59eb630";
+  const parentTree = "68fd7c479872b1692202c27cae63b70d9721e376";
+  const statePath = "pipeline/state.json", schemaPath = "engine/contracts/pipeline-state.schema.json";
+  const sha256 = (bytes: Buffer | string): string => createHash("sha256").update(bytes).digest("hex");
+  const receipt: ObjectValue = {
+    purpose: "state-bootstrap-preparation-only", startedAt: new Date().toISOString(), result: "fail",
+    originalStateSchema: "not-run", candidateSchema: "not-run", candidateCreated: false,
+    npmCi: "owned-by-preceding-workflow-step", projectTypecheck: "not-run", validator: "not-run",
+    fullFixtures: "not-run", acceptance: "not-activated", wp000Acceptance: "blocked",
+    stateAdmission: "requires-final-workflow-artifact-readback-and-separate-owner-approval",
+    sourceApproval: "exact-bytes-and-created-commit-tree-readback-required-before-fast-forward",
+    billedCostUsd: null, billingReconciled: false, apiZeroDoesNotProveZeroCost: true,
+    node24Patch: "unproven", artifactAndFinalCleanup: "require-workflow-and-API-readback"
+  };
+  let reportRoot: string | undefined, candidatePath: string | undefined;
+  let source: GitSource | undefined, statusBefore: string | undefined, expectedTree: string | undefined;
+  const immutableFiles = new Map<string, Buffer>();
+  try {
+    assert.equal(process.env.GITHUB_ACTIONS, "true", "Actions-only state route; offline preparation grants no execution");
+    assert.deepEqual(process.argv.slice(2), ["--prepare-state"]);
+    assert.equal(process.env.GITHUB_REPOSITORY, "HungQuach301/fulcrum-studio");
+    assert.equal(process.env.GITHUB_EVENT_NAME, "pull_request");
+    assert.equal(process.env.EVENT_ACTION, "synchronize"); assert.equal(process.env.EVENT_PR, "10");
+    assert.equal(process.env.GITHUB_RUN_NUMBER, "5"); assert.equal(process.env.GITHUB_RUN_ATTEMPT, "1");
+    assert.equal(process.version, "v20.20.2"); assert.equal(process.platform, "linux"); assert.equal(process.arch, "x64");
+    assert.equal(process.env.NPM_CONFIG_IGNORE_SCRIPTS, "true");
+    assert.ok(!process.env.ESBUILD_BINARY_PATH, "No alternate binary or repair route");
+    const sourceRoot = realpathSync(process.env.GITHUB_WORKSPACE ?? "");
+    const runnerTemp = realpathSync(process.env.RUNNER_TEMP ?? ""), taskRoot = realpathSync(process.env.TASK_ROOT ?? "");
+    assert.equal(dirname(taskRoot), runnerTemp);
+    assert.ok(relative(runnerTemp, taskRoot).startsWith("wp000-state."));
+    const fromSource = relative(sourceRoot, taskRoot);
+    assert.ok(fromSource === ".." || fromSource.startsWith("../"), "Temporary data must be outside source");
+    const installRoot = inside(taskRoot, "manifest"), modulesRoot = inside(installRoot, "node_modules");
+    assert.equal(realpathSync(process.cwd()), installRoot);
+    assert.equal(realpathSync(process.env.NODE_PATH ?? ""), modulesRoot);
+    const nodeRoot = realpathSync(process.env.VERIFIED_NODE_ROOT ?? "");
+    assert.equal(nodeRoot, inside(taskRoot, "tools/node-v20.20.2-linux-x64"));
+    assert.equal(realpathSync(process.execPath), inside(nodeRoot, "bin/node"));
+    const safeReportRoot = inside(taskRoot, "report");
+    assert.ok(lstatSync(safeReportRoot).isDirectory() && !lstatSync(safeReportRoot).isSymbolicLink());
+    reportRoot = safeReportRoot;
+    const safeCandidatePath = inside(reportRoot, "state-candidate.json");
+    assert.ok(!existsSync(safeCandidatePath), "Do not overwrite an earlier candidate");
+    candidatePath = safeCandidatePath;
+    const versions: Record<string, string> = {};
+    for (const [name, expected] of Object.entries({ ajv: "8.12.0", "ajv-formats": "2.1.1", tsx: "4.7.1" })) {
+      const packagePath = realpathSync(inside(modulesRoot, name + "/package.json"));
+      assert.ok(packagePath.startsWith(modulesRoot + "/"), "Dependency must resolve from the pinned temporary installation");
+      versions[name] = string(object(JSON.parse(readFileSync(packagePath, "utf8"))).version);
+      assert.equal(versions[name], expected);
+    }
+    const npmVersion = string(object(JSON.parse(readFileSync(inside(nodeRoot, "lib/node_modules/npm/package.json"), "utf8"))).version);
+    assert.equal(npmVersion, "10.8.2");
+    receipt.tools = { helperNode: process.version, npmPackageVersion: npmVersion, ...versions };
+    for (const root of [sourceRoot, installRoot]) for (const file of ["package.json", "package-lock.json"]) {
+      const path = inside(root, file);
+      assert.ok(lstatSync(path).isFile() && !lstatSync(path).isSymbolicLink());
+      const bytes = readFileSync(path); immutableFiles.set(path, bytes);
+      assert.equal(sha256(bytes), file === "package.json"
+        ? "448d897c27e4a664cbbbbefab0de4c9e7dde705e2bbc24b06dd8f67928e8f8e5"
+        : "28effb5a9d439ea02b39b3cc9ec8f49157b962534213bf3464f5edd19199ba97");
+      if (file === "package-lock.json") assert.equal(bytes.length, 22948);
+    }
+    const event = object(JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH ?? "", "utf8")));
+    const pr = object(event.pull_request), head = object(pr.head), base = object(pr.base);
+    assert.equal(event.action, "synchronize"); assert.equal(pr.number, 10); assert.equal(pr.draft, true);
+    assert.equal(object(head.repo).full_name, "HungQuach301/fulcrum-studio");
+    assert.equal(object(base.repo).full_name, "HungQuach301/fulcrum-studio");
+    assert.equal(head.ref, "wp/000"); assert.equal(base.ref, "main"); assert.equal(base.sha, BASELINE);
+    const expectedCommit = fullSha(process.env.STATE_SOURCE_COMMIT ?? "");
+    expectedTree = fullSha(process.env.STATE_SOURCE_TREE ?? "");
+    assert.equal(head.sha, expectedCommit); assert.equal(process.env.EVENT_HEAD, expectedCommit);
+    source = new GitSource(sourceRoot, git(sourceRoot, "rev-parse", "HEAD").trim());
+    assert.equal(source.head, expectedCommit);
+    assert.equal(git(sourceRoot, "rev-parse", "HEAD^{tree}").trim(), expectedTree);
+    assert.equal(git(sourceRoot, "show", "-s", "--format=%P", "HEAD").trim(), parent);
+    assert.equal(git(sourceRoot, "rev-parse", parent + "^{tree}").trim(), parentTree);
+    assert.equal(git(sourceRoot, "rev-parse", BASELINE + "^{tree}").trim(), BASELINE_TREE);
+    statusBefore = git(sourceRoot, "status", "--porcelain=v1", "--untracked-files=all");
+    assert.equal(statusBefore, "");
+    assert.equal(source.files().length, 123);
+    assert.ok(!source.files().some(path => /^episodes\/[^/]+\/[^/]+\/state\.json$/.test(path)));
+    receipt.sourceCommit = source.head; receipt.sourceTree = expectedTree; receipt.soleParent = parent;
+    receipt.eventSha = process.env.GITHUB_SHA; receipt.runId = process.env.GITHUB_RUN_ID;
+    receipt.runNumber = 5; receipt.attempt = 1; receipt.workflowId = "requires-API-readback:356972316";
+    const raw = source.text(statePath), schemaRaw = source.text(schemaPath);
+    for (const [path, content] of [[statePath, raw], [schemaPath, schemaRaw]]) {
+      const diskPath = inside(sourceRoot, path);
+      assert.ok(lstatSync(diskPath).isFile() && !lstatSync(diskPath).isSymbolicLink());
+      const bytes = readFileSync(diskPath); assert.equal(bytes.toString("utf8"), content);
+      immutableFiles.set(diskPath, bytes);
+    }
+    assert.equal(blob(raw), ORIGINAL_STATE_BLOB);
+    assert.equal(schemaRaw, source.textAt(BASELINE, schemaPath), "State schema must remain at the immutable baseline");
+    assert.ok(Buffer.byteLength(raw) <= 65536);
+    const original = object(JSON.parse(raw)), schema = object(JSON.parse(schemaRaw));
+    const originalBeforeValidation = JSON.stringify(original);
+    assert.deepEqual(original.episodes, []); assert.equal(typeof original.note, "string");
+    assert.equal(schema.$schema, "http://json-schema.org/draft-07/schema#");
+    assert.equal(schema.$id, "pipeline-state.schema.json");
+    const ajv = new Ajv({ allErrors: true, validateFormats: true, strictSchema: true,
+      strictTypes: true, strictTuples: true, strictNumbers: true, strictRequired: false,
+      allowUnionTypes: true, coerceTypes: false, useDefaults: false, removeAdditional: false });
+    addFormats(ajv, { mode: "full" });
+    assert.equal(ajv.validateSchema(schema), true, JSON.stringify(ajv.errors));
+    const validate = ajv.compile<unknown>(schema);
+    assert.equal(validate(original), false, "The original state must still be rejected");
+    const originalErrors = copy(validate.errors ?? []);
+    const errorKeys = originalErrors.map(error => [error.keyword, error.instancePath,
+      error.keyword === "required" ? error.params.missingProperty :
+        error.keyword === "additionalProperties" ? error.params.additionalProperty : ""].join("|")).sort();
+    assert.deepEqual(errorKeys, ["additionalProperties||aggregates", "additionalProperties||engineVersion",
+      "required||sourceCommit", "type|/rebuiltAt|"].sort());
+    assert.equal(JSON.stringify(original), originalBeforeValidation, "Validation must not repair the original");
+    receipt.originalStateSchema = "known-invalid-four-errors"; receipt.originalStateErrors = originalErrors;
+    receipt.schema = { path: schemaPath, bytes: Buffer.byteLength(schemaRaw), sha256: sha256(schemaRaw), gitBlob: blob(schemaRaw) };
+    const beforePath = inside(reportRoot, "state-before.json");
+    assert.ok(!existsSync(beforePath), "Do not overwrite earlier source evidence");
+    writeFileSync(beforePath, raw, { flag: "wx" });
+    receipt.before = { artifactPath: "state-before.json", sourcePath: statePath,
+      bytes: Buffer.byteLength(raw), sha256: sha256(raw), gitBlob: blob(raw) };
+    // Capture real UTC immediately before generation, never a synthetic fixture time or an admission-commit SHA.
+    const generatedAt = new Date().toISOString();
+    const candidate = makeStateCandidate(source, expectedCommit, expectedTree, generatedAt);
+    const generatedThrough = new Date().toISOString();
+    const next = object(JSON.parse(candidate)), candidateBeforeValidation = JSON.stringify(next);
+    assert.deepEqual(Object.keys(next).sort(), ["episodes", "note", "rebuiltAt", "sourceCommit"]);
+    assert.equal(next.note, original.note); assert.deepEqual(next.episodes, []);
+    assert.equal(next.sourceCommit, expectedCommit); assert.equal(next.rebuiltAt, generatedAt);
+    assert.ok(Date.parse(generatedAt) >= Date.parse(string(receipt.startedAt)) &&
+      Date.parse(generatedThrough) >= Date.parse(generatedAt), "Creation clock moved backwards");
+    assert.equal(validate(next), true, JSON.stringify(validate.errors));
+    assert.equal(JSON.stringify(next), candidateBeforeValidation, "Validation must not mutate the candidate");
+    assert.ok(Buffer.byteLength(candidate) <= 65536);
+    writeFileSync(candidatePath, candidate, { flag: "wx" });
+    assert.equal(readFileSync(candidatePath, "utf8"), candidate);
+    receipt.candidateSchema = "pass"; receipt.candidateCreated = true;
+    receipt.generatedAt = generatedAt; receipt.generatedThrough = generatedThrough;
+    receipt.after = { artifactPath: "state-candidate.json", intendedRepoPath: statePath,
+      bytes: Buffer.byteLength(candidate), sha256: sha256(candidate), gitBlob: blob(candidate) };
+    receipt.changes = { preserved: ["note", "episodes"], removed: ["engineVersion", "aggregates"],
+      added: ["sourceCommit"], replaced: ["rebuiltAt"] };
+    receipt.result = "pass";
+  } catch (error) { receipt.error = String(error).slice(0, 4096); receipt.result = "fail"; }
+  finally {
+    try {
+      for (const [path, bytes] of immutableFiles) assert.ok(readFileSync(path).equals(bytes), "Source/manifest/lock changed: " + path);
+      receipt.manifestAndLockUnchanged = immutableFiles.size === 6;
+      if (source && statusBefore !== undefined && expectedTree) {
+        assert.equal(git(source.root, "status", "--porcelain=v1", "--untracked-files=all"), statusBefore);
+        assert.equal(git(source.root, "rev-parse", "HEAD").trim(), source.head);
+        assert.equal(git(source.root, "rev-parse", "HEAD^{tree}").trim(), expectedTree);
+        receipt.sourceUnchanged = true;
+      } else receipt.sourceUnchanged = false;
+      if (receipt.result === "pass") assert.ok(receipt.manifestAndLockUnchanged && receipt.sourceUnchanged);
+    } catch (error) {
+      receipt.result = "fail"; receipt.preservationError = String(error).slice(0, 4096); receipt.sourceUnchanged = false;
+    }
+    if (receipt.result !== "pass" && candidatePath) {
+      try { rmSync(candidatePath, { force: true }); receipt.failedCandidateRemoved = !existsSync(candidatePath); }
+      catch (error) { receipt.failedCandidateRemoved = false; receipt.cleanupError = String(error).slice(0, 4096); }
+      receipt.candidateCreated = false;
+    }
+    receipt.finishedAt = new Date().toISOString();
+    const output = JSON.stringify(receipt, null, 2) + "\n";
+    assert.ok(Buffer.byteLength(output) <= 131072, "State receipt exceeds its artifact budget");
+    if (reportRoot) writeFileSync(inside(reportRoot, "state-preparation-receipt.json"), output, { flag: "wx" });
+    process.stdout.write(output);
+  }
+  return receipt.result === "pass" ? 0 : 1;
+}
+
+if (require.main === module && process.argv[2] === "--prepare-state") {
+  process.exitCode = prepareStateArtifact();
+} else if (require.main === module && process.argv[2] === "--lockfile-l") {
   process.exitCode = lockfileCheckL();
 } else if (require.main === module) {
   let temp: string | undefined;
