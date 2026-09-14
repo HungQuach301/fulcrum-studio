@@ -69,6 +69,11 @@ jobs:
           boot={'base': '48bdbe2932ab012ae3edcaf4eabe54b7af21f223', 'files': {'AGENTS.md': '2933f22521c1c8789e93e79959e9fe16c1108956', 'PROJECT.md': '31121b2db859cb01b52e55fec8bb91890a0a5fa5', 'engine/docs/02-decisions.md': '7c9fb2b11bc6560f7a9d45b5e012d1556b768700', 'engine/ops/definition-of-done.md': 'f7a9d16655700594e1e1580932b416754a0b26c6', 'engine/ops/guardrails.md': 'e33413e64af7dab996b78b7c358416ea0248949c', 'engine/ops/work-packages/WP-001-ci-guardrails.md': '4fd0949a13f7fa36b75fed052984e2ac42145758'}, 'policy': '754d90c4632c6771d8a81e3c6c5b78f7a5ed3812'}
           impl=['.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/content.ts', 'scripts/guardrails/secrets.ts', 'scripts/guardrails/guardrails.test.ts', 'scripts/ci-report.ts', 'engine/ops/backlog.md']
           diff=git('diff','--no-renames','--name-only','-z',base,head).split('\0')[:-1]
+          # FS23_WP_CHANGE_RULE_BEGIN
+          def wp_change_exception(path,wp_path,changed_paths,messages):
+           return path==wp_path and all(p.endswith('.md') for p in changed_paths) and '[wp-change]' in messages
+          # FS23_WP_CHANGE_RULE_END
+          messages=git('log','--format=%B',base+'..'+head)
           if branch=='wp/001':
            assert base==boot['base'];git('merge-base','--is-ancestor',boot['policy'],head)
            assert git('rev-list','--parents','-n','1',boot['policy']).strip()==boot['policy']+' '+boot['base']
@@ -103,6 +108,7 @@ jobs:
              for i,line in enumerate(lines):
               if line.startswith('| '+code+' |') and re.search(r'\| (todo|doing|blocked) \|\n?$',line):lines[i]=re.sub(r'\| (todo|doing|blocked) \|(\n?)$',r'| done |\2',line);count+=1
              assert count==1 and ''.join(lines)==new;continue
+            if wp_change_exception(path,wp[0],diff,messages):continue
             assert any(path==p or p.endswith('/**') and path.startswith(p[:-2]) for p in patterns),('outside-scope',path,wp[0])
             assert path!=wp[0],'candidate-policy-change'
           for path in diff:
@@ -302,6 +308,11 @@ jobs:
           boot={'base': '48bdbe2932ab012ae3edcaf4eabe54b7af21f223', 'files': {'AGENTS.md': '2933f22521c1c8789e93e79959e9fe16c1108956', 'PROJECT.md': '31121b2db859cb01b52e55fec8bb91890a0a5fa5', 'engine/docs/02-decisions.md': '7c9fb2b11bc6560f7a9d45b5e012d1556b768700', 'engine/ops/definition-of-done.md': 'f7a9d16655700594e1e1580932b416754a0b26c6', 'engine/ops/guardrails.md': 'e33413e64af7dab996b78b7c358416ea0248949c', 'engine/ops/work-packages/WP-001-ci-guardrails.md': '4fd0949a13f7fa36b75fed052984e2ac42145758'}, 'policy': '754d90c4632c6771d8a81e3c6c5b78f7a5ed3812'}
           impl=['.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/content.ts', 'scripts/guardrails/secrets.ts', 'scripts/guardrails/guardrails.test.ts', 'scripts/ci-report.ts', 'engine/ops/backlog.md']
           diff=git('diff','--no-renames','--name-only','-z',base,head).split('\0')[:-1]
+          # FS23_WP_CHANGE_RULE_BEGIN
+          def wp_change_exception(path,wp_path,changed_paths,messages):
+           return path==wp_path and all(p.endswith('.md') for p in changed_paths) and '[wp-change]' in messages
+          # FS23_WP_CHANGE_RULE_END
+          messages=git('log','--format=%B',base+'..'+head)
           if branch=='wp/001':
            assert base==boot['base'];git('merge-base','--is-ancestor',boot['policy'],head)
            assert git('rev-list','--parents','-n','1',boot['policy']).strip()==boot['policy']+' '+boot['base']
@@ -336,6 +347,7 @@ jobs:
              for i,line in enumerate(lines):
               if line.startswith('| '+code+' |') and re.search(r'\| (todo|doing|blocked) \|\n?$',line):lines[i]=re.sub(r'\| (todo|doing|blocked) \|(\n?)$',r'| done |\2',line);count+=1
              assert count==1 and ''.join(lines)==new;continue
+            if wp_change_exception(path,wp[0],diff,messages):continue
             assert any(path==p or p.endswith('/**') and path.startswith(p[:-2]) for p in patterns),('outside-scope',path,wp[0])
             assert path!=wp[0],'candidate-policy-change'
           for path in diff:
@@ -535,6 +547,11 @@ jobs:
           boot={'base': '48bdbe2932ab012ae3edcaf4eabe54b7af21f223', 'files': {'AGENTS.md': '2933f22521c1c8789e93e79959e9fe16c1108956', 'PROJECT.md': '31121b2db859cb01b52e55fec8bb91890a0a5fa5', 'engine/docs/02-decisions.md': '7c9fb2b11bc6560f7a9d45b5e012d1556b768700', 'engine/ops/definition-of-done.md': 'f7a9d16655700594e1e1580932b416754a0b26c6', 'engine/ops/guardrails.md': 'e33413e64af7dab996b78b7c358416ea0248949c', 'engine/ops/work-packages/WP-001-ci-guardrails.md': '4fd0949a13f7fa36b75fed052984e2ac42145758'}, 'policy': '754d90c4632c6771d8a81e3c6c5b78f7a5ed3812'}
           impl=['.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/content.ts', 'scripts/guardrails/secrets.ts', 'scripts/guardrails/guardrails.test.ts', 'scripts/ci-report.ts', 'engine/ops/backlog.md']
           diff=git('diff','--no-renames','--name-only','-z',base,head).split('\0')[:-1]
+          # FS23_WP_CHANGE_RULE_BEGIN
+          def wp_change_exception(path,wp_path,changed_paths,messages):
+           return path==wp_path and all(p.endswith('.md') for p in changed_paths) and '[wp-change]' in messages
+          # FS23_WP_CHANGE_RULE_END
+          messages=git('log','--format=%B',base+'..'+head)
           if branch=='wp/001':
            assert base==boot['base'];git('merge-base','--is-ancestor',boot['policy'],head)
            assert git('rev-list','--parents','-n','1',boot['policy']).strip()==boot['policy']+' '+boot['base']
@@ -569,6 +586,7 @@ jobs:
              for i,line in enumerate(lines):
               if line.startswith('| '+code+' |') and re.search(r'\| (todo|doing|blocked) \|\n?$',line):lines[i]=re.sub(r'\| (todo|doing|blocked) \|(\n?)$',r'| done |\2',line);count+=1
              assert count==1 and ''.join(lines)==new;continue
+            if wp_change_exception(path,wp[0],diff,messages):continue
             assert any(path==p or p.endswith('/**') and path.startswith(p[:-2]) for p in patterns),('outside-scope',path,wp[0])
             assert path!=wp[0],'candidate-policy-change'
           for path in diff:
@@ -770,6 +788,11 @@ jobs:
           boot={'base': '48bdbe2932ab012ae3edcaf4eabe54b7af21f223', 'files': {'AGENTS.md': '2933f22521c1c8789e93e79959e9fe16c1108956', 'PROJECT.md': '31121b2db859cb01b52e55fec8bb91890a0a5fa5', 'engine/docs/02-decisions.md': '7c9fb2b11bc6560f7a9d45b5e012d1556b768700', 'engine/ops/definition-of-done.md': 'f7a9d16655700594e1e1580932b416754a0b26c6', 'engine/ops/guardrails.md': 'e33413e64af7dab996b78b7c358416ea0248949c', 'engine/ops/work-packages/WP-001-ci-guardrails.md': '4fd0949a13f7fa36b75fed052984e2ac42145758'}, 'policy': '754d90c4632c6771d8a81e3c6c5b78f7a5ed3812'}
           impl=['.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/content.ts', 'scripts/guardrails/secrets.ts', 'scripts/guardrails/guardrails.test.ts', 'scripts/ci-report.ts', 'engine/ops/backlog.md']
           diff=git('diff','--no-renames','--name-only','-z',base,head).split('\0')[:-1]
+          # FS23_WP_CHANGE_RULE_BEGIN
+          def wp_change_exception(path,wp_path,changed_paths,messages):
+           return path==wp_path and all(p.endswith('.md') for p in changed_paths) and '[wp-change]' in messages
+          # FS23_WP_CHANGE_RULE_END
+          messages=git('log','--format=%B',base+'..'+head)
           if branch=='wp/001':
            assert base==boot['base'];git('merge-base','--is-ancestor',boot['policy'],head)
            assert git('rev-list','--parents','-n','1',boot['policy']).strip()==boot['policy']+' '+boot['base']
@@ -804,6 +827,7 @@ jobs:
              for i,line in enumerate(lines):
               if line.startswith('| '+code+' |') and re.search(r'\| (todo|doing|blocked) \|\n?$',line):lines[i]=re.sub(r'\| (todo|doing|blocked) \|(\n?)$',r'| done |\2',line);count+=1
              assert count==1 and ''.join(lines)==new;continue
+            if wp_change_exception(path,wp[0],diff,messages):continue
             assert any(path==p or p.endswith('/**') and path.startswith(p[:-2]) for p in patterns),('outside-scope',path,wp[0])
             assert path!=wp[0],'candidate-policy-change'
           for path in diff:

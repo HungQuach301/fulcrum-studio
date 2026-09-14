@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -69,6 +69,15 @@ try {
   test("scope-from-main-not-candidate", () => {const f=fixture();write(f.root,wp,at(f.root,f.base,wp).replace("### 5.","`outside.txt`\n### 5."));write(f.root,"outside.txt","fixture\n");const r=cli(f.root,f.base,commit(f.root,"narrow test"));assert.ok(r.errors.some(e=>e.path==="outside.txt"&&e.rule.includes("outside-scope")));assert.ok(r.errors.some(e=>e.rule==="candidate-wp-rule-change"));return r;});
   test("wp-change-doc-only", () => {const f=fixture();write(f.root,wp,at(f.root,f.base,wp)+"\nFixture note.\n");assert.equal(cli(f.root,f.base,commit(f.root,"fixture [wp-change]")).result,"pass");});
   test("wp-change-mixed-code-rejected", () => {const f=fixture();write(f.root,wp,at(f.root,f.base,wp)+"\nFixture note.\n");write(f.root,"scripts/ci-report.ts","export const report = false;\n");assert.equal(cli(f.root,f.base,commit(f.root,"fixture [wp-change]")).result,"fail");});
+  test("actual-workflow-preflight-wp-change-parity", () => {
+    const workflow=readFileSync(".github/workflows/ci.yml","utf8");
+    const blocks=Array.from(workflow.matchAll(/          # FS23_WP_CHANGE_RULE_BEGIN\n([\s\S]*?)          # FS23_WP_CHANGE_RULE_END/g),x=>x[1].split("\n").map(line=>line.startsWith("          ")?line.slice(10):line).join("\n"));
+    assert.equal(blocks.length,4);assert.ok(blocks.every(x=>x===blocks[0]));
+    assert.equal(workflow.split("if wp_change_exception(path,wp[0],diff,messages):continue").length-1,4);
+    const cases=[{path:wp,wp,paths:[wp],message:"fixture [wp-change]",expected:true},{path:wp,wp,paths:[wp,"scripts/ci-report.ts"],message:"fixture [wp-change]",expected:false},{path:wp,wp,paths:[wp],message:"fixture",expected:false},{path:"outside.md",wp,paths:[wp,"outside.md"],message:"fixture [wp-change]",expected:false}];
+    const program=blocks[0]+"\nimport json,sys\ncases=json.load(sys.stdin)\nfor c in cases:\n assert wp_change_exception(c['path'],c['wp'],c['paths'],c['message'])==c['expected']\nprint('4 workflow preflight cases pass')\n";
+    const r=spawnSync("python3",["-c",program],{input:JSON.stringify(cases),encoding:"utf8"});assert.equal(r.status,0,r.stderr);return {cases:4,stdout:r.stdout,source:"four actual ci.yml preflight blocks"};
+  });
   test("cp-context", () => {const f=fixture();write(f.root,"engine/docs/01-architecture.md","Updated.\n");const r=cli(f.root,f.base,commit(f.root,"fixture"),"cp/001","CP-001 fixture","pull_request");assert.equal(r.result,"pass");assert.ok(r.wpPath.includes("CP-001"));});
   for (const [name,branch,title,event] of [["unknown-branch","other/001","WP-001","push"],["conflicting-title","wp/001","WP-002","pull_request"],["missing-wp","wp/999","WP-999","push"]]) test(name,()=>{const f=fixture();write(f.root,"scripts/ci-report.ts","changed\n");assert.equal(cli(f.root,f.base,commit(f.root,"fixture"),branch,title,event).result,"fail");});
   test("main-push-scope-only-exemption",()=>{const f=fixture();write(f.root,"outside.txt","valid\n");assert.equal(cli(f.root,f.base,commit(f.root,"fixture"),"main","","push").result,"pass");write(f.root,"engine/io/index.ts","const color = '#abcdef';\n");assert.equal(cli(f.root,f.base,commit(f.root,"fixture"),"main","","push").result,"fail");});
