@@ -1082,6 +1082,245 @@ function prepareStateArtifact(): number {
   return receipt.result === "pass" ? 0 : 1;
 }
 
+/** Installed tools for run7 only; original L/state functions above are retained unchanged. */
+function acceptanceTools(): number {
+  const lockSha256 = "28effb5a9d439ea02b39b3cc9ec8f49157b962534213bf3464f5edd19199ba97";
+  const manifestSha256 = "448d897c27e4a664cbbbbefab0de4c9e7dde705e2bbc24b06dd8f67928e8f8e5";
+  const direct: Record<string, string> = { "typescript": "5.4.5", "@types/node": "20.12.7",
+    "ajv": "8.12.0", "ajv-formats": "2.1.1", "tsx": "4.7.1", "gray-matter": "4.0.3" };
+  const receipt: Record<string, unknown> = {
+    purpose: "lockfile-acceptance-tool-phase-only", startedAt: new Date().toISOString(), result: "fail",
+    npmCi: "owned-by-preceding-workflow-step", npmLs: "not-run", installedTree: "not-run",
+    minimalToolCase: "not-run", projectTypecheck: "not-run", validator: "not-run", fullFixtures: "not-run",
+    statePreparation: "not-invoked", acceptance: "owned-by-calling-harness", wp000Acceptance: "not-established-by-tool-phase",
+    lockfileAcceptance: "L-already-owner-accepted; current-install-evidence-only", billedCostUsd: null,
+    billingReconciled: false, apiZeroDoesNotProveZeroCost: true,
+    artifactAndFinalCleanup: "require-workflow-and-API-readback", commands: []
+  };
+  let reportRoot: string | undefined, smokeRoot: string | undefined;
+  const immutableFiles = new Map<string, Buffer>();
+  const sha256 = (bytes: Buffer | string): string => createHash("sha256").update(bytes).digest("hex");
+  const record = (value: unknown): Record<string, unknown> => {
+    assert.ok(value !== null && typeof value === "object" && !Array.isArray(value), "Expected JSON object");
+    return value as Record<string, unknown>;
+  };
+  const readJson = (path: string): Record<string, unknown> => record(JSON.parse(readFileSync(path, "utf8")));
+  const sameMap = (left: unknown, right: unknown): void => {
+    assert.deepEqual(Object.entries(record(left)).sort(), Object.entries(record(right)).sort());
+  };
+  try {
+    assert.equal(process.env.GITHUB_ACTIONS, "true", "Actions-only acceptance tools; offline preparation grants no execution");
+    assert.deepEqual(process.argv.slice(2), ["--acceptance"]);
+    assert.equal(process.env.GITHUB_REPOSITORY, "HungQuach301/fulcrum-studio");
+    assert.equal(process.env.GITHUB_EVENT_NAME, "pull_request");
+    assert.equal(process.env.EVENT_ACTION, "synchronize");
+    assert.equal(process.env.EVENT_PR, "10");
+    assert.equal(process.env.GITHUB_RUN_NUMBER, "7");
+    assert.equal(process.env.GITHUB_RUN_ATTEMPT, "1");
+    assert.equal(process.version, "v20.20.2");
+    assert.equal(process.platform, "linux"); assert.equal(process.arch, "x64");
+    assert.equal(process.env.NPM_CONFIG_IGNORE_SCRIPTS, "true");
+    assert.ok(!process.env.ESBUILD_BINARY_PATH, "No alternate esbuild binary or repair route");
+    const sourceRoot = realpathSync(process.env.GITHUB_WORKSPACE ?? "");
+    const runnerTemp = realpathSync(process.env.RUNNER_TEMP ?? "");
+    const taskRoot = realpathSync(process.env.TASK_ROOT ?? "");
+    assert.ok(relative(runnerTemp, taskRoot).startsWith("wp000-acceptance."));
+    assert.equal(dirname(taskRoot), runnerTemp);
+    assert.ok(relative(sourceRoot, taskRoot).startsWith(".."), "Temporary data must be outside source");
+    const installRoot = inside(taskRoot, "manifest"), modulesRoot = inside(installRoot, "node_modules");
+    assert.equal(realpathSync(process.cwd()), sourceRoot);
+    assert.equal(realpathSync(process.env.NODE_PATH ?? ""), modulesRoot);
+    const nodeRoot = realpathSync(process.env.VERIFIED_NODE_ROOT ?? "");
+    assert.equal(nodeRoot, inside(taskRoot, "tools/node-v20.20.2-linux-x64"));
+    assert.equal(realpathSync(process.execPath), inside(nodeRoot, "bin/node"));
+    reportRoot = inside(taskRoot, "report");
+    assert.ok(lstatSync(reportRoot).isDirectory() && !lstatSync(reportRoot).isSymbolicLink());
+    const npmCli = inside(nodeRoot, "lib/node_modules/npm/bin/npm-cli.js");
+    const run = (label: string, args: string[]): string => {
+      assert.ok(/^[a-z0-9-]+$/.test(label));
+      const outcome = spawnSync(process.execPath, args, { cwd: installRoot, encoding: "utf8",
+        timeout: 20000, maxBuffer: 131072, env: process.env });
+      const stdout = outcome.stdout ?? "", stderr = outcome.stderr ?? "";
+      writeFileSync(inside(reportRoot!, `${label}.stdout.txt`), stdout);
+      writeFileSync(inside(reportRoot!, `${label}.stderr.txt`), stderr);
+      (receipt.commands as unknown[]).push({ label, executable: process.execPath, args,
+        status: outcome.status, signal: outcome.signal, error: outcome.error ? String(outcome.error) : null,
+        stdoutBytes: Buffer.byteLength(stdout), stdoutSha256: sha256(stdout),
+        stderrBytes: Buffer.byteLength(stderr), stderrSha256: sha256(stderr) });
+      assert.equal(outcome.error, undefined, `${label}: command error; no repair/retry`);
+      assert.equal(outcome.signal, null, `${label}: signal; no repair/retry`);
+      assert.equal(outcome.status, 0, `${label}: nonzero exit; no repair/retry`);
+      return stdout;
+    };
+    for (const root of [sourceRoot, installRoot]) for (const file of ["package.json", "package-lock.json"]) {
+      const path = inside(root, file);
+      assert.ok(lstatSync(path).isFile() && !lstatSync(path).isSymbolicLink());
+      const bytes = readFileSync(path); immutableFiles.set(path, bytes);
+      assert.equal(sha256(bytes), file === "package.json" ? manifestSha256 : lockSha256);
+      if (file === "package-lock.json") assert.equal(bytes.length, 22948);
+    }
+    const manifest = readJson(inside(installRoot, "package.json"));
+    const lock = readJson(inside(installRoot, "package-lock.json"));
+    assert.equal(lock.lockfileVersion, 3);
+    assert.equal(lock.name, manifest.name); assert.equal(lock.version, manifest.version);
+    const packages = record(lock.packages), rootEntry = record(packages[""]);
+    sameMap(rootEntry.dependencies, manifest.dependencies);
+    sameMap(rootEntry.devDependencies, manifest.devDependencies);
+    sameMap({ ...record(manifest.dependencies), ...record(manifest.devDependencies) }, direct);
+    const event = readJson(process.env.GITHUB_EVENT_PATH ?? ""), pr = record(event.pull_request);
+    assert.equal(event.action, "synchronize"); assert.equal(pr.number, 10); assert.equal(pr.draft, true);
+    const head = record(pr.head), base = record(pr.base);
+    assert.equal(record(head.repo).full_name, "HungQuach301/fulcrum-studio");
+    assert.equal(record(base.repo).full_name, "HungQuach301/fulcrum-studio");
+    assert.equal(head.ref, "wp/000"); assert.equal(base.ref, "main");
+    assert.equal(base.sha, BASELINE); assert.equal(head.sha, process.env.EVENT_HEAD);
+    receipt.sourceCommit = git(sourceRoot, "rev-parse", "HEAD").trim();
+    receipt.sourceTree = git(sourceRoot, "rev-parse", "HEAD^{tree}").trim();
+    assert.equal(receipt.sourceCommit, head.sha);
+    assert.equal(git(sourceRoot, "show", "-s", "--format=%P", "HEAD").trim(), "932a10f9fddc5535c950bd335e4a23e32e6c9b6c");
+    assert.equal(git(sourceRoot, "rev-parse", `${BASELINE}^{tree}`).trim(), BASELINE_TREE);
+    receipt.eventSha = process.env.GITHUB_SHA; receipt.runId = process.env.GITHUB_RUN_ID;
+    receipt.runNumber = 7; receipt.attempt = 1; receipt.helperNode = process.version;
+    receipt.npm = run("npm-version", [npmCli, "--version"]).trim();
+    assert.equal(receipt.npm, "10.8.2");
+    const npmView = record(JSON.parse(run("npm-ls", [npmCli, "ls", "--all", "--json"])));
+    receipt.npmLs = "pass";
+    assert.equal(npmView.name, manifest.name); assert.equal(npmView.version, manifest.version);
+    const supported = (constraint: unknown, current: string): boolean => {
+      if (constraint === undefined) return true;
+      assert.ok(Array.isArray(constraint) && constraint.every(value => typeof value === "string"));
+      const values = constraint as string[];
+      if (values.includes(`!${current}`)) return false;
+      const positive = values.filter(value => !value.startsWith("!"));
+      return !positive.length || positive.includes(current) || positive.includes("any");
+    };
+    const installed = new Map<string, Record<string, unknown>>(), excluded: unknown[] = [];
+    for (const [path, raw] of Object.entries(packages)) {
+      if (path === "") continue;
+      // The exact reviewed lockfile is flat. Unknown/nested topology fails instead of being guessed.
+      assert.match(path, /^node_modules\/(?:@[^/]+\/)?[^/]+$/);
+      const entry = record(raw), location = inside(installRoot, path);
+      assert.equal(entry.libc, undefined, "This reviewed lockfile has no libc selector");
+      const eligible = supported(entry.os, process.platform) && supported(entry.cpu, process.arch);
+      if (!eligible) {
+        assert.equal(entry.optional, true, `${path}: platform exclusion must be optional in lockfile`);
+        assert.ok(!existsSync(location), `${path}: platform-excluded package unexpectedly installed`);
+        excluded.push({ path, version: entry.version, optional: true, os: entry.os ?? null, cpu: entry.cpu ?? null,
+          reason: "lockfile-os-or-cpu-excludes-linux-x64", resolved: entry.resolved, integrity: entry.integrity });
+        continue;
+      }
+      assert.ok(lstatSync(location).isDirectory() && !lstatSync(location).isSymbolicLink());
+      assert.equal(realpathSync(location), location);
+      assert.ok(!existsSync(inside(location, "node_modules")), `${path}: unreviewed nested topology`);
+      const packageJson = readJson(inside(location, "package.json"));
+      assert.equal(packageJson.name, path.slice("node_modules/".length));
+      assert.equal(packageJson.version, entry.version, `${path}: installed version differs`);
+      installed.set(path, entry);
+    }
+    const actualPaths: string[] = [];
+    for (const item of readdirSync(modulesRoot, { withFileTypes: true })) {
+      if (item.name === ".bin") { assert.ok(item.isDirectory()); continue; }
+      if (item.name === ".package-lock.json") { assert.ok(item.isFile()); continue; }
+      assert.ok(item.isDirectory() && !item.isSymbolicLink(), `Unexpected node_modules entry: ${item.name}`);
+      if (item.name.startsWith("@")) {
+        for (const child of readdirSync(inside(modulesRoot, item.name), { withFileTypes: true })) {
+          assert.ok(child.isDirectory() && !child.isSymbolicLink());
+          actualPaths.push(`node_modules/${item.name}/${child.name}`);
+        }
+      } else actualPaths.push(`node_modules/${item.name}`);
+    }
+    assert.deepEqual(actualPaths.sort(), [...installed.keys()].sort(), "Installed paths must exactly match platform-admitted lock entries");
+    const seen = new Set<string>(), observedEdges = new Map<string, Set<string>>();
+    const walk = (raw: unknown, owner = ""): void => {
+      const node = record(raw);
+      assert.ok(!node.error && !node.invalid && !node.extraneous && !node.missing, "npm ls reports a dependency problem");
+      if (node.problems !== undefined) assert.deepEqual(node.problems, []);
+      if (node.dependencies === undefined) return;
+      for (const [name, rawChild] of Object.entries(record(node.dependencies))) {
+        const path = `node_modules/${name}`, child = record(rawChild), locked = packages[path];
+        assert.ok(locked, `npm ls includes unlocked package: ${path}`);
+        if (!observedEdges.has(owner)) observedEdges.set(owner, new Set());
+        observedEdges.get(owner)!.add(name);
+        if (!installed.has(path)) {
+          const entry = record(locked);
+          assert.equal(entry.optional, true);
+          assert.ok(!supported(entry.os, process.platform) || !supported(entry.cpu, process.arch));
+          // npm may retain an empty placeholder for an unavailable optional platform package.
+          assert.ok(child.version === undefined && !child.error && !child.invalid && !child.extraneous);
+          assert.ok(child.dependencies === undefined && child.problems === undefined);
+          continue;
+        }
+        assert.equal(child.version, installed.get(path)!.version, `npm ls version differs: ${path}`);
+        seen.add(path); walk(child, path);
+      }
+    };
+    walk(npmView);
+    assert.deepEqual([...seen].sort(), [...installed.keys()].sort(), "npm ls must account for every installed lock entry");
+    const graph: unknown[] = [];
+    for (const [owner, entry] of [["", rootEntry] as const, ...installed.entries()]) {
+      const edges = { ...record(entry.dependencies ?? {}), ...record(entry.optionalDependencies ?? {}),
+        ...record(entry.peerDependencies ?? {}), ...(owner === "" ? record(entry.devDependencies ?? {}) : {}) };
+      const expected = Object.keys(edges).filter(name => installed.has(`node_modules/${name}`)).sort();
+      const actual = [...(observedEdges.get(owner) ?? [])].filter(name => installed.has(`node_modules/${name}`)).sort();
+      assert.deepEqual(actual, expected, `${owner || "root"}: npm ls dependency edges differ from lockfile`);
+      graph.push({ owner: owner || "root", dependencies: actual });
+    }
+    receipt.dependencyEdges = graph;
+    receipt.installedTree = "pass";
+    receipt.platform = { os: process.platform, cpu: process.arch, installed: installed.size, excluded: excluded.length };
+    receipt.installed = [...installed].map(([path, entry]) => ({ path, version: entry.version,
+      resolved: entry.resolved, integrity: entry.integrity, optional: entry.optional === true }));
+    receipt.excluded = excluded;
+    receipt.integrityMeaning = "Lockfile SRI preserved; npm ci owns download integrity. No independent tarball-byte audit claimed.";
+    const localRequire = createRequire(inside(installRoot, "package.json"));
+    for (const name of Object.keys(direct).filter(name => name !== "@types/node")) {
+      const resolved = realpathSync(localRequire.resolve(name));
+      assert.ok(!relative(modulesRoot, resolved).startsWith("..") && !isAbsolute(relative(modulesRoot, resolved)));
+    }
+    assert.equal(ts.version, direct.typescript);
+    assert.equal(run("tsc-version", [inside(modulesRoot, "typescript/bin/tsc"), "--version"]).trim(), "Version 5.4.5");
+    const tsxVersion = run("tsx-version", [inside(modulesRoot, "tsx/dist/cli.mjs"), "--version"]);
+    assert.match(tsxVersion, /(?:^|\n)tsx v4\.7\.1(?:\r?\n|$)/);
+    assert.match(tsxVersion, /(?:^|\n)node v20\.20\.2(?:\r?\n|$)/);
+    smokeRoot = inside(taskRoot, "smoke"); assert.ok(!existsSync(smokeRoot)); mkdirSync(smokeRoot);
+    const sample = 'const value: number = 2 + 3;\nprocess.stdout.write(String(value) + "\\n");\n';
+    const tsPath = inside(smokeRoot, "minimal.ts"); writeFileSync(tsPath, sample);
+    run("tsc-minimal", [inside(modulesRoot, "typescript/bin/tsc"), "--noEmit", "--strict", "--target", "ES2022",
+      "--module", "commonjs", "--moduleResolution", "node", "--types", "node", "--typeRoots", inside(modulesRoot, "@types"), tsPath]);
+    assert.equal(run("tsx-minimal", [inside(modulesRoot, "tsx/dist/cli.mjs"), tsPath]), "5\n");
+    // The API must use its installed optional binary normally. No rebuild/fallback download is enabled here.
+    const binary = inside(modulesRoot, "@esbuild/linux-x64/bin/esbuild");
+    assert.ok(lstatSync(binary).isFile() && !lstatSync(binary).isSymbolicLink() && (lstatSync(binary).mode & 0o111) !== 0);
+    assert.equal(realpathSync(binary), binary, "Missing/redirected local binary must fail before any tool fallback");
+    const esbuild = localRequire("esbuild") as { version: string;
+      transformSync(input: string, options: { loader: string; format: string; target: string }): { code: string } };
+    assert.equal(esbuild.version, record(packages["node_modules/esbuild"]).version);
+    const transformed = esbuild.transformSync(sample, { loader: "ts", format: "cjs", target: "node20" });
+    const jsPath = inside(smokeRoot, "minimal.cjs"); writeFileSync(jsPath, transformed.code);
+    assert.equal(run("esbuild-minimal", [jsPath]), "5\n");
+    receipt.toolVersions = { typescript: ts.version, tsx: direct.tsx, esbuild: esbuild.version };
+    receipt.minimalToolCase = { outcome: "pass", inputSha256: sha256(sample), outputSha256: sha256(transformed.code),
+      expectedStdout: "5\n", projectTypecheck: "not-run" };
+    receipt.result = "pass";
+  } catch (error) { receipt.error = String(error); receipt.result = "fail"; }
+  finally {
+    try {
+      if (smokeRoot) { rmSync(smokeRoot, { recursive: true, force: true }); assert.ok(!existsSync(smokeRoot)); }
+      receipt.minimalTemporaryCleanup = smokeRoot ? "pass" : "not-created";
+    } catch (error) { receipt.cleanupError = String(error); receipt.result = "fail"; }
+    try {
+      for (const [path, before] of immutableFiles) assert.deepEqual(readFileSync(path), before, `${path}: source or temporary manifest changed`);
+      receipt.manifestAndLockUnchanged = immutableFiles.size === 4;
+      if (immutableFiles.size !== 4) receipt.result = "fail";
+    } catch (error) { receipt.preservationError = String(error); receipt.result = "fail"; }
+    receipt.finishedAt = new Date().toISOString();
+    if (reportRoot) writeFileSync(inside(reportRoot, "acceptance-tools-receipt.json"), `${JSON.stringify(receipt, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ purpose: receipt.purpose, result: receipt.result,
+      wp000Acceptance: "blocked", receipt: reportRoot ? "acceptance-tools-receipt.json" : "unavailable" })}\n`);
+  }
+  return receipt.result === "pass" ? 0 : 1;
+}
+
 if (require.main === module && process.argv[2] === "--prepare-state") {
   process.exitCode = prepareStateArtifact();
 } else if (require.main === module && process.argv[2] === "--lockfile-l") {
@@ -1092,21 +1331,25 @@ if (require.main === module && process.argv[2] === "--prepare-state") {
   let statusBefore: string | undefined;
   const report: ObjectValue = { purpose: "wp000-acceptance-candidate", wp000Acceptance: "blocked",
     realData: "not-run", fixtures: "not-run", guardrails: "not-run", typecheck: "not-run", npmCi: "not-run-by-harness",
-    logDryRun: "not-run",
+    logDryRun: "not-run", commands: [],
     statePreparation: "not-activated", billingReconciled: false, billedCostUsd: null,
     notAssessed: ["production", "five-brief-prompt-regression", "state-normalization", "layout.propsSchema"] };
   let reportPath: string | undefined;
   try {
     if (process.env.GITHUB_ACTIONS !== "true") throw new Error("Actions-only harness; no Codex/local execution authorization");
-    if (process.argv.slice(2).join(" ") !== "--acceptance") throw new Error("Only separately authorized --acceptance is implemented; state route is not activated");
+    if (process.argv.slice(2).join(" ") !== "--acceptance") throw new Error("Only separately authorized --acceptance is implemented; no state generation is allowed in acceptance");
     if (process.version !== "v20.20.2") throw new Error("Pinned helper Node differs");
     const expected = fullSha(process.env.WP000_ACCEPTANCE_COMMIT ?? "");
-    const root = process.cwd(); source = new GitSource(root, git(root, "rev-parse", "HEAD").trim());
+    const root = realpathSync(process.env.GITHUB_WORKSPACE ?? "");
+    assert.equal(realpathSync(process.cwd()), root);
+    const taskRoot = realpathSync(process.env.TASK_ROOT ?? "");
+    const installRoot = inside(taskRoot, "manifest"), modulesRoot = inside(installRoot, "node_modules");
+    source = new GitSource(root, git(root, "rev-parse", "HEAD").trim());
     if (source.head !== expected || git(root, "rev-parse", `${BASELINE}^{tree}`).trim() !== BASELINE_TREE) throw new Error("Acceptance checkpoint differs");
     const runnerTemp = resolve(process.env.RUNNER_TEMP ?? (() => { throw new Error("RUNNER_TEMP absent"); })());
     if (runnerTemp === root || !relative(root, runnerTemp).startsWith("..")) throw new Error("Temporary root must be outside source tree");
-    temp = mkdtempSync(inside(runnerTemp, "wp000-acceptance-"));
-    reportPath = inside(runnerTemp, "wp000-ci-report.txt");
+    temp = mkdtempSync(inside(taskRoot, "fixtures-"));
+    reportPath = inside(taskRoot, "report/acceptance-receipt.json");
     statusBefore = git(root, "status", "--porcelain=v1", "--untracked-files=all");
     if (statusBefore) throw new Error("Source checkout is not clean before checks");
     report.sourceCommit = source.head; report.sourceTree = git(root, "rev-parse", "HEAD^{tree}").trim();
@@ -1114,19 +1357,95 @@ if (require.main === module && process.argv[2] === "--prepare-state") {
     report.runAttempt = process.env.GITHUB_RUN_ATTEMPT; report.helperNode = process.version;
     report.npm = execFileSync("npm", ["--version"], { encoding: "utf8" }).trim();
     if (report.npm !== "10.8.2") throw new Error("Pinned npm differs");
+    assert.equal(process.env.GITHUB_EVENT_NAME, "pull_request");
+    assert.equal(process.env.GITHUB_REPOSITORY, "HungQuach301/fulcrum-studio");
+    assert.equal(process.env.GITHUB_RUN_NUMBER, "7"); assert.equal(process.env.GITHUB_RUN_ATTEMPT, "1");
+    const parent = "932a10f9fddc5535c950bd335e4a23e32e6c9b6c", parentTree = "72a9396f9fad061b80579d9ddf8915f55237cd57";
+    assert.equal(git(root, "show", "-s", "--format=%P", "HEAD").trim(), parent);
+    assert.equal(git(root, "rev-parse", `${parent}^{tree}`).trim(), parentTree);
+    assert.equal(git(root, "show", "-s", "--format=%P", parent).trim(), "f7e959f95de470e2d6bef461e17b42c3218ec74f");
+    assert.equal(git(root, "rev-parse", "HEAD^{tree}").trim(), fullSha(process.env.ACCEPTANCE_SOURCE_TREE ?? ""));
+    assert.equal(git(root, "rev-list", "--count", `${BASELINE}..HEAD`).trim(), "8");
+    assert.equal(git(root, "diff", "--no-renames", "--name-status", parent, "HEAD").trim(),
+      "M\t.github/workflows/acceptance-wp000.yml\nM\tengine/ops/backlog.md\nM\tscripts/acceptance-wp000.ts");
+    assert.equal(source.files().length, 123);
+    assert.ok(!source.files().some(path => /^episodes\/[^/]+\/[^/]+\/state\.json$/.test(path)));
+    assert.ok(!existsSync(inside(root, "node_modules")));
+    const stateRaw = source.text("pipeline/state.json"), state = object(JSON.parse(stateRaw));
+    const admittedBlob = "aa4b01b8d13db6dbff451a1404d5e5464369bc62";
+    assert.equal(Buffer.byteLength(stateRaw), 306); assert.equal(blob(stateRaw), admittedBlob);
+    assert.equal(createHash("sha256").update(stateRaw).digest("hex"), "09f87b64bd8f057067789067f546bc3e5954abd47db2ff56e0fe1a0bee36e024");
+    assert.equal(state.sourceCommit, "f7e959f95de470e2d6bef461e17b42c3218ec74f");
+    assert.equal(state.rebuiltAt, "2026-09-14T01:24:30.332Z"); assert.deepEqual(state.episodes, []);
+    assert.equal(state.note, object(JSON.parse(source.textAt(BASELINE, "pipeline/state.json"))).note);
+    assert.deepEqual(Object.keys(state).sort(), ["episodes", "note", "rebuiltAt", "sourceCommit"]);
+    const oldBacklog = source.textAt(BASELINE, BACKLOG_PATH);
+    const doneBacklog = oldBacklog.replace(/(\| WP-000 \|[^\n]+)\| todo \|/, "$1| done |");
+    assert.notEqual(oldBacklog, doneBacklog); assert.equal(source.text(BACKLOG_PATH), doneBacklog);
+    assert.equal(source.textAt(parent, BACKLOG_PATH), oldBacklog);
+    report.state = { blob: admittedBlob, bytes: 306, sourceCommit: state.sourceCommit, rebuiltAt: state.rebuiltAt };
+    report.soleParent = parent; report.parentTree = parentTree; report.runNumber = 7;
+    report.workflowId = "requires-API-readback:356972316";
+    report.backlog = "single-WP000-done-proposal; not-owner-acceptance-or-merge";
+    for (const path of source.files()) {
+      const bytes = Buffer.from(source.text(path), "utf8");
+      for (const dir of [root, installRoot]) {
+        const file = inside(dir, repoPath(path)); assert.ok(lstatSync(file).isFile() && !lstatSync(file).isSymbolicLink());
+        assert.deepEqual(readFileSync(file), bytes, `${path}: original/mirror bytes differ`);
+      }
+    }
+    report.mirrorFiles = 123;
+    assert.equal(acceptanceTools(), 0, "Current installed tree/tool checks failed; no repair/retry");
+    report.installedTools = "pass; see acceptance-tools-receipt.json";
+    report.npmCi = "requires-owning-workflow-step-result; no inherited L result";
+    const command = (name: string, args: string[], cwd: string, timeout: number): string => {
+      const result = spawnSync(process.execPath, args, { cwd, timeout, maxBuffer: 262144, env: process.env });
+      const stdout = result.stdout ?? Buffer.alloc(0), stderr = result.stderr ?? Buffer.alloc(0);
+      writeFileSync(inside(taskRoot, `report/${name}.stdout.txt`), stdout);
+      writeFileSync(inside(taskRoot, `report/${name}.stderr.txt`), stderr);
+      const receipt = { name, executable: process.execPath, args, cwd, status: result.status, signal: result.signal,
+        error: result.error ? String(result.error) : null, outputComplete: result.error === undefined && result.signal === null,
+        stdoutBytes: stdout.length, stderrBytes: stderr.length,
+        stdoutSha256: createHash("sha256").update(stdout).digest("hex"), stderrSha256: createHash("sha256").update(stderr).digest("hex") };
+      (report.commands as unknown[]).push(receipt);
+      assert.equal(result.error, undefined, `${name}: command failure/incomplete output`);
+      assert.equal(result.signal, null); assert.equal(result.status, 0, `${name}: no repair/retry`);
+      return stdout.toString("utf8");
+    };
+    const cli = object(JSON.parse(command("validator-cli", [inside(modulesRoot, "tsx/dist/cli.mjs"),
+      "scripts/validate.ts", "--root", root, "--commit", expected], root, 30000)));
+    assert.equal(cli.sourceCommit, expected); assert.equal(cli.sourceKind, "git");
+    assert.equal(cli.sourceValidation, "pass"); assert.deepEqual(cli.issues, []);
+    report.validatorCli = cli;
     const schemas = new Schemas(source);
     // Real source and fixtures are independent. The known invalid state is never replaced by a fixture.
     report.realData = new Validator(source, schemas).run();
     report.fixtures = fixtureSuite(source, schemas, temp);
     const wp = source.textAt(BASELINE, WP_PATH), baselineSource = new GitSource(root, BASELINE);
-    report.guardrails = checkChanges(actualChanges(source), wp, contentLiterals(baselineSource), { allowBacklogDone: false });
+    const policy: BootstrapPolicy = { allowBacklogDone: true, stateAfterBlob: admittedBlob };
+    const literals = contentLiterals(baselineSource), cases = report.fixtures as CaseResult[];
+    const control = (name: string, check: () => void): void => {
+      try { check(); cases.push({ name, outcome: "pass" }); }
+      catch (error) { cases.push({ name, outcome: "fail", error: String(error) }); }
+    };
+    const original = source.textAt(BASELINE, "pipeline/state.json");
+    control("guardrails:admitted-state-control", () => assert.deepEqual(checkChanges([
+      { path: "pipeline/state.json", before: original, after: stateRaw }], wp, literals, policy), []));
+    control("guardrails:admitted-state-one-byte-change", () => assert.ok(checkChanges([
+      { path: "pipeline/state.json", before: original, after: `${stateRaw} ` }], wp, literals, policy).some(x => x.startsWith("state-authorization:"))));
+    control("guardrails:admitted-state-wrong-before", () => assert.ok(checkChanges([
+      { path: "pipeline/state.json", before: "{}", after: stateRaw }], wp, literals, policy).some(x => x.startsWith("state-authorization:"))));
+    control("guardrails:approved-backlog-rejects-extra-row", () => assert.ok(checkChanges([
+      { path: BACKLOG_PATH, before: oldBacklog, after: doneBacklog.replace(/\| WP-001 \|([^\n]+)\| todo \|/, "| WP-001 |$1| done |") }
+    ], wp, literals, policy).some(x => x.startsWith("backlog:"))));
+    report.guardrails = checkChanges(actualChanges(source), wp, literals, policy);
     report.guardrailsMethod = "Baseline Output diff, token patterns, TypeScript literals and numeric content-field AST assignments; exact prescribed artifact datums retained; manual diff review still required";
     try {
-      report.typecheckLog = execFileSync(process.execPath, [resolve(root, "node_modules/typescript/bin/tsc"), "--noEmit"], { cwd: root, encoding: "utf8" });
+      report.typecheckLog = command("project-typecheck", [inside(modulesRoot, "typescript/bin/tsc"), "--noEmit"], installRoot, 40000);
       report.typecheck = "pass";
     } catch (error) { report.typecheck = "fail"; report.typecheckLog = String(error); }
     try {
-      const line = execFileSync(process.execPath, [resolve(root, "node_modules/tsx/dist/cli.mjs"), "scripts/log-run.ts", "--dry-run"], { cwd: root, encoding: "utf8" });
+      const line = command("log-dry-run", [inside(modulesRoot, "tsx/dist/cli.mjs"), "scripts/log-run.ts", "--dry-run"], root, 20000);
       assert.equal(line.trim().split("\n").length, 1);
       const parsed = object(JSON.parse(line)); assert.equal(typeof parsed.costUsd, "number");
       assert.deepEqual(schemas.check("run-log.schema.json", parsed, "dry-run:stdout"), []);
@@ -1140,15 +1459,28 @@ if (require.main === module && process.argv[2] === "--prepare-state") {
     process.exitCode = report.harnessResult === "pass" ? 0 : 1;
   } catch (error) { report.error = String(error); report.harnessResult = "fail"; process.exitCode = 1; }
   finally {
-    if (temp) rmSync(temp, { recursive: true, force: true });
+    try { if (temp) { rmSync(temp, { recursive: true, force: true }); assert.ok(!existsSync(temp)); }
+      report.fixtureCleanup = temp ? "pass" : "not-created";
+    } catch (error) { report.fixtureCleanup = "fail"; report.cleanupError = String(error); report.harnessResult = "fail"; process.exitCode = 1; }
     if (source && statusBefore !== undefined) {
       try {
         const unchanged = git(source.root, "status", "--porcelain=v1", "--untracked-files=all") === statusBefore &&
           git(source.root, "rev-parse", "HEAD").trim() === source.head;
+        const mirror = inside(realpathSync(process.env.TASK_ROOT ?? ""), "manifest");
+        for (const path of source.files()) {
+          const bytes = Buffer.from(source.text(path), "utf8");
+          assert.deepEqual(readFileSync(inside(source.root, path)), bytes);
+          assert.deepEqual(readFileSync(inside(mirror, path)), bytes);
+        }
+        report.sourceAndMirrorByteFiles = 123;
         report.sourceUnchanged = unchanged;
         if (!unchanged) { report.harnessResult = "fail"; process.exitCode = 1; }
-      } catch (error) { report.sourceUnchanged = false; report.cleanupError = String(error); process.exitCode = 1; }
+      } catch (error) { report.sourceUnchanged = false; report.cleanupError = String(error); report.harnessResult = "fail"; process.exitCode = 1; }
     }
+    report.wp000Acceptance = report.harnessResult === "pass" && report.sourceUnchanged === true && report.fixtureCleanup === "pass"
+      ? "requires-workflow-npm-preservation-upload-final-cleanup-and-owner-review" : "blocked";
+    if (report.wp000Acceptance === "blocked") process.exitCode = 1;
+    report.finishedAt = new Date().toISOString();
     const output = `${JSON.stringify(report, null, 2)}\n`;
     if (reportPath) writeFileSync(reportPath, output);
     process.stdout.write(output);
