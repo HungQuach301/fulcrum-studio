@@ -83,3 +83,8 @@ chưa nghiệm thu được ghi trong `engine/ops/backlog.md`.
 
 Mốc 1 chưa bắt đầu. WP-000 là việc tiếp theo; phạm vi và điều kiện thực thi phải
 được chủ dự án phê duyệt riêng.
+
+
+## Gói FS23-WP001 — D-23
+
+Trạng thái bổ sung theo D-23: chủ dự án đã nghiệm thu kỹ thuật WP-000 tại 33f64ff4835d2a84b4ea9b6960ab39c9ac130d09 qua hồ sơ FS22. FS23 chỉ được thực hiện sau grant của owner, đưa chính tree đã nghiệm thu lên main rồi xây WP-001. Những câu trạng thái WP-000-chưa-bắt-đầu phía trên được giữ như lịch sử; trạng thái mới căn cứ merge receipt FS23. WP-001 còn chờ kết quả và owner nghiệm thu; các mốc nội dung/sản xuất không đổi.

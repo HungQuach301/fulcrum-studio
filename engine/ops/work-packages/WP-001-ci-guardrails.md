@@ -102,3 +102,8 @@ Không dán log thô.
 ### 7. Definition of Done
 Theo `definition-of-done.md`, cộng: cả sáu bài kiểm chạy thật trong Actions, kết quả dán vào
 báo cáo.
+
+
+## Gói FS23-WP001 — D-23
+
+Phụ lục FS23-WP001 theo D-23 thay riêng tiền đề main/protection, cách bàn giao artifact, bootstrap sáu tài liệu S và cách tổ chức ca âm. Mục tiêu, allowlist implementation gốc trên main, bốn job, scan contracts/content/secret, SHA action, không dependency và CI cuối vẫn giữ. Chỉ tám đường dẫn implementation chính xác trong D-23; không dùng scripts/guardrails/** để tự thêm file thứ chín. test-guardrails.yml không cần tạo. Sáu tài liệu S giữ nguyên sau commit policy. PR kết thúc Draft, chưa mở WP002.

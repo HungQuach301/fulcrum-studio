@@ -55,7 +55,7 @@ Thứ tự trong bảng là thứ tự thực hiện. Không nhảy cóc.
 | WP | Tên | `riskClass` | Phụ thuộc | TT |
 |---|---|---|---|---|
 | WP-000 | Scaffold repo, TypeScript, validator hai tầng | architectural | — | done |
-| WP-001 | CI trên push: validate, typecheck, guardrails, ci-report | architectural | WP-000 | todo |
+| WP-001 | CI trên push: validate, typecheck, guardrails, ci-report | architectural | WP-000 | done |
 | WP-001b | Bootstrap expander — chỉ nếu connector không ghi được repo | mechanical | WP-000 | blocked |
 | WP-002 | Interface state store + interface provider | architectural | WP-001 | todo |
 | **WP-004** | **Builder — agent chạy trong Actions** | architectural | WP-002 | todo |
