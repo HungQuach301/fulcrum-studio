@@ -36,6 +36,35 @@ export function integrationPolicy(root: string, head: string, p: IntegrationPoli
   return p.paths;
 }
 
+
+export const FS24R1 = {"base":"83786225fdaff2fcbc82cd2b99212a905dd19ceb","tree":"dc59bf4b8e470fa23a042acd4bf19f909dca5e0c","historicalHead":"19bb30568885ef6cb2c7c4b3c8cb9053f9b1fe21","files":{"engine/docs/02-decisions.md":"b15222c348c84af3dbc2f2fccb3eecd4ce89141e","engine/ops/work-packages/WP-002-interfaces.md":"6d716a54271dd00e5eaa219acf7ee94712c48ee7"},"paths":["engine/docs/02-decisions.md","engine/ops/work-packages/WP-002-interfaces.md",".github/workflows/ci.yml","scripts/guardrails/index.ts",".github/workflows/acceptance-wp002.yml","engine/io/github-transport.ts","engine/io/github-writer.ts","engine/io/wp002-integration.test.ts","engine/io/wp002-integration.ts"]};
+/** Resolve P1 from the pinned S ancestry, then verify its immutable content pins. */
+export function repairPolicy(root:string,head:string):string[] {
+  const p=FS24R1;
+  if(git(root,"rev-parse",p.base+"^{tree}").trim()!==p.tree)throw new Error("R1-base-tree");
+  git(root,"merge-base","--is-ancestor",p.base,head);
+  const chain=git(root,"rev-list","--reverse",p.base+".."+head).trim().split("\n").filter(Boolean);
+  if(chain.length<2||chain.length>4)throw new Error("R1-commit-count");
+  let parent:string=p.base;
+  for(const [i,sha]of chain.entries()) {
+    if(git(root,"rev-list","--parents","-n","1",sha).trim()!==sha+" "+parent)throw new Error("R1-parent");
+    const msg=git(root,"show","-s","--format=%B",sha);
+    for(const [key,value]of [["Grant","FS24-B-R1"],["Phase",i===0?"policy":"implementation"],...(i===0?[]:[["Iteration",String(i)]])]) {
+      if(msg.split("\n").filter(x=>x.startsWith("Fulcrum-"+key+": ")).join("\n")!=="Fulcrum-"+key+": "+value)throw new Error("R1-trailer");
+    }
+    const changed=changes(root,parent,sha).map(x=>x.path);
+    if(i===0&&(changed.length!==2||changed.some(x=>!Object.hasOwn(p.files,x))))throw new Error("R1-policy-scope");
+    if(i>0&&changed.some(x=>!p.paths.slice(2).includes(x)))throw new Error("R1-implementation-scope");
+    parent=sha;
+  }
+  for(const [path,pin]of Object.entries(p.files)) {
+    if(git(root,"rev-parse",chain[0]+":"+path).trim()!==pin||git(root,"rev-parse",head+":"+path).trim()!==pin||!at(root,chain[0],path).startsWith(at(root,p.base,path)))throw new Error("R1-policy-freeze");
+  }
+  if(changes(root,p.base,head).some(x=>!p.paths.includes(x.path)))throw new Error("R1-scope");
+  for(const path of files(root,p.base))if(!p.paths.includes(path)&&git(root,"ls-tree",p.base,"--",path)!==git(root,"ls-tree",head,"--",path))throw new Error("R1-preservation");
+  return p.paths;
+}
+
 export interface Options { root: string; base: string; head: string; branch: string; title: string; event: string; bootstrap?: Bootstrap; }
 export interface ScanReport { result: "pass" | "fail"; base: string; head: string; branch: string; wpPath: string; checkedPaths: string[]; errors: Finding[]; }
 export function inspect(o: Options): ScanReport {
@@ -65,11 +94,12 @@ export function inspect(o: Options): ScanReport {
       }
     }
     const b24 = o.branch === "wp/002" && o.base === FS24B.base ? integrationPolicy(o.root, o.head) : [];
+    const r1 = o.base === FS24R1.base && ["wp/002","main"].includes(o.branch) ? repairPolicy(o.root,o.branch === "main" ? git(o.root,"rev-parse",o.head+"^2").trim() : o.head) : [];
     const domain = tokens(o.root, o.base);
     for (const change of diff) {
       const path = change.path;
       const error = (rule: string): void => { report.errors.push({ path, line: 0, rule }); };
-      const policyException = !!boot?.files[path] || b24.includes(path);
+      const policyException = !!boot?.files[path] || b24.includes(path) || r1.includes(path);
       const backlog = path === "engine/ops/backlog.md" && ctx.kind !== "main" && existsAt(o.root, o.base, path) && existsAt(o.root, o.head, path) && backlogOnly(at(o.root, o.base, path), at(o.root, o.head, path), ctx.code);
       const wpException = path === ctx.wpPath && docOnly && messages.includes("[wp-change]");
       if (ctx.kind !== "main" && !policyException && !backlog && !wpException && !ctx.patterns.some(p => matches(path, p))) error("outside-scope:" + ctx.wpPath);

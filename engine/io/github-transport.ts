@@ -4,6 +4,8 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { assertCommit, assertPath, stateRecord } from "./repo-store";
 
+// Explicit receipt contract; other REST calls keep the 2026-03-10 default.
+const MERGE_RECEIPT_API_VERSION = "2022-11-28";
 export const REPOSITORY = "HungQuach301/fulcrum-studio";
 export const SOURCE = "bd7f0eb5b225ed43d610af12b5febbe82a7dbec4";
 export const POLICY = "76aae91e0bd415176e102136a11449791e4ecc7e";
@@ -18,16 +20,40 @@ export interface Job { id: number; name: string; status: string; conclusion: str
 /** Authenticated calls are confined to this repository. Redirect destinations never receive the token. */
 export class GitHubTransport {
   constructor(private readonly token: string) { if (!token) throw new Error("MissingActionsToken"); }
-  async request(path: string, method = "GET", body?: unknown): Promise<Response> {
+  async request(path: string, method = "GET", body?: unknown, observe?: (response:Response)=>Promise<void>): Promise<Response> {
     if (!/^\/(actions|git|commits|compare|pulls)\//.test(path) || path.includes("..") || path.includes("#")) throw new Error("ApiScope");
+    const apiVersion = observe && method === "GET" && /^\/pulls\/[1-9][0-9]*$/.test(path) ? MERGE_RECEIPT_API_VERSION : "2026-03-10";
     const response = await fetch("https://api.github.com/repos/" + REPOSITORY + path, { method, redirect: "manual", headers: {
-      Authorization: "Bearer " + this.token, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2026-03-10", "Content-Type": "application/json"
+      Authorization: "Bearer " + this.token, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": apiVersion, "Content-Type": "application/json"
     }, body: body === undefined ? undefined : JSON.stringify(body) });
+    // The receipt observer owns the body. A cloned tee can leave iterator cancellation
+    // pending on its unread sibling when a capped response is rejected.
+    if(observe) await observe(response);
     // No automatic HTTP retry, including 403 and ambiguous POST responses.
     if (!response.ok && response.status !== 302) throw new Error("GitHubHTTP:" + response.status + ":" + method + ":" + path.split("?")[0]);
     return response;
   }
   async json<T>(path: string): Promise<T> { return await (await this.request(path)).json() as T; }
+
+  async mergeReceipt(number:number,label:string):Promise<unknown> {
+    if(!Number.isSafeInteger(number)||number<1||!/^merge-(history|repair)$/.test(label))throw new Error("MergeReceiptScope");
+    let raw:Buffer|undefined;
+    await this.request("/pulls/"+number,"GET",undefined,async response=>{
+      const chunks:Buffer[]=[];let size=0;
+      if(response.body)for await(const part of response.body as unknown as AsyncIterable<Uint8Array>) {
+        size+=part.length;if(size>1024*1024){emitFile(label+"-error.json",Buffer.from(JSON.stringify({error:"ResponseByteCap",status:response.status,cap:1024*1024})));throw new Error("MergeReceiptByteCap");}
+        chunks.push(Buffer.from(part));
+      }
+      raw=Buffer.concat(chunks);
+      const metadata={path:"/pulls/"+number,status:response.status,requestedApiVersion:MERGE_RECEIPT_API_VERSION,selectedApiVersion:response.headers.get("x-github-api-version-selected"),requestId:response.headers.get("x-github-request-id"),receivedAt:new Date().toISOString(),bytes:raw.length,sha256:digest(raw)};
+      emitFile(label+"-response.raw.json",raw);
+      emitFile(label+"-response-metadata.json",Buffer.from(JSON.stringify(metadata)+"\n"));
+    });
+    if(!raw)throw new Error("MergeReceiptMissingBody");
+    try{return JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(raw)) as unknown;}
+    catch{throw new Error("MergeReceiptInvalidJSON");}
+  }
+
   async dispatch(workflow: string, inputs: Record<string,string>): Promise<number> {
     if (!["commit-artifacts.yml","reindex.yml","ci.yml"].includes(workflow)) throw new Error("DispatchScope");
     const response=await this.request("/actions/workflows/"+workflow+"/dispatches","POST",{ref:"main",inputs});
@@ -102,7 +128,7 @@ export function validateManifest(manifest: Manifest, files: Record<string,string
 }
 export function emitFile(name: string, bytes: Buffer): void {
   if(!/^[A-Za-z0-9_.-]+$/.test(name)) throw new Error("EvidenceName");
-  const id={grant:"FS24-B",run:process.env.GITHUB_RUN_ID,attempt:process.env.GITHUB_RUN_ATTEMPT,head:process.env.FS_HEAD,job:process.env.FS_JOB};
+  const id={grant:process.env.FS_GRANT??"FS24-B",run:process.env.GITHUB_RUN_ID,attempt:process.env.GITHUB_RUN_ATTEMPT,head:process.env.FS_HEAD,job:process.env.FS_JOB};
   console.log("FS24B_FILE\t"+JSON.stringify({...id,name,bytes:bytes.length,sha256:digest(bytes)}));
   const value=bytes.toString("base64");for(let i=0;i<value.length;i+=2048)console.log("FS24B_DATA\t"+(i/2048+1)+"\t"+value.slice(i,i+2048));
   console.log("FS24B_END\t"+name);

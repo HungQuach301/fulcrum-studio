@@ -99,8 +99,35 @@ jobs:
           impl=['.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/content.ts', 'scripts/guardrails/secrets.ts', 'scripts/guardrails/guardrails.test.ts', 'scripts/ci-report.ts', 'engine/ops/backlog.md']
           diff=git('diff','--no-renames','--name-only','-z',base,head).split('\0')[:-1]
 
+          r1={'base': '83786225fdaff2fcbc82cd2b99212a905dd19ceb', 'tree': 'dc59bf4b8e470fa23a042acd4bf19f909dca5e0c', 'historicalHead': '19bb30568885ef6cb2c7c4b3c8cb9053f9b1fe21', 'files': {'engine/docs/02-decisions.md': 'b15222c348c84af3dbc2f2fccb3eecd4ce89141e', 'engine/ops/work-packages/WP-002-interfaces.md': '6d716a54271dd00e5eaa219acf7ee94712c48ee7'}, 'paths': ['engine/docs/02-decisions.md', 'engine/ops/work-packages/WP-002-interfaces.md', '.github/workflows/ci.yml', 'scripts/guardrails/index.ts', '.github/workflows/acceptance-wp002.yml', 'engine/io/github-transport.ts', 'engine/io/github-writer.ts', 'engine/io/wp002-integration.test.ts', 'engine/io/wp002-integration.ts']}
+          def verify_r1(candidate):
+           assert git('rev-parse',r1['base']+'^{tree}').strip()==r1['tree'],'R1-base-tree'
+           git('merge-base','--is-ancestor',r1['base'],candidate)
+           chain=git('rev-list','--reverse',r1['base']+'..'+candidate).splitlines();assert 2<=len(chain)<=4,'R1-count'
+           previous=r1['base']
+           for i,sha in enumerate(chain):
+            assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+previous,'R1-parent'
+            msg=git('show','-s','--format=%B',sha)
+            for k,v in [('Grant','FS24-B-R1'),('Phase','policy' if i==0 else 'implementation')]+([] if i==0 else [('Iteration',str(i))]):assert re.findall(r'^Fulcrum-'+k+': (.*)$',msg,re.M)==[v],'R1-trailer'
+            changed=set(git('diff','--name-only',previous,sha).splitlines())
+            assert changed==set(r1['files']) if i==0 else changed<=set(r1['paths'][2:]),'R1-scope'
+            previous=sha
+           for path,pin in r1['files'].items():
+            assert git('rev-parse',chain[0]+':'+path).strip()==pin and git('rev-parse',candidate+':'+path).strip()==pin,'R1-policy-freeze'
+            assert git('show',chain[0]+':'+path).startswith(git('show',r1['base']+':'+path)),'R1-prefix'
+           assert set(git('diff','--name-only',r1['base'],candidate).splitlines())<=set(r1['paths'])
+           for path in git('ls-tree','-r','--name-only',r1['base']).splitlines():
+            if path not in r1['paths']:assert git('ls-tree',r1['base'],'--',path)==git('ls-tree',candidate,'--',path),('R1-preservation',path)
           fs24b=[]
-          if branch=='wp/002':
+          if base==r1['base']:
+           assert event in ['push','pull_request'] and branch in ['wp/002','main'],'R1-context'
+           if branch=='main':
+            parents=git('rev-list','--parents','-n','1',head).split();assert len(parents)==3 and parents[1]==r1['base']
+            assert git('rev-parse',head+'^{tree}')==git('rev-parse',parents[2]+'^{tree}');verify_r1(parents[2])
+           else:
+            assert main==r1['base'];verify_r1(head)
+           fs24b=r1['paths']
+          elif branch=='wp/002':
            grant={'base': 'bd7f0eb5b225ed43d610af12b5febbe82a7dbec4', 'start': 'd021d3d662d619ae802fa483e1e36c5a94feb38b', 'policy': '76aae91e0bd415176e102136a11449791e4ecc7e', 'files': {'engine/docs/02-decisions.md': 'e4273586d427e4b127757b7b7d61d536fe317036', 'engine/ops/work-packages/WP-002-interfaces.md': 'c48b8da739695e8ef6135532a94a18ddcd8e2afc'}, 'paths': ['engine/docs/02-decisions.md', 'engine/ops/work-packages/WP-002-interfaces.md', '.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/guardrails.test.ts', '.github/workflows/acceptance-wp002.yml', 'engine/io/repo-store.ts', 'engine/io/repo-store.test.ts', 'engine/io/github-transport.ts', 'engine/io/github-writer.ts', 'engine/io/wp002-integration.ts', 'engine/io/wp002-integration.test.ts', '.github/workflows/commit-artifacts.yml', '.github/workflows/reindex.yml']}
            assert base==grant['base'],'B-base'
            git('merge-base','--is-ancestor',grant['policy'],head)
@@ -382,8 +409,35 @@ jobs:
           impl=['.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/content.ts', 'scripts/guardrails/secrets.ts', 'scripts/guardrails/guardrails.test.ts', 'scripts/ci-report.ts', 'engine/ops/backlog.md']
           diff=git('diff','--no-renames','--name-only','-z',base,head).split('\0')[:-1]
 
+          r1={'base': '83786225fdaff2fcbc82cd2b99212a905dd19ceb', 'tree': 'dc59bf4b8e470fa23a042acd4bf19f909dca5e0c', 'historicalHead': '19bb30568885ef6cb2c7c4b3c8cb9053f9b1fe21', 'files': {'engine/docs/02-decisions.md': 'b15222c348c84af3dbc2f2fccb3eecd4ce89141e', 'engine/ops/work-packages/WP-002-interfaces.md': '6d716a54271dd00e5eaa219acf7ee94712c48ee7'}, 'paths': ['engine/docs/02-decisions.md', 'engine/ops/work-packages/WP-002-interfaces.md', '.github/workflows/ci.yml', 'scripts/guardrails/index.ts', '.github/workflows/acceptance-wp002.yml', 'engine/io/github-transport.ts', 'engine/io/github-writer.ts', 'engine/io/wp002-integration.test.ts', 'engine/io/wp002-integration.ts']}
+          def verify_r1(candidate):
+           assert git('rev-parse',r1['base']+'^{tree}').strip()==r1['tree'],'R1-base-tree'
+           git('merge-base','--is-ancestor',r1['base'],candidate)
+           chain=git('rev-list','--reverse',r1['base']+'..'+candidate).splitlines();assert 2<=len(chain)<=4,'R1-count'
+           previous=r1['base']
+           for i,sha in enumerate(chain):
+            assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+previous,'R1-parent'
+            msg=git('show','-s','--format=%B',sha)
+            for k,v in [('Grant','FS24-B-R1'),('Phase','policy' if i==0 else 'implementation')]+([] if i==0 else [('Iteration',str(i))]):assert re.findall(r'^Fulcrum-'+k+': (.*)$',msg,re.M)==[v],'R1-trailer'
+            changed=set(git('diff','--name-only',previous,sha).splitlines())
+            assert changed==set(r1['files']) if i==0 else changed<=set(r1['paths'][2:]),'R1-scope'
+            previous=sha
+           for path,pin in r1['files'].items():
+            assert git('rev-parse',chain[0]+':'+path).strip()==pin and git('rev-parse',candidate+':'+path).strip()==pin,'R1-policy-freeze'
+            assert git('show',chain[0]+':'+path).startswith(git('show',r1['base']+':'+path)),'R1-prefix'
+           assert set(git('diff','--name-only',r1['base'],candidate).splitlines())<=set(r1['paths'])
+           for path in git('ls-tree','-r','--name-only',r1['base']).splitlines():
+            if path not in r1['paths']:assert git('ls-tree',r1['base'],'--',path)==git('ls-tree',candidate,'--',path),('R1-preservation',path)
           fs24b=[]
-          if branch=='wp/002':
+          if base==r1['base']:
+           assert event in ['push','pull_request'] and branch in ['wp/002','main'],'R1-context'
+           if branch=='main':
+            parents=git('rev-list','--parents','-n','1',head).split();assert len(parents)==3 and parents[1]==r1['base']
+            assert git('rev-parse',head+'^{tree}')==git('rev-parse',parents[2]+'^{tree}');verify_r1(parents[2])
+           else:
+            assert main==r1['base'];verify_r1(head)
+           fs24b=r1['paths']
+          elif branch=='wp/002':
            grant={'base': 'bd7f0eb5b225ed43d610af12b5febbe82a7dbec4', 'start': 'd021d3d662d619ae802fa483e1e36c5a94feb38b', 'policy': '76aae91e0bd415176e102136a11449791e4ecc7e', 'files': {'engine/docs/02-decisions.md': 'e4273586d427e4b127757b7b7d61d536fe317036', 'engine/ops/work-packages/WP-002-interfaces.md': 'c48b8da739695e8ef6135532a94a18ddcd8e2afc'}, 'paths': ['engine/docs/02-decisions.md', 'engine/ops/work-packages/WP-002-interfaces.md', '.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/guardrails.test.ts', '.github/workflows/acceptance-wp002.yml', 'engine/io/repo-store.ts', 'engine/io/repo-store.test.ts', 'engine/io/github-transport.ts', 'engine/io/github-writer.ts', 'engine/io/wp002-integration.ts', 'engine/io/wp002-integration.test.ts', '.github/workflows/commit-artifacts.yml', '.github/workflows/reindex.yml']}
            assert base==grant['base'],'B-base'
            git('merge-base','--is-ancestor',grant['policy'],head)
@@ -665,8 +719,35 @@ jobs:
           impl=['.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/content.ts', 'scripts/guardrails/secrets.ts', 'scripts/guardrails/guardrails.test.ts', 'scripts/ci-report.ts', 'engine/ops/backlog.md']
           diff=git('diff','--no-renames','--name-only','-z',base,head).split('\0')[:-1]
 
+          r1={'base': '83786225fdaff2fcbc82cd2b99212a905dd19ceb', 'tree': 'dc59bf4b8e470fa23a042acd4bf19f909dca5e0c', 'historicalHead': '19bb30568885ef6cb2c7c4b3c8cb9053f9b1fe21', 'files': {'engine/docs/02-decisions.md': 'b15222c348c84af3dbc2f2fccb3eecd4ce89141e', 'engine/ops/work-packages/WP-002-interfaces.md': '6d716a54271dd00e5eaa219acf7ee94712c48ee7'}, 'paths': ['engine/docs/02-decisions.md', 'engine/ops/work-packages/WP-002-interfaces.md', '.github/workflows/ci.yml', 'scripts/guardrails/index.ts', '.github/workflows/acceptance-wp002.yml', 'engine/io/github-transport.ts', 'engine/io/github-writer.ts', 'engine/io/wp002-integration.test.ts', 'engine/io/wp002-integration.ts']}
+          def verify_r1(candidate):
+           assert git('rev-parse',r1['base']+'^{tree}').strip()==r1['tree'],'R1-base-tree'
+           git('merge-base','--is-ancestor',r1['base'],candidate)
+           chain=git('rev-list','--reverse',r1['base']+'..'+candidate).splitlines();assert 2<=len(chain)<=4,'R1-count'
+           previous=r1['base']
+           for i,sha in enumerate(chain):
+            assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+previous,'R1-parent'
+            msg=git('show','-s','--format=%B',sha)
+            for k,v in [('Grant','FS24-B-R1'),('Phase','policy' if i==0 else 'implementation')]+([] if i==0 else [('Iteration',str(i))]):assert re.findall(r'^Fulcrum-'+k+': (.*)$',msg,re.M)==[v],'R1-trailer'
+            changed=set(git('diff','--name-only',previous,sha).splitlines())
+            assert changed==set(r1['files']) if i==0 else changed<=set(r1['paths'][2:]),'R1-scope'
+            previous=sha
+           for path,pin in r1['files'].items():
+            assert git('rev-parse',chain[0]+':'+path).strip()==pin and git('rev-parse',candidate+':'+path).strip()==pin,'R1-policy-freeze'
+            assert git('show',chain[0]+':'+path).startswith(git('show',r1['base']+':'+path)),'R1-prefix'
+           assert set(git('diff','--name-only',r1['base'],candidate).splitlines())<=set(r1['paths'])
+           for path in git('ls-tree','-r','--name-only',r1['base']).splitlines():
+            if path not in r1['paths']:assert git('ls-tree',r1['base'],'--',path)==git('ls-tree',candidate,'--',path),('R1-preservation',path)
           fs24b=[]
-          if branch=='wp/002':
+          if base==r1['base']:
+           assert event in ['push','pull_request'] and branch in ['wp/002','main'],'R1-context'
+           if branch=='main':
+            parents=git('rev-list','--parents','-n','1',head).split();assert len(parents)==3 and parents[1]==r1['base']
+            assert git('rev-parse',head+'^{tree}')==git('rev-parse',parents[2]+'^{tree}');verify_r1(parents[2])
+           else:
+            assert main==r1['base'];verify_r1(head)
+           fs24b=r1['paths']
+          elif branch=='wp/002':
            grant={'base': 'bd7f0eb5b225ed43d610af12b5febbe82a7dbec4', 'start': 'd021d3d662d619ae802fa483e1e36c5a94feb38b', 'policy': '76aae91e0bd415176e102136a11449791e4ecc7e', 'files': {'engine/docs/02-decisions.md': 'e4273586d427e4b127757b7b7d61d536fe317036', 'engine/ops/work-packages/WP-002-interfaces.md': 'c48b8da739695e8ef6135532a94a18ddcd8e2afc'}, 'paths': ['engine/docs/02-decisions.md', 'engine/ops/work-packages/WP-002-interfaces.md', '.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/guardrails.test.ts', '.github/workflows/acceptance-wp002.yml', 'engine/io/repo-store.ts', 'engine/io/repo-store.test.ts', 'engine/io/github-transport.ts', 'engine/io/github-writer.ts', 'engine/io/wp002-integration.ts', 'engine/io/wp002-integration.test.ts', '.github/workflows/commit-artifacts.yml', '.github/workflows/reindex.yml']}
            assert base==grant['base'],'B-base'
            git('merge-base','--is-ancestor',grant['policy'],head)
@@ -950,8 +1031,35 @@ jobs:
           impl=['.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/content.ts', 'scripts/guardrails/secrets.ts', 'scripts/guardrails/guardrails.test.ts', 'scripts/ci-report.ts', 'engine/ops/backlog.md']
           diff=git('diff','--no-renames','--name-only','-z',base,head).split('\0')[:-1]
 
+          r1={'base': '83786225fdaff2fcbc82cd2b99212a905dd19ceb', 'tree': 'dc59bf4b8e470fa23a042acd4bf19f909dca5e0c', 'historicalHead': '19bb30568885ef6cb2c7c4b3c8cb9053f9b1fe21', 'files': {'engine/docs/02-decisions.md': 'b15222c348c84af3dbc2f2fccb3eecd4ce89141e', 'engine/ops/work-packages/WP-002-interfaces.md': '6d716a54271dd00e5eaa219acf7ee94712c48ee7'}, 'paths': ['engine/docs/02-decisions.md', 'engine/ops/work-packages/WP-002-interfaces.md', '.github/workflows/ci.yml', 'scripts/guardrails/index.ts', '.github/workflows/acceptance-wp002.yml', 'engine/io/github-transport.ts', 'engine/io/github-writer.ts', 'engine/io/wp002-integration.test.ts', 'engine/io/wp002-integration.ts']}
+          def verify_r1(candidate):
+           assert git('rev-parse',r1['base']+'^{tree}').strip()==r1['tree'],'R1-base-tree'
+           git('merge-base','--is-ancestor',r1['base'],candidate)
+           chain=git('rev-list','--reverse',r1['base']+'..'+candidate).splitlines();assert 2<=len(chain)<=4,'R1-count'
+           previous=r1['base']
+           for i,sha in enumerate(chain):
+            assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+previous,'R1-parent'
+            msg=git('show','-s','--format=%B',sha)
+            for k,v in [('Grant','FS24-B-R1'),('Phase','policy' if i==0 else 'implementation')]+([] if i==0 else [('Iteration',str(i))]):assert re.findall(r'^Fulcrum-'+k+': (.*)$',msg,re.M)==[v],'R1-trailer'
+            changed=set(git('diff','--name-only',previous,sha).splitlines())
+            assert changed==set(r1['files']) if i==0 else changed<=set(r1['paths'][2:]),'R1-scope'
+            previous=sha
+           for path,pin in r1['files'].items():
+            assert git('rev-parse',chain[0]+':'+path).strip()==pin and git('rev-parse',candidate+':'+path).strip()==pin,'R1-policy-freeze'
+            assert git('show',chain[0]+':'+path).startswith(git('show',r1['base']+':'+path)),'R1-prefix'
+           assert set(git('diff','--name-only',r1['base'],candidate).splitlines())<=set(r1['paths'])
+           for path in git('ls-tree','-r','--name-only',r1['base']).splitlines():
+            if path not in r1['paths']:assert git('ls-tree',r1['base'],'--',path)==git('ls-tree',candidate,'--',path),('R1-preservation',path)
           fs24b=[]
-          if branch=='wp/002':
+          if base==r1['base']:
+           assert event in ['push','pull_request'] and branch in ['wp/002','main'],'R1-context'
+           if branch=='main':
+            parents=git('rev-list','--parents','-n','1',head).split();assert len(parents)==3 and parents[1]==r1['base']
+            assert git('rev-parse',head+'^{tree}')==git('rev-parse',parents[2]+'^{tree}');verify_r1(parents[2])
+           else:
+            assert main==r1['base'];verify_r1(head)
+           fs24b=r1['paths']
+          elif branch=='wp/002':
            grant={'base': 'bd7f0eb5b225ed43d610af12b5febbe82a7dbec4', 'start': 'd021d3d662d619ae802fa483e1e36c5a94feb38b', 'policy': '76aae91e0bd415176e102136a11449791e4ecc7e', 'files': {'engine/docs/02-decisions.md': 'e4273586d427e4b127757b7b7d61d536fe317036', 'engine/ops/work-packages/WP-002-interfaces.md': 'c48b8da739695e8ef6135532a94a18ddcd8e2afc'}, 'paths': ['engine/docs/02-decisions.md', 'engine/ops/work-packages/WP-002-interfaces.md', '.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/guardrails.test.ts', '.github/workflows/acceptance-wp002.yml', 'engine/io/repo-store.ts', 'engine/io/repo-store.test.ts', 'engine/io/github-transport.ts', 'engine/io/github-writer.ts', 'engine/io/wp002-integration.ts', 'engine/io/wp002-integration.test.ts', '.github/workflows/commit-artifacts.yml', '.github/workflows/reindex.yml']}
            assert base==grant['base'],'B-base'
            git('merge-base','--is-ancestor',grant['policy'],head)

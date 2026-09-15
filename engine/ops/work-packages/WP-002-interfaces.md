@@ -99,3 +99,20 @@ The owner approved the whole section 4 of the pinned review (libfile_27065ac1438
 | 20 | `pipeline/runs.jsonl` | Append 50 record test, không sửa dòng cũ |
 | 21 | `pipeline/state.json` | Reindex duy nhất, từ state thật ở SHA đã chốt |
 
+
+
+### 9. FS24-B-R1 — diagnostic repair scope (D-25)
+
+Effective only when the owner approves the pinned R1 package. Keep sections 1–8 and A1–A9 unchanged; neither a repair merge nor successful diagnosis completes WP002. D-25 defines P1, repair lineage, counters, runtime, read-only diagnosis and the no-data activation boundary.
+
+- `engine/docs/02-decisions.md`
+- `engine/ops/work-packages/WP-002-interfaces.md`
+- `.github/workflows/ci.yml`
+- `scripts/guardrails/index.ts`
+- `.github/workflows/acceptance-wp002.yml`
+- `engine/io/github-transport.ts`
+- `engine/io/github-writer.ts`
+- `engine/io/wp002-integration.test.ts`
+- `engine/io/wp002-integration.ts`
+
+Policy paths are the first two entries, append-only and frozen after P1. The remaining seven are implementation/fix scope. No runtime data paths, writer/reindex workflow edits, dependency/contracts/settings/provider changes or backlog edits are authorized by R1. The nine-file repair cannot activate A1–A9: commit-artifacts.yml and reindex.yml still bind PR12/S. A subsequent explicit two-entrypoint delta and new integration grant must address that dependency; no alternate writer is permitted.

@@ -41,6 +41,21 @@ export function bundle(root:string,head:string,run:string,producer:string):{mani
 async function main() {
   const mode=process.argv[2],root=process.env.GITHUB_WORKSPACE!,head=process.env.FS_HEAD!,run=process.env.GITHUB_RUN_ID!,dir=process.env.TASK_ROOT!;
   if(process.env.GITHUB_REPOSITORY!==REPOSITORY||process.env.GITHUB_RUN_ATTEMPT!=="1") throw new Error("RuntimeIdentity");
+  if(mode==="diagnose-history"||mode==="diagnose-repair") {
+    const api=new GitHubTransport(process.env.GH_TOKEN!);
+    if(mode==="diagnose-repair") {
+      const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH!,"utf8")) as {workflow_run:Run};
+      const cause=event.workflow_run;
+      if(process.env.GITHUB_EVENT_NAME!=="workflow_run"||cause.event!=="push"||cause.head_branch!=="main"||cause.head_sha!==head||cause.conclusion!=="success"||cause.run_attempt!==1||cause.path!==".github/workflows/ci.yml")throw new Error("DiagnosticTriggerIdentity");
+      const current=await api.json<Run>("/actions/runs/"+run);
+      if(current.head_sha!==head||current.event!=="workflow_run"||current.head_branch!=="main"||current.run_attempt!==1||current.path!==".github/workflows/acceptance-wp002.yml")throw new Error("DiagnosticRunIdentity");
+      const jobs=await api.json<{jobs:Job[]}>("/actions/runs/"+cause.id+"/jobs?per_page=100");
+      if(jobs.jobs.length!==4||jobs.jobs.some(x=>x.conclusion!=="success")||["validate","typecheck","guardrails","report"].some(name=>!jobs.jobs.some(x=>x.name===name)))throw new Error("DiagnosticMainCI");
+      emitFile("r1-trigger.json",Buffer.from(JSON.stringify({cause,current,jobs})+"\n"));
+    }
+    const {diagnoseMerge}=await import("./github-writer");
+    await diagnoseMerge(root,head,api,mode==="diagnose-repair");return;
+  }
   const producer=process.env.FS_PRODUCER??"foundation";
   const value=bundle(root,head,run,producer);
   const api=new GitHubTransport(process.env.GH_TOKEN!);
