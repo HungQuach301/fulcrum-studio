@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { schemaChecker, validateCommand, stateRecord, isStatePath, assertCommit } from "./repo-store";
 import { buildIndex } from "./reindex";
 import { GitSource, Schemas, Validator } from "../../scripts/validate";
-import { integrationPolicy } from "../../scripts/guardrails/index";
+import { integrationPolicy, repairPolicy, FS24R1 } from "../../scripts/guardrails/index";
 import { GitHubTransport, Manifest, SOURCE, REPOSITORY, digest, emitFile, Run } from "./github-transport";
 import { bundle, git } from "./wp002-integration";
 
@@ -46,14 +46,67 @@ export function applyEntries(old:Record<string,string|null>,entries: Array<{path
   }
   return result;
 }
+
+export function inspectMergeReceipt(value:unknown,expected:{number:number;merge:string;head:string;branch:string}) {
+  const object=(v:unknown):Record<string,unknown>=>v!==null&&typeof v==="object"&&!Array.isArray(v)?v as Record<string,unknown>:{};
+  const pr=object(value),h=object(pr.head),base=object(pr.base),hr=object(h.repo),br=object(base.repo);
+  const matches={merged:pr.merged===true,number:pr.number===expected.number,merge:pr.merge_commit_sha===expected.merge,head:h.sha===expected.head,branch:h.ref===expected.branch,headRepository:hr.full_name===REPOSITORY,baseRepository:br.full_name===REPOSITORY,baseBranch:base.ref==="main"};
+  return {expected,actual:{merged:pr.merged??null,number:pr.number??null,merge:pr.merge_commit_sha??null,head:h.sha??null,branch:h.ref??null,headRepository:hr.full_name??null,baseRepository:br.full_name??null,baseBranch:base.ref??null},matches,pass:Object.values(matches).every(Boolean)};
+}
+export function repairIdentity(parents:string[],tree:string,candidateTree:string,message:string) {
+  if(parents.length!==3||parents[1]!==FS24R1.base||tree!==candidateTree)throw new Error("R1-merge-checkpoint");
+  for(const [key,value]of [["Grant","FS24-B-R1"],["Phase","diagnostic-bootstrap"]])if(message.split("\n").filter(x=>x.startsWith("Fulcrum-"+key+": ")).join("\n")!=="Fulcrum-"+key+": "+value)throw new Error("R1-merge-trailer");
+  const rows=message.split("\n").filter(x=>x.startsWith("Fulcrum-Repair-PR: "));
+  if(rows.length!==1||!/^Fulcrum-Repair-PR: [1-9][0-9]*$/.test(rows[0]))throw new Error("R1-PR-marker");
+  const number=Number(rows[0].slice("Fulcrum-Repair-PR: ".length));
+  if(!Number.isSafeInteger(number)||number<=12)throw new Error("R1-PR-identity");
+  return {number,merge:parents[0],head:parents[2],branch:"wp/002"};
+}
+export interface ReceiptExpectation {number:number;merge:string;head:string;branch:string;}
+/** Admission is checked by diagnoseMerge before this one-request-per-receipt collector. */
+export async function collectMergeReceipts(api:GitHubTransport,expected:ReceiptExpectation[]) {
+  if(expected.length<1||expected.length>2||expected[0].number!==12||expected.some((x,i)=>!Number.isSafeInteger(x.number)||(i>0&&x.number<=12)||x.branch!=="wp/002"||![x.merge,x.head].every(s=>/^[a-f0-9]{40}$/.test(s))))throw new Error("DiagnosticReceiptScope");
+  const outcomes=await Promise.allSettled(expected.map(async(identity,i)=>{
+    const label=i===0?"merge-history":"merge-repair";
+    const observed=inspectMergeReceipt(await api.mergeReceipt(identity.number,label),identity);
+    emitFile(label+"-observed.json",Buffer.from(JSON.stringify(observed)+"\n"));
+    return observed;
+  }));
+  const rows=outcomes.map((outcome,i)=>outcome.status==="fulfilled"
+    ?{label:i===0?"merge-history":"merge-repair",expected:expected[i],pass:outcome.value.pass,observed:outcome.value,error:null}
+    :{label:i===0?"merge-history":"merge-repair",expected:expected[i],pass:false,observed:null,error:String(outcome.reason)});
+  const report={pass:rows.every(x=>x.pass),receipts:rows};
+  emitFile("merge-receipts-outcomes.json",Buffer.from(JSON.stringify(report)+"\n"));
+  return report;
+}
+export async function diagnoseMerge(root:string,code:string,api:GitHubTransport,repair:boolean):Promise<void> {
+  assertCommit(code);
+  const historyParents=git(root,"rev-list","--parents","-n","1",FS24R1.base).split(" ");
+  if(historyParents.join(" ")!==[FS24R1.base,SOURCE,FS24R1.historicalHead].join(" ")||git(root,"rev-parse",FS24R1.base+"^{tree}")!==FS24R1.tree)throw new Error("HistoricalMergeCheckpoint");
+  const expected:ReceiptExpectation[]=[{number:12,merge:FS24R1.base,head:FS24R1.historicalHead,branch:"wp/002"}];
+  if(repair) {
+    const parents=git(root,"rev-list","--parents","-n","1",code).split(" ");
+    const identity=repairIdentity(parents,git(root,"rev-parse",code+"^{tree}"),git(root,"rev-parse",code+"^2^{tree}"),git(root,"show","-s","--format=%B",code));
+    repairPolicy(root,identity.head);
+    expected.push(identity);
+  } else repairPolicy(root,code);
+  const observed=await collectMergeReceipts(api,expected);
+  const ref=await api.json<{object:{sha:string}}>("/git/ref/heads/main");
+  emitFile("r1-main-readback.json",Buffer.from(JSON.stringify({expected:repair?code:FS24R1.base,actual:ref})+"\n"));
+  if(ref.object.sha!==(repair?code:FS24R1.base))throw new Error("DiagnosticMainChanged");
+  if(!observed.pass)throw new Error("MergeReceipt:"+observed.receipts.filter(x=>!x.pass).map(x=>x.label).join(","));
+  emitFile("r1-diagnostic.json",Buffer.from(JSON.stringify({result:"pass",code,historicalMerge:FS24R1.base,source:SOURCE,repair,activation:false,dataCommits:0,dispatches:0})+"\n"));
+}
+
 export async function admittedCode(root:string,code:string,batch:string,api:GitHubTransport):Promise<void> {
   assertCommit(code);
   const run=await api.json<Run>("/actions/runs/"+batch);
   if(run.head_sha!==code||run.event!=="workflow_run"||run.head_branch!=="main"||run.run_attempt!==1||run.path!==".github/workflows/acceptance-wp002.yml")throw new Error("ControllerRunIdentity");
   const parents=git(root,"rev-list","--parents","-n","1",code).split(" ");
   if(parents.length!==3||parents[1]!==SOURCE||git(root,"rev-parse",code+"^{tree}")!==git(root,"rev-parse",parents[2]+"^{tree}"))throw new Error("MergeCheckpoint");
-  const pr=await api.json<{merged:boolean;merge_commit_sha:string;head:{sha:string}}>("/pulls/12");
-  if(!pr.merged||pr.merge_commit_sha!==code||pr.head.sha!==parents[2])throw new Error("MergeReceipt");
+  const observed=inspectMergeReceipt(await api.mergeReceipt(12,"merge-history"),{number:12,merge:code,head:parents[2],branch:"wp/002"});
+  emitFile("merge-history-observed.json",Buffer.from(JSON.stringify(observed)+"\n"));
+  if(!observed.pass)throw new Error("MergeReceipt:"+Object.entries(observed.matches).filter(([,ok])=>!ok).map(([key])=>key).join(","));
   integrationPolicy(root,parents[2]);
   const msg=git(root,"show","-s","--format=%B",code);
   if(!msg.split("\n").includes("Fulcrum-Grant: FS24-B")||!msg.split("\n").includes("Fulcrum-Phase: integration-bootstrap"))throw new Error("MergeGrant");
