@@ -66,3 +66,36 @@ bỏ qua và trả thành công. Đây là cơ chế khử trùng cho job bị h
 
 ### 7. Definition of Done
 Theo `definition-of-done.md` mục 1–12.
+
+
+
+### 8. FS24-B — owner-approved integration grant (D-24)
+
+The owner approved the whole section 4 of the pinned review (libfile_27065ac143888191b0192f68aa6f00de; SHA256 2b9fba1343ac366f5e8ca5fa0140e26a989a6a2cfd3e23409b662e627935cd8b). For this grant only, the exact scope below augments section 4. D-24 supplies all counters, immutable source mappings, bootstrap exception and operational gates. Preserve every existing acceptance case. Policy must precede implementation and freeze. WP002 remains todo; the conditional bootstrap merge is not full WP acceptance.
+
+
+
+| # | Đường dẫn | Mục đích |
+|---|---|---|
+| 1 | `engine/docs/02-decisions.md` | Nối D-24 cho B, bảo toàn D01–D23 |
+| 2 | `engine/ops/work-packages/WP-002-interfaces.md` | Nối scope/grant/nguồn giả và ngoại lệ bootstrap B; không bỏ A1–A9 |
+| 3 | `.github/workflows/ci.yml` | Bootstrap pin, CI final qua dispatch, source mapping fixture, đủ bốn job |
+| 4 | `scripts/guardrails/index.ts` | Ngoại lệ B hẹp theo policy commit pin, giữ scan production |
+| 5 | `scripts/guardrails/scope.ts` | Context explicit của final validation dispatch, không giả nhãn push |
+| 6 | `scripts/guardrails/guardrails.test.ts` | Hồi quy bootstrap/dispatch và ca âm scope/policy |
+| 7 | `.github/workflows/acceptance-wp002.yml` | Prequalification PR/push và controller main sau CI |
+| 8 | `engine/io/repo-store.ts` | Sửa F1; primitive batch validate/apply chung nếu cần, không phá API cũ |
+| 9 | `engine/io/repo-store.test.ts` | Sửa ID fixture, regression F1/batch/pending projection |
+| 10 | `engine/io/github-transport.ts` | Transport GitHub có request/receipt binding |
+| 11 | `engine/io/github-writer.ts` | Main backend, atomic file-list, append batch, replay/CAS/read-back |
+| 12 | `engine/io/wp002-integration.ts` | Điều phối test/artifact/dispatch/evidence, không chứa hằng số nội dung pack |
+| 13 | `engine/io/wp002-integration.test.ts` | Kiểm lỗi transport/batch/admission bằng fixtures |
+| 14 | `.github/workflows/commit-artifacts.yml` | workflow_dispatch, writer hẹp |
+| 15 | `.github/workflows/reindex.yml` | workflow_dispatch, only-index writer |
+| 16 | `episodes/us-personal-finance/2026-09-fs24-left/00-brief.json` | Runtime fixture left |
+| 17 | `episodes/us-personal-finance/2026-09-fs24-left/state.json` | Runtime fixture left |
+| 18 | `episodes/us-personal-finance/2026-09-fs24-right/00-brief.json` | Runtime fixture right |
+| 19 | `episodes/us-personal-finance/2026-09-fs24-right/state.json` | Runtime fixture right |
+| 20 | `pipeline/runs.jsonl` | Append 50 record test, không sửa dòng cũ |
+| 21 | `pipeline/state.json` | Reindex duy nhất, từ state thật ở SHA đã chốt |
+
