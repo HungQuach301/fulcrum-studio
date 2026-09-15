@@ -21,9 +21,10 @@ export interface Job { steps?:Array<{name:string;conclusion:string|null}>; start
 /** Authenticated calls are confined to this repository. Redirect destinations never receive the token. */
 export class GitHubTransport {
   constructor(private readonly token: string) { if (!token) throw new Error("MissingActionsToken"); }
-  async request(path: string, method = "GET", body?: unknown, observe?: (response:Response)=>Promise<void>): Promise<Response> {
+  async request(path: string, method = "GET", body?: unknown, observe?: (response:Response)=>Promise<void>, receiptVersion = false): Promise<Response> {
     if (!/^\/(actions|git|commits|compare|pulls)\//.test(path) || path.includes("..") || path.includes("#")) throw new Error("ApiScope");
-    const apiVersion = observe && method === "GET" && /^\/pulls\/[1-9][0-9]*$/.test(path) ? MERGE_RECEIPT_API_VERSION : "2026-03-10";
+    if(receiptVersion && (!observe || method !== "GET" || !/^\/pulls\/[1-9][0-9]*$/.test(path))) throw new Error("MergeReceiptVersionScope");
+    const apiVersion = receiptVersion ? MERGE_RECEIPT_API_VERSION : "2026-03-10";
     const response = await fetch("https://api.github.com/repos/" + REPOSITORY + path, { method, redirect: "manual", headers: {
       Authorization: "Bearer " + this.token, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": apiVersion, "Content-Type": "application/json"
     }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -54,7 +55,7 @@ export class GitHubTransport {
       const metadata={path:"/pulls/"+number,status:response.status,requestedApiVersion:MERGE_RECEIPT_API_VERSION,selectedApiVersion:response.headers.get("x-github-api-version-selected"),requestId:response.headers.get("x-github-request-id"),receivedAt:new Date().toISOString(),bytes:raw.length,sha256:digest(raw)};
       emitFile(label+"-response.raw.json",raw);
       emitFile(label+"-response-metadata.json",Buffer.from(JSON.stringify(metadata)+"\n"));
-    });
+    },true);
     if(!raw)throw new Error("MergeReceiptMissingBody");
     try{return JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(raw)) as unknown;}
     catch{throw new Error("MergeReceiptInvalidJSON");}
