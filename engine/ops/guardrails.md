@@ -78,3 +78,10 @@ secret, dữ liệu, lịch sử và các quyền merge/provider/ngân sách ch�
 ## Gói FS23-WP001 — D-23
 
 Riêng FS23-WP001, áp dụng D-23 sau khi owner cấp gói. Cấp gộp sửa–kiểm–thu đúng phạm vi; không deadline task/job/phase hoặc ngưỡng im lặng gây STOP. Không xin lại sửa nhỏ đã được duyệt. Commit của chính gói trở thành checkpoint sau kiểm parent/tree; nguồn ngoài gói cần đối chiếu trước ghi. Sáu tài liệu S đóng băng trước code, code theo WP main. Blocker chỉ chặn phần phụ thuộc; hoàn tất phần độc lập và trình delta tối thiểu. Không tự mở quyền settings, merge WP001, provider hoặc ngân sách ngoài grant.
+
+
+## Áp dụng nguyên tắc theo kết quả — D-27
+
+D-27 thay riêng hạn chế điều phối/scope/lifecycle của D-26 cho FS24-D đã được owner duyệt. Sửa cùng nguyên nhân trong allowlist, kiểm lại và phục hồi trước/sau merge được tự thực hiện trong counters; không dừng toàn task hoặc xin lại quyền chỉ vì chuyển bước/công cụ/chat. Blocker chỉ chặn phần phụ thuộc; hoàn tất phần độc lập rồi trình delta tối thiểu khi thực sự vượt quyền. Không deadline task/job/phase hoặc silence STOP.
+
+Giữ mọi gate correctness, nguồn/receipt/policy freeze, bảo toàn dữ liệu và lịch sử. Phân biệt dữ liệu chưa ghi với outcome chưa biết; không retry403, rerun, rollback, đổi credential/settings/dependency hoặc gọi provider. Ngoại lệ chỉ có phạm vi D-27, không miễn chất lượng hoặc quyền owner nghiệm thu. Một dòng backlog chỉ được ghi sau điều kiện D-27 section10.

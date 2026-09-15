@@ -1,3 +1,56 @@
+import { closureLineage, FS24D } from "../../scripts/guardrails/index";
+import { fetchMainReadOnly, gitEnvironment, redactGit } from "./github-git";
+
+export interface DBatchInput extends Omit<BatchInput,"grant"> {
+  grant:"FS24-D"; requestId:string; cancelAfterPush:boolean; origin:string; controllerRun:string; controlId:string;
+  producerRun:string; producerCode:string; payloadDigest:string; ordinal:number; step:string;
+}
+export function validateDInput(input:DBatchInput,reindex:boolean):void {
+  const {requestId,...body}=input;
+  if(input.grant!=="FS24-D"||digest(JSON.stringify(body))!==requestId)throw new Error("D-request-digest");
+  const keys=["grant","requestId","batch","code","producer","artifact","manifestHash","operation","cancelAfterPush","origin","controllerRun","controlId","producerRun","producerCode","payloadDigest","ordinal","step"];
+  if(Object.keys(input).length!==keys.length||Object.keys(input).some(x=>!keys.includes(x)))throw new Error("D-input-extra");
+  for(const value of [input.code,input.origin,input.producerCode])assertCommit(value);
+  for(const value of [input.batch,input.controllerRun,input.producerRun])if(!/^[1-9][0-9]*$/.test(value))throw new Error("D-run-identity");
+  if(!Number.isSafeInteger(input.ordinal)||input.ordinal<0||input.ordinal>6||typeof input.cancelAfterPush!=="boolean"||!/^[a-f0-9]{64}$/.test(input.payloadDigest)||!/^[a-f0-9]{64}$/.test(input.controlId))throw new Error("D-input-identity");
+  if(input.cancelAfterPush!==(input.step==="side-effect"))throw new Error("D-CancelStep");
+  if(!["initial-left","initial-right","update-one","update-two","duplicate-initial","pending","side-effect","replay-side-effect","invalid-state","logs-left","logs-right","reindex"].includes(input.step)||input.operation!==(input.step==="duplicate-initial"?"initial-left":input.step==="replay-side-effect"?"side-effect":input.step))throw new Error("D-step");
+  if(reindex) {
+    if(input.operation!=="reindex"||input.producer!=="left"||input.artifact!==0||input.manifestHash!=="none"||input.cancelAfterPush)throw new Error("D-reindex-input");
+  } else validateBatchInput({...input,grant:"FS24-C"});
+}
+export async function receiptsD(root:string,head:string,api:GitHubTransport):Promise<void> {
+  const state=closureLineage(root,head);
+  const expected:ReceiptExpectation[]=[{number:12,merge:FS24R1.base,head:FS24R1.historicalHead,branch:"wp/002"},{number:13,merge:FS24C.base,head:FS24C.historicalCandidate,branch:"wp/002"},{number:14,merge:FS24D.base,head:"9af238d7772bba56d6b98d568fcd34d57a7d6473",branch:"wp/002"},...state.epochs.map(x=>({number:x.pr,merge:x.code,head:x.candidate,branch:"wp/002"}))];
+  const results=await Promise.allSettled(expected.map(async x=>inspectMergeReceipt(await api.mergeReceipt(x.number,"merge-d-"+x.number),x)));
+  emitFile("d-merge-outcomes.json",Buffer.from(JSON.stringify(results.map((x,i)=>x.status==="fulfilled"?{number:expected[i].number,status:x.status,observed:x.value}:{number:expected[i].number,status:x.status,error:redactGit(String(x.reason))}))+"\n"));
+  if(results.some(x=>x.status!=="fulfilled"||!x.value.pass))throw new Error("D-MergeReceipt");
+}
+export async function admittedD(root:string,input:DBatchInput,api:GitHubTransport):Promise<void> {
+  const state=closureLineage(root,input.code);
+  if(state.unmerged.length||state.closure||state.code!==input.code||!state.epochs.some(x=>x.code===input.origin))throw new Error("D-CodeAdmission");
+  const original=await api.json<Run>("/actions/runs/"+input.batch),controller=await api.json<Run>("/actions/runs/"+input.controllerRun);
+  for(const run of [original,controller])if(run.run_attempt!==1||run.event!=="workflow_dispatch"||run.head_branch!=="main"||run.path!==".github/workflows/acceptance-wp002.yml")throw new Error("D-ControllerIdentity");
+  if(original.head_sha!==input.origin||controller.display_title!=="FS24-D "+input.controlId||closureLineage(root,controller.head_sha).code!==input.code)throw new Error("D-ControllerBinding");
+  await receiptsD(root,input.code,api);
+}
+export function dataChainD(root:string,code:string,head:string,batch:string,origin:string):string[] {
+  const state=closureLineage(root,head);
+  if(state.unmerged.length||state.code!==code||state.batch!==null&&state.batch!==batch||state.origin!==null&&state.origin!==origin)throw new Error("D-DataIdentity");
+  for(const item of state.data) {
+    const producer=item.operation.endsWith("right")?"right":"left",value=bundleD(root,origin,batch,producer);
+    const message=git(root,"show","-s","--format=%B",item.commit);
+    if(!message.split("\n").includes("Input-Payload: "+operationDigest(value,item.operation)))throw new Error("D-DataPayload");
+    if(item.operation!=="reindex") {
+      const op=value.manifest.operations.find(x=>x.name===item.operation)!;
+      for(const entry of op.entries) {
+        const before=contentAt(root,item.parent,entry.path)??"",after=contentAt(root,item.commit,entry.path);
+        if(after!==(entry.mode==="append"?before:"")+value.files[entry.name])throw new Error("D-DataContent");
+      }
+    }
+  }
+  return state.data.map(x=>x.commit);
+}
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,7 +60,7 @@ import { buildIndex } from "./reindex";
 import { GitSource, Schemas, Validator } from "../../scripts/validate";
 import { integrationPolicy, repairPolicy, FS24R1, successorPolicy, FS24C } from "../../scripts/guardrails/index";
 import { GitHubTransport, Manifest, SOURCE, REPOSITORY, digest, emitFile, Run } from "./github-transport";
-import { bundleC as bundle, git } from "./wp002-integration";
+import { bundleC as bundle, bundleD, operationDigest, git, ledgerD } from "./wp002-integration";
 
 export interface BatchInput { grant?:"FS24-C"; requestId?:string; batch: string; code: string; producer: "left" | "right"; artifact: number; manifestHash: string; operation: string; cancelAfterPush?: boolean; }
 export interface Receipt { writeId: string; commit: string; parent: string; tree: string; duplicate: boolean; paths: Record<string,{blob:string;sha256:string;bytes:number}>; }
@@ -279,14 +332,97 @@ export async function writeBatch(root:string,input:BatchInput,api:GitHubTranspor
   }
   throw new Error("CASExhausted");
 }
+export async function writeBatchD(root:string,input:DBatchInput,api:GitHubTransport,reindex=false):Promise<Receipt> {
+  validateDInput(input,reindex);
+  if(!reindex)validateBatchInput({...input,grant:"FS24-C"});
+  else if(input.operation!=="reindex"||process.env.GITHUB_WORKFLOW!=="WP-002 Reindex")throw new Error("OnlyReindexMayWriteIndex");
+  await admittedD(root,input,api);
+  await ledgerD(root,api,"writer-before-effects",6,30);
+  const writeId="FS24-D:"+input.batch+":"+input.operation;
+  const generated=bundleD(root,input.origin,input.batch,input.producer,input.producerRun,input.producerCode);
+  const {operations,...expected}=generated.manifest;
+  if(!reindex&&digest(generated.files["manifest.json"])!==input.manifestHash)throw new Error("ApprovedProducerManifestMismatch");
+  if(operationDigest(generated,input.operation)!==input.payloadDigest)throw new Error("D-PayloadDigest");
+  const check=schemaChecker(readdirSync(join(root,"engine/contracts")).filter(x=>x.endsWith(".schema.json")).map(x=>JSON.parse(readFileSync(join(root,"engine/contracts",x),"utf8"))));
+  const ids=[bundleD(root,input.origin,input.batch,"left").manifest.operations[0].episodeId,bundleD(root,input.origin,input.batch,"right").manifest.operations[0].episodeId];
+  const allowed=ids.flatMap(id=>["episodes/"+id+"/state.json","episodes/"+id+"/00-brief.json"]).concat(["pipeline/runs.jsonl","pipeline/state.json"]);
+  let received:Awaited<ReturnType<GitHubTransport["artifact"]>>|undefined;
+  for(let attempt=1;attempt<=5;attempt++) {
+    fetchMainReadOnly(root);
+    const head=git(root,"rev-parse","FETCH_HEAD");git(root,"merge-base","--is-ancestor",input.code,head);
+    const chain=dataChainD(root,input.code,head,input.batch,input.origin);
+    if(chain.length>9)throw new Error("DataCommitCap");
+    for(const sha of chain) {
+      const text=git(root,"show","-s","--format=%B",sha);
+      if(!text.split("\n").includes("FS24-D-Batch: "+input.batch))throw new Error("ExternalMainChange");
+      if(git(root,"diff-tree","--no-commit-id","--name-only","-r",sha).split("\n").some(p=>!allowed.includes(p)))throw new Error("DataScopeHistory");
+      if(text.split("\n").includes("Write-Id: "+writeId)) {
+        if(!text.split("\n").includes("Input-Payload: "+input.payloadDigest))throw new Error("WriteIdCollision");
+        const existing=receipt(root,sha,writeId,true);
+        emitFile("write-receipt.json",Buffer.from(JSON.stringify({input,result:existing})+"\n"));return existing;
+      }
+    }
+    if(chain.length>=9)throw new Error("DataCommitCap");
+    let updates:Record<string,string>;
+    if(reindex) {
+      const statePaths=git(root,"ls-tree","-r","--name-only",head,"--","episodes").split("\n").filter(x=>x.endsWith("/state.json"));
+      if(statePaths.length!==2||statePaths.some(x=>!ids.some(id=>x==="episodes/"+id+"/state.json")))throw new Error("IndexStateInventory");
+      const states=statePaths.map(path=>JSON.parse(contentAt(root,head,path)!));
+      updates={"pipeline/state.json":JSON.stringify(buildIndex(states,head,new Date().toISOString(),check),null,2)+"\n"};
+    } else {
+      if(!received)received=await api.artifact(input.artifact,expected,input.manifestHash,join(process.env.TASK_ROOT!,"writer-artifact"));
+      const op=received.manifest.operations.find(x=>x.name===input.operation);if(!op)throw new Error("OperationMissing");
+      const entries=op.entries.map(x=>({path:x.path,schema:x.schema,mode:x.mode,content:received!.files[x.name]}));
+      if(entries.some(x=>!allowed.includes(x.path)||x.path==="pipeline/state.json"))throw new Error("WriteScope");
+      emitFile("read-before-"+input.operation+".json",Buffer.from(JSON.stringify({head,operation:input.operation,values:Object.fromEntries(entries.map(x=>[x.path,contentAt(root,head,x.path)]))})+"\n"));
+      updates=applyEntries(Object.fromEntries(entries.map(x=>[x.path,contentAt(root,head,x.path)])),entries,input.code,writeId,check);
+    }
+    const directory=mkdtempSync(join(tmpdir(),"fs24b-index-"));
+    try {
+      const env={...gitEnvironment(root,true),GIT_INDEX_FILE:join(directory,"index")};
+      const run=(args:string[],data?:string)=>execFileSync("git",["-C",root,...args],{env,input:data,encoding:"utf8"}).trimEnd();
+      run(["read-tree",head]);
+      for(const [path,content]of Object.entries(updates)){const blob=run(["hash-object","-w","--stdin"],content);run(["update-index","--add","--cacheinfo","100644,"+blob+","+path]);}
+      const tree=run(["write-tree"]);
+      const message="FS24-D synthetic integration write\n\nFulcrum-Grant: FS24-D\nFulcrum-Phase: data\nFS24-D-Batch: "+input.batch+"\nWrite-Id: "+writeId+"\nPayload-Origin: "+input.origin+"\nInput-Payload: "+input.payloadDigest+"\nInput-Manifest: "+input.manifestHash+"\nArtifact-Id: "+input.artifact+"\nWrite-Paths: "+JSON.stringify(Object.keys(updates).sort())+"\n";
+      const commit=run(["commit-tree",tree,"-p",head],message);
+      // Validate the complete candidate tree, with owner-approved frozen mappings, before push.
+      const source=new GitSource(root,commit),v=new Validator(source,new Schemas(source),ids.map(episodeId=>({episodeId,commit:SOURCE}))).run();
+      if(v.sourceValidation!=="pass")throw new Error("CandidateValidation:"+JSON.stringify(v.issues));
+      emitFile("push-"+attempt+"-intent.json",Buffer.from(JSON.stringify({commit,parent:head,tree,writeId,requestId:input.requestId})+"\n"));
+      const push=spawnSync("git",["-C",root,"push","origin",commit+":refs/heads/main"],{env,encoding:"utf8"});
+      emitFile("push-"+attempt+"-result.json",Buffer.from(JSON.stringify({commit,status:push.status,stdout:redactGit(push.stdout??""),stderr:redactGit(push.stderr??"")})+"\n"));
+      if(push.status!==0) {
+        if(/403|forbidden|authentication|permission denied/i.test(push.stderr))throw new Error("PushAuthorizationRejectedNoRetry");
+        if(!/non-fast-forward|fetch first|failed to update ref/i.test(push.stderr))throw new Error("PushFailedNoRetry");
+        if(attempt===5)throw new Error("CASExhausted");
+        await new Promise(resolve=>setTimeout(resolve,attempt*1000));continue;
+      }
+      const remote=await api.json<{sha:string;tree:{sha:string};parents:{sha:string}[]}>("/git/commits/"+commit);
+      if(remote.sha!==commit||remote.tree.sha!==tree||remote.parents.length!==1||remote.parents[0].sha!==head)throw new Error("CommitReceiptMismatch");
+      const ref=await api.json<{object:{sha:string}}>("/git/ref/heads/main");
+      if(ref.object.sha!==commit)throw new Error("MainReadbackMismatch");
+      const result=receipt(root,commit,writeId,false);
+      for(const [path,content]of Object.entries(updates)) {
+        const blob=await api.json<{sha:string;encoding:string;size:number;content:string}>("/git/blobs/"+result.paths[path].blob);
+        assertRemoteBlob(blob,result.paths[path].blob,content);
+        emitFile("remote-"+blob.sha+".json",Buffer.from(content));
+      }
+      emitFile("write-receipt.json",Buffer.from(JSON.stringify({input,result,validation:v})+"\n"));
+      return result;
+    } finally {rmSync(directory,{recursive:true,force:true});}
+  }
+  throw new Error("CASExhausted");
+}
+
 async function main(){
-  if(process.env.GITHUB_REPOSITORY!==REPOSITORY||process.env.GITHUB_RUN_ATTEMPT!=="1"||process.env.FS_GRANT!=="FS24-C")throw new Error("RuntimeIdentity");
+  if(process.env.GITHUB_REPOSITORY!==REPOSITORY||process.env.GITHUB_RUN_ATTEMPT!=="1"||!["FS24-C","FS24-D"].includes(process.env.FS_GRANT??""))throw new Error("RuntimeIdentity");
   const input=JSON.parse(process.env.FS24_INPUT!) as BatchInput,api=new GitHubTransport(process.env.GH_TOKEN!);
-  const result=await writeBatch(process.env.GITHUB_WORKSPACE!,input,api,process.argv[2]==="reindex");
+  const result=process.env.FS_GRANT==="FS24-D"?await writeBatchD(process.env.GITHUB_WORKSPACE!,input as unknown as DBatchInput,api,process.argv[2]==="reindex"):await writeBatch(process.env.GITHUB_WORKSPACE!,input,api,process.argv[2]==="reindex");
   console.log("FS24B_RECEIPT\t"+JSON.stringify(result));
-  if(input.operation==="side-effect"&&input.cancelAfterPush&&!result.duplicate){await api.cancelC(process.env.GITHUB_RUN_ID!);setInterval(()=>console.log("FS24B_CANCEL_AWAIT_PLATFORM"),10000);}
+  if(input.operation==="side-effect"&&input.cancelAfterPush&&!result.duplicate){await (process.env.FS_GRANT==="FS24-D"?api.cancelD(process.env.GITHUB_RUN_ID!):api.cancelC(process.env.GITHUB_RUN_ID!));setInterval(()=>console.log("FS24B_CANCEL_AWAIT_PLATFORM"),10000);}
 }
 if(require.main===module)main().catch(async error=>{
-  emitFile("write-error.json",Buffer.from(JSON.stringify({input:JSON.parse(process.env.FS24_INPUT??"{}"),error:String(error)})+"\n"));
-  console.error("FS24B_WRITE_ERROR\t"+String(error));process.exitCode=1;
+  emitFile("write-error.json",Buffer.from(JSON.stringify({input:JSON.parse(process.env.FS24_INPUT??"{}"),error:redactGit(String(error))})+"\n"));
+  console.error("FS24B_WRITE_ERROR\t"+redactGit(String(error)));process.exitCode=1;
 });

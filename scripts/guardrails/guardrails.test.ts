@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { inspect, Bootstrap, successorPolicy, FS24C } from "./index";
+import { inspect, Bootstrap, successorPolicy, FS24C, FS24D, closureLineage } from "./index";
 import { at, git, parseScope, matches, safePath } from "./scope";
 import { render, frame, decode, Identity, Need, Verdict } from "../ci-report";
 import { scanContent, contentPath } from "./content";
@@ -108,13 +108,13 @@ try {
   test("wp-change-doc-only", () => {const f=fixture();write(f.root,wp,at(f.root,f.base,wp)+"\nFixture note.\n");assert.equal(cli(f.root,f.base,commit(f.root,"fixture [wp-change]")).result,"pass");});
   test("wp-change-mixed-code-rejected", () => {const f=fixture();write(f.root,wp,at(f.root,f.base,wp)+"\nFixture note.\n");write(f.root,"scripts/ci-report.ts","export const report = false;\n");assert.equal(cli(f.root,f.base,commit(f.root,"fixture [wp-change]")).result,"fail");});
   test("actual-workflow-preflight-wp-change-parity", () => {
-    const workflow=readFileSync(".github/workflows/ci.yml","utf8");
+    const workflow=git(process.env.GITHUB_WORKSPACE!,"show",FS24D.base+":.github/workflows/ci.yml");
     const blocks=Array.from(workflow.matchAll(/          # FS23_WP_CHANGE_RULE_BEGIN\n([\s\S]*?)          # FS23_WP_CHANGE_RULE_END/g),x=>x[1].split("\n").map(line=>line.startsWith("          ")?line.slice(10):line).join("\n"));
     assert.equal(blocks.length,4);assert.ok(blocks.every(x=>x===blocks[0]));
     assert.equal(workflow.split("if wp_change_exception(path,wp[0],diff,messages):continue").length-1,4);
     const cases=[{path:wp,wp,paths:[wp],message:"fixture [wp-change]",expected:true},{path:wp,wp,paths:[wp,"scripts/ci-report.ts"],message:"fixture [wp-change]",expected:false},{path:wp,wp,paths:[wp],message:"fixture",expected:false},{path:"outside.md",wp,paths:[wp,"outside.md"],message:"fixture [wp-change]",expected:false}];
     const program=blocks[0]+"\nimport json,sys\ncases=json.load(sys.stdin)\nfor c in cases:\n assert wp_change_exception(c['path'],c['wp'],c['paths'],c['message'])==c['expected']\nprint('4 workflow preflight cases pass')\n";
-    const r=spawnSync("python3",["-c",program],{input:JSON.stringify(cases),encoding:"utf8"});assert.equal(r.status,0,r.stderr);return {cases:4,stdout:r.stdout,source:"four actual ci.yml preflight blocks"};
+    const r=spawnSync("python3",["-c",program],{input:JSON.stringify(cases),encoding:"utf8"});assert.equal(r.status,0,r.stderr);return {cases:4,stdout:r.stdout,source:"four pinned historical T ci.yml preflight blocks"};
   });
   test("cp-context", () => {const f=fixture();write(f.root,"engine/docs/01-architecture.md","Updated.\n");const r=cli(f.root,f.base,commit(f.root,"fixture"),"cp/001","CP-001 fixture","pull_request");assert.equal(r.result,"pass");assert.ok(r.wpPath.includes("CP-001"));});
   for (const [name,branch,title,event] of [["unknown-branch","other/001","WP-001","push"],["conflicting-title","wp/001","WP-002","pull_request"],["missing-wp","wp/999","WP-999","push"]]) test(name,()=>{const f=fixture();write(f.root,"scripts/ci-report.ts","changed\n");assert.equal(cli(f.root,f.base,commit(f.root,"fixture"),branch,title,event).result,"fail");});
@@ -156,7 +156,7 @@ try {
   for(const [name,mutate] of [["missing-complete",(s:string)=>s.replace(/FS23_COMPLETE[^\n]*\n/,"")],["wrong-hash",(s:string)=>s.replace(/(FS23_FILE\t[^\t]+\t\d+\t)[a-f0-9]{64}/,"$1"+"0".repeat(64))],["missing-chunk",(s:string)=>s.replace(/FS23_DATA[^\n]*\n/,"")],["duplicate-chunk",(s:string)=>s.replace(/(FS23_DATA[^\n]*\n)/,"$1$1")]] as [string,(s:string)=>string][])test("frame-"+name,()=>assert.throws(()=>decode(mutate(good),id)));
   for(const key of ["head","attempt","job","event","base"] as const)test("frame-identity-"+key,()=>assert.throws(()=>decode(good,{...id,[key]:"wrong"})));
   test("frame-unsafe-name",()=>assert.throws(()=>frame(id,{"../x":Buffer.from("x")})));
-  const actualRoot=process.env.GITHUB_WORKSPACE!,eventHead=process.env.FS24_FINAL_CODE||process.env.FS_HEAD!;
+  const actualRoot=process.env.GITHUB_WORKSPACE!,eventHead="9af238d7772bba56d6b98d568fcd34d57a7d6473";
   if(actualRoot&&eventHead&&spawnSync("git",["-C",actualRoot,"merge-base","--is-ancestor",FS24C.base,eventHead]).status===0) {
     const parents=git(actualRoot,"rev-list","--parents","-n","1",eventHead).trim().split(" ");
     const actualHead=parents.length===3&&parents[1]===FS24C.base?parents[2]:eventHead;
@@ -167,6 +167,27 @@ try {
     test("C-policy-reject-scope",()=>assert.throws(()=>successorPolicy(actualRoot,actualHead,{...FS24C,paths:FS24C.paths.slice(0,2)}),/C-scope/));
     test("C-production-scanner-reject-branch",()=>assert.equal(inspect({root:actualRoot,base:FS24C.base,head:actualHead,branch:"bad",title:"",event:"push"}).result,"fail"));
   }
+  const currentHead=process.env.FS_HEAD!,currentLineage=closureLineage(actualRoot,currentHead);
+  test("D-current-lineage",()=>{assert.ok(currentLineage.unmerged.length||currentLineage.epochs.length);assert.equal(currentLineage.paths.length,24);});
+  const dRoot=join(work,"d-history");
+  const cloned=spawnSync("git",["clone","--shared","--no-checkout",actualRoot,dRoot],{encoding:"utf8"});assert.equal(cloned.status,0,cloned.stderr);
+  const dEnv={...process.env,GIT_AUTHOR_NAME:"fixture",GIT_AUTHOR_EMAIL:"fixture@example.invalid",GIT_COMMITTER_NAME:"fixture",GIT_COMMITTER_EMAIL:"fixture@example.invalid",GIT_INDEX_FILE:join(work,"d-index")};
+  const dgit=(args:string[],input?:string)=>{const p=spawnSync("git",["-C",dRoot,...args],{encoding:"utf8",env:dEnv,input});assert.equal(p.status,0,p.stderr);return p.stdout.trimEnd();};
+  const candidate=currentLineage.epochs[0]?.candidate??currentHead;
+  const dCommit=(parent:string,path:string,content:string,message:string)=>{dgit(["read-tree",parent]);const blob=dgit(["hash-object","-w","--stdin"],content);dgit(["update-index","--add","--cacheinfo","100644,"+blob+","+path]);const tree=dgit(["write-tree"]);return dgit(["commit-tree",tree,"-p",parent],message);};
+  const dMessage="Fixture\n\nFulcrum-Grant: FS24-D\nFulcrum-Phase: implementation\nFulcrum-Candidate-Round: 1\n";
+  test("D-policy-reject-mutated-blob",()=>{const sha=dCommit(candidate,"AGENTS.md",at(dRoot,candidate,"AGENTS.md")+"\nfixture\n",dMessage);assert.throws(()=>closureLineage(dRoot,sha),/D-policy-freeze/);});
+  test("D-code-reject-outside-path",()=>{const sha=dCommit(candidate,"outside.txt","fixture\n",dMessage);assert.throws(()=>closureLineage(dRoot,sha),/D-code-scope/);});
+  const merge=dgit(["commit-tree",git(dRoot,"rev-parse",candidate+"^{tree}").trim(),"-p",FS24D.base,"-p",candidate],"Fixture local merge\n\nFulcrum-Grant: FS24-D\nFulcrum-Phase: integration-bootstrap\nFulcrum-Integration-PR: 999\n");
+  test("D-merge-parent-and-data-lineage",()=>{const value=closureLineage(dRoot,merge);assert.equal(value.epochs.length,1);assert.equal(value.code,merge);assert.equal(value.epochs[0].candidate,candidate);assert.deepEqual(value.data,[]);});
+  const dataMessage=(op:string,paths:string[])=>"Fixture data\n\nFulcrum-Grant: FS24-D\nFulcrum-Phase: data\nFS24-D-Batch: 345\nWrite-Id: FS24-D:345:"+op+"\nPayload-Origin: "+merge+"\nInput-Payload: "+"a".repeat(64)+"\nWrite-Paths: "+JSON.stringify(paths.sort())+"\n";
+  const statePath="episodes/us-personal-finance/2026-09-fs24-left/state.json";
+  // Structural fixtures do not replace full payload/schema or live-main acceptance.
+  const initialData=(parent:string,side:string)=>{const paths=["episodes/us-personal-finance/2026-09-fs24-"+side+"/00-brief.json","episodes/us-personal-finance/2026-09-fs24-"+side+"/state.json"];dgit(["read-tree",parent]);for(const path of paths){const blob=dgit(["hash-object","-w","--stdin"],"{}\n");dgit(["update-index","--add","--cacheinfo","100644,"+blob+","+path]);}return dgit(["commit-tree",dgit(["write-tree"]),"-p",parent],dataMessage("initial-"+side,paths));};
+  const initialPair=initialData(initialData(merge,"left"),"right");
+  const firstData=dCommit(initialPair,statePath,'{"revision":2}\n',dataMessage("update-one",[statePath]));
+  test("D-data-duplicate-operation",()=>{const duplicate=dCommit(firstData,statePath,'{"revision":3}\n',dataMessage("update-one",[statePath]));assert.throws(()=>closureLineage(dRoot,duplicate),/D-duplicate-operation/);});
+  test("D-data-reject-index-before-eight",()=>{const premature=dCommit(merge,"pipeline/state.json",JSON.stringify({sourceCommit:merge})+"\n",dataMessage("reindex",["pipeline/state.json"]));assert.throws(()=>closureLineage(dRoot,premature),/D-index-order/);});
 } finally {
   rmSync(work,{recursive:true,force:true});
   test("temporary-fixture-cleanup",()=>assert.equal(existsSync(work),false));
@@ -174,4 +195,3 @@ try {
   if(process.env.FS_EVIDENCE)writeFileSync(join(process.env.FS_EVIDENCE,"guardrails-tests.json"),JSON.stringify(report,null,2)+"\n");
   process.stdout.write(JSON.stringify(report,null,2)+"\n");process.exitCode=failures?1:0;
 }
-

@@ -91,6 +91,18 @@ export function successorPolicy(root:string,head:string,p:typeof FS24C=FS24C):st
   return p.paths;
 }
 
+
+export const FS24D = {base:"78a4b28b4134fb09b4a003b90099c13460a8112d", tree:"ac9be3c9f327ba15cf6c0a9871d05d444a58c290", policy:"2cde1d18a989ac085a47b7ada0565b29b42577b6"};
+export interface DLineage { head:string; code:string; candidateBase:string; batch:string|null; origin:string|null; closure:boolean; closureBase?:string; unmerged:string[]; paths:string[]; dataPaths:string[]; epochs:Array<{code:string;base:string;candidate:string;pr:number}>; data:Array<{commit:string;parent:string;operation:string;code:string}>; }
+const dLineageCache = new Map<string,DLineage>();
+export function closureLineage(root:string,head:string):DLineage {
+  if(!/^[a-f0-9]{40}$/.test(head))throw new Error("D-head-format");
+  const key=root+":"+head,cached=dLineageCache.get(key);if(cached)return structuredClone(cached);
+  const helper = require("node:path").join(__dirname,"..","wp002-preflight.py") as string;
+  const output = require("node:child_process").execFileSync("python3",[helper,"inspect","--root",root,"--head",head],{encoding:"utf8",maxBuffer:16*1024*1024}) as string;
+  const result=JSON.parse(output) as DLineage;dLineageCache.set(key,result);return structuredClone(result);
+}
+
 export interface Options { root: string; base: string; head: string; branch: string; title: string; event: string; bootstrap?: Bootstrap; }
 export interface ScanReport { result: "pass" | "fail"; base: string; head: string; branch: string; wpPath: string; checkedPaths: string[]; errors: Finding[]; }
 export function inspect(o: Options): ScanReport {
@@ -122,11 +134,20 @@ export function inspect(o: Options): ScanReport {
     const b24 = o.branch === "wp/002" && o.base === FS24B.base ? integrationPolicy(o.root, o.head) : [];
     const r1 = o.base === FS24R1.base && ["wp/002","main"].includes(o.branch) ? repairPolicy(o.root,o.branch === "main" ? git(o.root,"rev-parse",o.head+"^2").trim() : o.head) : [];
     const c = o.base === FS24C.base && ["wp/002","main"].includes(o.branch) ? successorPolicy(o.root,o.branch === "main" ? git(o.root,"rev-parse",o.head+"^2").trim() : o.head) : [];
+    let d:string[]=[];
+    const messageHead=git(o.root,"show","-s","--format=%B",o.head);
+    if(messageHead.split("\n").includes("Fulcrum-Grant: FS24-D")) {
+      const lineage=closureLineage(o.root,o.head);
+      if(!["wp/002","main"].includes(o.branch))throw new Error("D-branch");
+      if(lineage.unmerged.length ? o.base!==lineage.candidateBase : ![FS24D.base,lineage.code,...lineage.epochs.map(x=>x.base),...(lineage.closureBase?[lineage.closureBase]:[])].includes(o.base))throw new Error("D-scan-base");
+      d=[...lineage.paths,...lineage.dataPaths,...(lineage.closure?["engine/ops/backlog.md"]:[])];
+      if(diff.some(x=>!d.includes(x.path)))throw new Error("D-scan-scope");
+    }
     const domain = tokens(o.root, o.base);
     for (const change of diff) {
       const path = change.path;
       const error = (rule: string): void => { report.errors.push({ path, line: 0, rule }); };
-      const policyException = !!boot?.files[path] || b24.includes(path) || r1.includes(path) || c.includes(path);
+      const policyException = !!boot?.files[path] || b24.includes(path) || r1.includes(path) || c.includes(path) || d.includes(path);
       const backlog = path === "engine/ops/backlog.md" && ctx.kind !== "main" && existsAt(o.root, o.base, path) && existsAt(o.root, o.head, path) && backlogOnly(at(o.root, o.base, path), at(o.root, o.head, path), ctx.code);
       const wpException = path === ctx.wpPath && docOnly && messages.includes("[wp-change]");
       if (ctx.kind !== "main" && !policyException && !backlog && !wpException && !ctx.patterns.some(p => matches(path, p))) error("outside-scope:" + ctx.wpPath);
@@ -151,4 +172,3 @@ if (require.main === module) {
   if (process.env.FS_SCAN_REPORT) writeFileSync(process.env.FS_SCAN_REPORT, output);
   process.stdout.write(output); process.exitCode = result.result === "pass" ? 0 : 1;
 }
-

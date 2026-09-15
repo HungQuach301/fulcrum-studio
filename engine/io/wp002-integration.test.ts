@@ -1,5 +1,6 @@
+import { gzipSync } from "node:zlib";
 import { assertDataParent, assertReceiptCollision, assertRemoteBlob } from "./github-writer";
-import { assertFinalJobEvidence } from "./wp002-integration";
+import { assertFinalJobEvidence, bundleD, validateDControl, decodeDFrames, countDRuns, chooseDStep, dRawReceipt, recoverDIntents } from "./wp002-integration";
 import assert from "node:assert/strict";
 import { spawnSync, execFileSync } from "node:child_process";
 import { readFileSync,readdirSync,writeFileSync } from "node:fs";
@@ -127,7 +128,7 @@ async function main(){
  }finally{globalThis.fetch=original;}
  const successor=bundleC(root,head,"123","left");
  await test("C-manifest-and-namespace",()=>{validateManifest(successor.manifest,successor.files);assert.equal(successor.manifest.grant,"FS24-C");assert.equal(successor.manifest.head,head);assert.ok(successor.files["log.jsonl"].includes("FS24-C:123:"));});
- await test("C-policy-candidate",()=>assert.equal(successorPolicy(root,head).length,12));
+ await test("C-policy-candidate",()=>assert.equal(successorPolicy(root,"9af238d7772bba56d6b98d568fcd34d57a7d6473").length,12));
  const body={grant:"FS24-C" as const,batch:"123",code:head,producer:"left" as const,artifact:1,manifestHash:digest(successor.files["manifest.json"]),operation:"initial-left",cancelAfterPush:false};
  const request={...body,requestId:digest(JSON.stringify(body))};
  await test("C-input-valid",()=>validateSuccessorInput(request,false));
@@ -161,6 +162,47 @@ async function main(){
  await test("C-required-cleanup-step-missing",()=>assert.throws(()=>assertFinalJobEvidence({...evidenceJob,steps:[]},"FS23_FINAL_REPORT_CLEANUP=pass;job=validate",evidenceFiles),/FinalCICleanup/));
  await test("C-final-incomplete-json",()=>assert.throws(()=>assertFinalJobEvidence(evidenceJob,"FS23_FINAL_REPORT_CLEANUP=pass;job=validate",{...evidenceFiles,"commands.json":Buffer.from("[")})));
  if(rows.length!==83||new Set(rows.map(x=>x.name)).size!==83)rows.push({name:"C-case-manifest-incomplete",result:"fail"});
+ const dOrigin="78a4b28b4134fb09b4a003b90099c13460a8112d";
+ await test("D-manifest-generation-keeps-payload",()=>{const first=bundleD(root,dOrigin,"345","left","345",dOrigin),second=bundleD(root,dOrigin,"345","left","346",head);assert.notEqual(first.files["manifest.json"],second.files["manifest.json"]);for(const name of Object.keys(first.files).filter(x=>x!=="manifest.json"))assert.equal(first.files[name],second.files[name]);validateManifest(second.manifest,second.files);});
+ const controlBody={grant:"FS24-D" as const,code:head,expectedMain:head,batch:"new",origin:head,resumeOf:"0",recoveryOrdinal:0,journalHash:"none"},control={...controlBody,requestId:digest(JSON.stringify(controlBody))};
+ await test("D-control-new-request",()=>validateDControl(control));
+ await test("D-control-extra-key",()=>{const body={...controlBody,extra:true};assert.throws(()=>validateDControl({...body,requestId:digest(JSON.stringify(body))}),/D-ControlDigest/);});
+ await test("D-control-resume-requires-journal",()=>{const body={...controlBody,batch:"345",resumeOf:"345",recoveryOrdinal:1};assert.throws(()=>validateDControl({...body,requestId:digest(JSON.stringify(body))}),/D-ResumeIdentity/);});
+ const frameId={run:"345",head,job:"controller"};
+ const makeFrame=(name:string,raw:Buffer)=>"FS24B_FILE\t"+JSON.stringify({grant:"FS24-D",...frameId,attempt:"1",name,bytes:raw.length,sha256:digest(raw)})+"\nFS24B_DATA\t1\t"+raw.toString("base64")+"\nFS24B_END\t"+name+"\n";
+ const dFrame=makeFrame("sample.json",Buffer.from("{}"));
+ await test("D-frame-valid",()=>assert.equal(decodeDFrames(dFrame,frameId)[0].bytes.toString(),"{}"));
+ await test("D-frame-wrong-hash",()=>assert.throws(()=>decodeDFrames(dFrame.replace(digest("{}"),"0".repeat(64)),frameId),/D-FrameHash/));
+ await test("D-frame-wrong-identity",()=>assert.throws(()=>decodeDFrames(dFrame,{...frameId,run:"346"}),/D-FrameIdentity/));
+ await test("D-frame-missing-tail",()=>assert.throws(()=>decodeDFrames(dFrame.replace(/FS24B_END[^\n]*\n/,""),frameId),/D-FrameIncomplete/));
+ await test("D-frame-tail-cancel-retains-complete",()=>assert.equal(decodeDFrames(dFrame+makeFrame("tail.json",Buffer.from("[]")).replace(/FS24B_END[^\n]*\n/,""),frameId,true).length,1));
+ const dr={...runValue,path:".github/workflows/acceptance-wp002.yml",conclusion:"failure"},djobs=Array.from({length:6},(_,i)=>({id:i+1,name:"job"+i,status:"completed",conclusion:i>1?"skipped":"failure"}));
+ await test("D-count-internal-skips",()=>assert.deepEqual(countDRuns([{run:dr,jobs:djobs}]),{active:1,jobCount:6,skipped:0,reserveRuns:0,reserveJobs:0}));
+ await test("D-count-whole-workflow-skip",()=>assert.equal(countDRuns([{run:{...dr,conclusion:"skipped"},jobs:[]}]).skipped,1));
+ await test("D-count-cap-with-reservation",()=>assert.throws(()=>countDRuns([{run:dr,jobs:djobs}],72,0),/D-GrantCapacity/));
+ await test("D-count-attempt-rejected",()=>assert.throws(()=>countDRuns([{run:{...dr,run_attempt:2},jobs:[]}]),/D-RunAttempt/));
+ const attempt={input:{step:"update-one",ordinal:0,cancelAfterPush:false},expected:false,safeNoCommit:true,receipt:null,run:{status:"completed"}};
+ await test("D-resume-unstarted",()=>assert.equal(chooseDStep("update-one",[],false),"first"));
+ await test("D-resume-success-reused",()=>assert.equal(chooseDStep("update-one",[{...attempt,expected:true,receipt:{duplicate:false}}],true),"reuse"));
+ await test("D-resume-active-blocked",()=>assert.throws(()=>chooseDStep("update-one",[{...attempt,run:{status:"in_progress"}}],false),/D-PreviousRunActive/));
+ await test("D-resume-committed-missing-receipt-blocked",()=>assert.throws(()=>chooseDStep("update-one",[attempt],true),/D-EffectNeedsEvidenceRepair/));
+ await test("D-resume-no-commit-recovery",()=>assert.equal(chooseDStep("update-one",[attempt],false),"recover"));
+ await test("D-resume-unknown-outcome-blocked",()=>assert.throws(()=>chooseDStep("update-one",[{...attempt,safeNoCommit:false}],false),/D-EffectNeedsEvidenceRepair/));
+ const frame=(name:string,value:Buffer)=>({name,bytes:value,sha256:digest(value)}),rawValue=Buffer.from('{"ok":true}');
+ const gzipFrames=[frame("response-raw.json.gz",gzipSync(rawValue)),frame("response-metadata.json",Buffer.from(JSON.stringify({rawEncoding:"gzip",bytes:rawValue.length,sha256:digest(rawValue),capped:false})))];
+ await test("D-raw-receipt-gzip-hash",()=>assert.deepEqual(dRawReceipt(gzipFrames,"response").raw,rawValue));
+ await test("D-raw-receipt-missing-blocked",()=>assert.throws(()=>dRawReceipt(gzipFrames.slice(1),"response"),/D-EvidenceExactlyOne/));
+ const requestId="2".repeat(64),path="/actions/workflows/ci.yml/dispatches",dispatchBody={ref:"main",inputs:{request_id:requestId}},response=Buffer.from(JSON.stringify({workflow_run_id:456,run_url:"https://api.github.com/repos/HungQuach301/fulcrum-studio/actions/runs/456",html_url:"https://github.com/HungQuach301/fulcrum-studio/actions/runs/456"}));
+ const intentFrames=[frame("dispatch-"+requestId+"-intent.json",Buffer.from(JSON.stringify({method:"POST",path,body:dispatchBody,requestDigest:digest(JSON.stringify(dispatchBody))}))),frame("dispatch-"+requestId+"-raw.json",response),frame("dispatch-"+requestId+"-metadata.json",Buffer.from(JSON.stringify({method:"POST",path,status:200,rawEncoding:"identity",bytes:response.length,sha256:digest(response),capped:false,requestDigest:digest(JSON.stringify(dispatchBody))})))];
+ await test("D-dispatch-journal-valid",()=>assert.equal(recoverDIntents(intentFrames)[0].runId,456));
+ await test("D-dispatch-journal-no-ack-blocked",()=>assert.throws(()=>recoverDIntents(intentFrames.slice(0,1)),/D-EvidenceExactlyOne/));
+ const dFetch=globalThis.fetch,dLog=console.log,dGrant=process.env.FS_GRANT;
+ try {
+  process.env.FS_GRANT="FS24-D";let captures:string[]=[];console.log=(...args:unknown[])=>{captures.push(args.join(" "));};
+  await test("D-pagination-50-three-pages",async()=>{let calls=0;globalThis.fetch=async(url)=>{calls++;assert.ok(String(url).includes("per_page=50&page="+calls));return new Response(JSON.stringify({total_count:101,workflow_runs:Array.from({length:calls<3?50:1},(_,i)=>({id:(calls-1)*50+i+1}))}),{status:200});};assert.equal((await new GitHubTransport("fixture-token").page("/actions/runs","workflow_runs")).length,101);assert.equal(calls,3);});
+  await test("D-pagination-raw-before-malformed",async()=>{captures=[];let calls=0;globalThis.fetch=async()=>{calls++;return new Response("{broken",{status:200});};await assert.rejects(()=>new GitHubTransport("fixture-token").page("/actions/runs","workflow_runs"));assert.equal(calls,1);assert.ok(captures.some(x=>x.includes('"name":"get-1-raw.json"')));});
+  await test("D-403-no-retry-raw",async()=>{captures=[];let calls=0;globalThis.fetch=async()=>{calls++;return new Response('{"message":"forbidden"}',{status:403});};await assert.rejects(()=>new GitHubTransport("fixture-token").json("/git/ref/heads/main"),/GitHubHTTP:403/);assert.equal(calls,1);assert.ok(captures.some(x=>x.includes('"name":"get-1-raw.json"')));});
+ } finally {globalThis.fetch=dFetch;console.log=dLog;if(dGrant===undefined)delete process.env.FS_GRANT;else process.env.FS_GRANT=dGrant;}
  const report={result:rows.every(x=>x.result==="pass")?"pass":"fail",tests:rows.length,rows,networkFixturesOnly:true};
  if(process.env.FS_EVIDENCE)writeFileSync(join(process.env.FS_EVIDENCE,"integration-tests.json"),JSON.stringify(report,null,2)+"\n");
  console.log(JSON.stringify(report,null,2));process.exitCode=report.result==="pass"?0:1;complete=true;

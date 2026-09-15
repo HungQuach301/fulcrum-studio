@@ -1,3 +1,4 @@
+import { gzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -12,7 +13,7 @@ export const POLICY = "76aae91e0bd415176e102136a11449791e4ecc7e";
 export const digest = (bytes: string | Buffer) => createHash("sha256").update(bytes).digest("hex");
 export interface Entry { name: string; path: string; schema: string; mode: "replace" | "append"; bytes: number; sha256: string; }
 export interface Operation { name: string; episodeId: string; entries: Entry[]; }
-export interface Manifest { grant: "FS24-B" | "FS24-C"; repository: string; run: string; attempt: string; head: string; tree: string; producer: string; artifactName: string; operations: Operation[]; }
+export interface Manifest { grant: "FS24-B" | "FS24-C" | "FS24-D"; batch?:string; origin?:string; repository: string; run: string; attempt: string; head: string; tree: string; producer: string; artifactName: string; operations: Operation[]; }
 export interface ArtifactMeta { id: number; name: string; expired: boolean; digest?: string; workflow_run: { id: number; head_sha: string }; }
 export interface Run { display_title?: string; repository?: {full_name:string}; head_repository?: {full_name:string}; id: number; head_sha: string; event: string; head_branch: string; path: string; status: string; conclusion: string | null; run_attempt: number; }
 export interface Job { steps?:Array<{name:string;conclusion:string|null}>; started_at?:string; completed_at?:string; run_id?:number; run_attempt?:number; id: number; name: string; status: string; conclusion: string | null; }
@@ -20,9 +21,10 @@ export interface Job { steps?:Array<{name:string;conclusion:string|null}>; start
 /** Authenticated calls are confined to this repository. Redirect destinations never receive the token. */
 export class GitHubTransport {
   constructor(private readonly token: string) { if (!token) throw new Error("MissingActionsToken"); }
-  async request(path: string, method = "GET", body?: unknown, observe?: (response:Response)=>Promise<void>): Promise<Response> {
+  async request(path: string, method = "GET", body?: unknown, observe?: (response:Response)=>Promise<void>, receiptVersion = false): Promise<Response> {
     if (!/^\/(actions|git|commits|compare|pulls)\//.test(path) || path.includes("..") || path.includes("#")) throw new Error("ApiScope");
-    const apiVersion = observe && method === "GET" && /^\/pulls\/[1-9][0-9]*$/.test(path) ? MERGE_RECEIPT_API_VERSION : "2026-03-10";
+    if(receiptVersion && (!observe || method !== "GET" || !/^\/pulls\/[1-9][0-9]*$/.test(path))) throw new Error("MergeReceiptVersionScope");
+    const apiVersion = receiptVersion ? MERGE_RECEIPT_API_VERSION : "2026-03-10";
     const response = await fetch("https://api.github.com/repos/" + REPOSITORY + path, { method, redirect: "manual", headers: {
       Authorization: "Bearer " + this.token, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": apiVersion, "Content-Type": "application/json"
     }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -33,10 +35,15 @@ export class GitHubTransport {
     if (!response.ok && response.status !== 302) throw new Error("GitHubHTTP:" + response.status + ":" + method + ":" + path.split("?")[0]);
     return response;
   }
-  async json<T>(path: string): Promise<T> { return await (await this.request(path)).json() as T; }
+  private readSequence = 0;
+  async json<T>(path: string): Promise<T> {
+    if(process.env.FS_GRANT!=="FS24-D")return await (await this.request(path)).json() as T;
+    const response=await this.control(path,"GET",undefined,"get-"+(++this.readSequence));
+    return JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(response.raw)) as T;
+  }
 
   async mergeReceipt(number:number,label:string):Promise<unknown> {
-    if(!Number.isSafeInteger(number)||number<1||!/^merge-(history|repair|activation)$/.test(label))throw new Error("MergeReceiptScope");
+    if(!Number.isSafeInteger(number)||number<1||!/^merge-(history|repair|activation|d-[1-9][0-9]*)$/.test(label))throw new Error("MergeReceiptScope");
     let raw:Buffer|undefined;
     await this.request("/pulls/"+number,"GET",undefined,async response=>{
       const chunks:Buffer[]=[];let size=0;
@@ -48,21 +55,23 @@ export class GitHubTransport {
       const metadata={path:"/pulls/"+number,status:response.status,requestedApiVersion:MERGE_RECEIPT_API_VERSION,selectedApiVersion:response.headers.get("x-github-api-version-selected"),requestId:response.headers.get("x-github-request-id"),receivedAt:new Date().toISOString(),bytes:raw.length,sha256:digest(raw)};
       emitFile(label+"-response.raw.json",raw);
       emitFile(label+"-response-metadata.json",Buffer.from(JSON.stringify(metadata)+"\n"));
-    });
+    },true);
     if(!raw)throw new Error("MergeReceiptMissingBody");
     try{return JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(raw)) as unknown;}
     catch{throw new Error("MergeReceiptInvalidJSON");}
   }
 
   async control(path:string,method:string,body:unknown,label:string):Promise<{status:number;raw:Buffer}> {
+    if(method!=="GET")emitFile(label+"-intent.json",Buffer.from(JSON.stringify({path,method,body,requestDigest:digest(JSON.stringify(body)??""),sentAt:new Date().toISOString()})+"\n"));
     let raw=Buffer.alloc(0),status=0;
     await this.request(path,method,body,async response=>{
       status=response.status;const chunks:Buffer[]=[];let size=0;
       let capped=false;
       if(response.body)for await(const chunk of response.body as unknown as AsyncIterable<Uint8Array>){size+=chunk.length;if(size>1024*1024){chunks.push(Buffer.from(chunk).subarray(0,Math.max(0,1024*1024-(size-chunk.length))));capped=true;break;}chunks.push(Buffer.from(chunk));}
       raw=Buffer.concat(chunks);
-      emitFile(label+"-raw.json",raw);
-      emitFile(label+"-metadata.json",Buffer.from(JSON.stringify({method,path,status,request:body,requestDigest:digest(JSON.stringify(body)??""),capped,requestedApiVersion:"2026-03-10",selectedApiVersion:response.headers.get("x-github-api-version-selected"),requestId:response.headers.get("x-github-request-id"),bytes:raw.length,sha256:digest(raw)})+"\n"));
+      const compressed=process.env.FS_GRANT==="FS24-D"&&method==="GET"&&raw.length>32768;
+      emitFile(label+(compressed?"-raw.json.gz":"-raw.json"),compressed?gzipSync(raw):raw);
+      emitFile(label+"-metadata.json",Buffer.from(JSON.stringify({method,path,status,rawEncoding:compressed?"gzip":"identity",request:body,requestDigest:digest(JSON.stringify(body)??""),capped,requestedApiVersion:"2026-03-10",selectedApiVersion:response.headers.get("x-github-api-version-selected"),requestId:response.headers.get("x-github-request-id"),bytes:raw.length,sha256:digest(raw)})+"\n"));
       if(capped)throw new Error("ControlResponseCap");
     });
     return {status,raw};
@@ -80,7 +89,8 @@ export class GitHubTransport {
   async page<T extends {id:number}>(path:string,key:string):Promise<T[]> {
     const rows:T[]=[];const ids=new Set<number>();let total:number|undefined;
     for(let page=1;;page++) {
-      const body=await this.json<Record<string,unknown>>(path+(path.includes("?")?"&":"?")+"per_page=100&page="+page);
+      const pageSize=process.env.FS_GRANT==="FS24-D"?50:100;
+      const body=await this.json<Record<string,unknown>>(path+(path.includes("?")?"&":"?")+"per_page="+pageSize+"&page="+page);
       if(!Number.isSafeInteger(body.total_count)||Number(body.total_count)<0||!Array.isArray(body[key]))throw new Error("PaginationShape");
       if(total===undefined)total=Number(body.total_count);else if(total!==body.total_count)throw new Error("PaginationChanged");
       const batch=body[key] as T[];
@@ -91,6 +101,20 @@ export class GitHubTransport {
   }
   async cancelC(run:string):Promise<void> {
     if(run!==process.env.GITHUB_RUN_ID||process.env.FS24_OPERATION!=="side-effect"||process.env.FS_GRANT!=="FS24-C")throw new Error("CancelScope");
+    const response=await this.control("/actions/runs/"+run+"/cancel","POST",undefined,"cancel-"+run);
+    if(response.status!==202)throw new Error("CancelStatusDoNotRetry");
+  }
+  async dispatchD(workflow:string,inputs:Record<string,string>,requestId:string):Promise<number> {
+    if(!["commit-artifacts.yml","reindex.yml","ci.yml"].includes(workflow)||!/^[a-f0-9]{64}$/.test(requestId)||process.env.FS_JOB!=="controller")throw new Error("D-DispatchScope");
+    const response=await this.control("/actions/workflows/"+workflow+"/dispatches","POST",{ref:"main",inputs},"dispatch-"+requestId);
+    if(response.status!==200)throw new Error("DispatchStatusDoNotRetry");
+    const body=JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(response.raw)) as {workflow_run_id:number;run_url:string;html_url:string};
+    if(!Number.isSafeInteger(body.workflow_run_id)||body.workflow_run_id<1||body.run_url!=="https://api.github.com/repos/"+REPOSITORY+"/actions/runs/"+body.workflow_run_id||body.html_url!=="https://github.com/"+REPOSITORY+"/actions/runs/"+body.workflow_run_id)throw new Error("DispatchReceiptMissingDoNotRetry");
+    const run=await this.json<Run>("/actions/runs/"+body.workflow_run_id);validateDRun(run,body.workflow_run_id,workflow,requestId);
+    emitFile("dispatch-"+requestId+"-bound.json",Buffer.from(JSON.stringify(run)+"\n"));return body.workflow_run_id;
+  }
+  async cancelD(run:string):Promise<void> {
+    if(run!==process.env.GITHUB_RUN_ID||process.env.FS_JOB!=="writer-cancel"||process.env.FS24_OPERATION!=="side-effect"||process.env.FS_GRANT!=="FS24-D")throw new Error("CancelScope");
     const response=await this.control("/actions/runs/"+run+"/cancel","POST",undefined,"cancel-"+run);
     if(response.status!==202)throw new Error("CancelStatusDoNotRetry");
   }
@@ -136,13 +160,13 @@ export class GitHubTransport {
     if(!Number.isSafeInteger(id)||id<=0||!/^[a-f0-9]{64}$/.test(expectedManifestHash)) throw new Error("ArtifactIdentity");
     const meta=await this.json<ArtifactMeta>("/actions/artifacts/"+id);
     if(meta.id!==id||meta.expired||meta.name!==expected.artifactName||meta.workflow_run.id!==Number(expected.run)||meta.workflow_run.head_sha!==expected.head) throw new Error("ArtifactMetadataMismatch");
-    if(expected.grant==="FS24-C") {
+    if(expected.grant==="FS24-C"||expected.grant==="FS24-D") {
       const run=await this.json<Run>("/actions/runs/"+expected.run);
       const jobs=await this.page<Job>("/actions/runs/"+expected.run+"/jobs","jobs");
       const name=expected.producer==="foundation"?"foundation":"producer-"+expected.producer;
       const producer=jobs.filter(x=>x.name===name);
       if(run.run_attempt!==1||run.head_sha!==expected.head||run.path!==".github/workflows/acceptance-wp002.yml"||producer.length!==1||!["in_progress","completed"].includes(producer[0].status)||producer[0].status==="completed"&&producer[0].conclusion!=="success")throw new Error("ArtifactProducerJob");
-      if(expected.producer==="foundation"?!["push","pull_request"].includes(run.event)||run.head_branch!=="wp/002":run.event!=="workflow_run"||run.head_branch!=="main")throw new Error("ArtifactProducerEvent");
+      if(expected.producer==="foundation"?!["push","pull_request"].includes(run.event)||run.head_branch!=="wp/002":run.event!==(expected.grant==="FS24-D"?"workflow_dispatch":"workflow_run")||run.head_branch!=="main")throw new Error("ArtifactProducerEvent");
       emitFile("artifact-"+id+"-producer.json",Buffer.from(JSON.stringify({run,job:producer[0],expected})+"\n"));
     }
     const bytes=await this.bytes("/actions/artifacts/"+id+"/zip",2*1024*1024);
@@ -164,7 +188,7 @@ export class GitHubTransport {
 }
 export function validateManifest(manifest: Manifest, files: Record<string,string>): void {
   assertCommit(manifest.head);assertCommit(manifest.tree);
-  if(!["FS24-B","FS24-C"].includes(manifest.grant)||manifest.repository!==REPOSITORY||manifest.attempt!=="1"||!/^\d+$/.test(manifest.run)) throw new Error("ManifestGrant");
+  if(!["FS24-B","FS24-C","FS24-D"].includes(manifest.grant)||manifest.repository!==REPOSITORY||manifest.attempt!=="1"||!/^\d+$/.test(manifest.run)) throw new Error("ManifestGrant");
   const declared=new Set(["manifest.json"]), operations=new Set<string>();
   for(const operation of manifest.operations) {
     if(!/^[a-z][a-z0-9-]+$/.test(operation.name)||operations.has(operation.name)||!operation.entries.length) throw new Error("ManifestOperation");operations.add(operation.name);
@@ -199,4 +223,8 @@ print(json.dumps(out))
 
 export function validateDispatchedRun(run:Run,id:number,workflow:string,requestId:string):void {
   if(run.id!==id||run.run_attempt!==1||run.event!=="workflow_dispatch"||run.head_branch!=="main"||run.path!==".github/workflows/"+workflow||run.display_title!=="FS24-C "+requestId||run.repository?.full_name!==REPOSITORY||run.head_repository?.full_name!==REPOSITORY)throw new Error("DispatchRunBinding");
+}
+
+export function validateDRun(run:Run,id:number,workflow:string,requestId:string):void {
+  if(run.id!==id||run.run_attempt!==1||run.event!=="workflow_dispatch"||run.head_branch!=="main"||run.path!==".github/workflows/"+workflow||run.display_title!=="FS24-D "+requestId||run.repository?.full_name!==REPOSITORY||run.head_repository?.full_name!==REPOSITORY)throw new Error("D-DispatchRunBinding");
 }
