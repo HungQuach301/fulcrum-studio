@@ -4,6 +4,8 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { assertCommit, assertPath, stateRecord } from "./repo-store";
 
+// Explicit receipt contract; other REST calls keep the 2026-03-10 default.
+const MERGE_RECEIPT_API_VERSION = "2022-11-28";
 export const REPOSITORY = "HungQuach301/fulcrum-studio";
 export const SOURCE = "bd7f0eb5b225ed43d610af12b5febbe82a7dbec4";
 export const POLICY = "76aae91e0bd415176e102136a11449791e4ecc7e";
@@ -20,8 +22,9 @@ export class GitHubTransport {
   constructor(private readonly token: string) { if (!token) throw new Error("MissingActionsToken"); }
   async request(path: string, method = "GET", body?: unknown, observe?: (response:Response)=>Promise<void>): Promise<Response> {
     if (!/^\/(actions|git|commits|compare|pulls)\//.test(path) || path.includes("..") || path.includes("#")) throw new Error("ApiScope");
+    const apiVersion = observe && method === "GET" && /^\/pulls\/[1-9][0-9]*$/.test(path) ? MERGE_RECEIPT_API_VERSION : "2026-03-10";
     const response = await fetch("https://api.github.com/repos/" + REPOSITORY + path, { method, redirect: "manual", headers: {
-      Authorization: "Bearer " + this.token, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2026-03-10", "Content-Type": "application/json"
+      Authorization: "Bearer " + this.token, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": apiVersion, "Content-Type": "application/json"
     }, body: body === undefined ? undefined : JSON.stringify(body) });
     // The receipt observer owns the body. A cloned tee can leave iterator cancellation
     // pending on its unread sibling when a capped response is rejected.
@@ -42,7 +45,7 @@ export class GitHubTransport {
         chunks.push(Buffer.from(part));
       }
       raw=Buffer.concat(chunks);
-      const metadata={path:"/pulls/"+number,status:response.status,requestedApiVersion:"2026-03-10",selectedApiVersion:response.headers.get("x-github-api-version-selected"),requestId:response.headers.get("x-github-request-id"),receivedAt:new Date().toISOString(),bytes:raw.length,sha256:digest(raw)};
+      const metadata={path:"/pulls/"+number,status:response.status,requestedApiVersion:MERGE_RECEIPT_API_VERSION,selectedApiVersion:response.headers.get("x-github-api-version-selected"),requestId:response.headers.get("x-github-request-id"),receivedAt:new Date().toISOString(),bytes:raw.length,sha256:digest(raw)};
       emitFile(label+"-response.raw.json",raw);
       emitFile(label+"-response-metadata.json",Buffer.from(JSON.stringify(metadata)+"\n"));
     });

@@ -59,6 +59,35 @@ async function main(){
   await test("R1-body-cap-no-second-request",async()=>{await assert.rejects(()=>new GitHubTransport("fixture-token").mergeReceipt(12,"merge-history"),/MergeReceiptByteCap/);assert.equal(seen,1);assert.ok(frames.some(x=>x.includes("merge-history-error.json")));});
  }finally{globalThis.fetch=fetchBefore;console.log=logBefore;}
 
+ // Version assertions use literal contract values and decoded metadata, not the implementation constant.
+ const versionFetch=globalThis.fetch,versionLog=console.log;
+ try {
+   for(const [number,label] of [[12,"merge-history"],[13,"merge-repair"]] as const)await test("R1-"+label+"-version-and-metadata",async()=>{
+     const captured:string[]=[];let calls=0;
+     const payload={...valid,number};
+     console.log=(...args:unknown[])=>{captured.push(args.join(" "));};
+     globalThis.fetch=async(url,init)=>{
+       calls++;assert.equal(String(url),"https://api.github.com/repos/HungQuach301/fulcrum-studio/pulls/"+number);
+       assert.equal(init?.method,"GET");assert.equal(init?.redirect,"manual");
+       assert.equal(new Headers(init?.headers).get("X-GitHub-Api-Version"),"2022-11-28");
+       return new Response(JSON.stringify(payload),{status:200,headers:{"x-github-api-version-selected":"2022-11-28","x-github-request-id":"fixture-version-"+number}});
+     };
+     assert.deepEqual(await new GitHubTransport("fixture-token").mergeReceipt(number,label),payload);assert.equal(calls,1);
+     const start=captured.findIndex(x=>x.startsWith("FS24B_FILE\t")&&JSON.parse(x.split("\t")[1]).name===label+"-response-metadata.json");assert.ok(start>=0);
+     const file=JSON.parse(captured[start].split("\t")[1]) as {bytes:number;sha256:string};let encoded="";
+     for(const row of captured.slice(start+1)){if(row.startsWith("FS24B_END\t"))break;if(row.startsWith("FS24B_DATA\t"))encoded+=row.split("\t")[2];}
+     const bytes=Buffer.from(encoded,"base64");assert.equal(bytes.length,file.bytes);assert.equal(digest(bytes),file.sha256);
+     const metadata=JSON.parse(bytes.toString("utf8")) as {path:string;status:number;requestedApiVersion:string;selectedApiVersion:string;requestId:string;bytes:number;sha256:string};
+     assert.equal(metadata.path,"/pulls/"+number);assert.equal(metadata.status,200);
+     assert.equal(metadata.requestedApiVersion,"2022-11-28");assert.equal(metadata.selectedApiVersion,"2022-11-28");
+     assert.equal(metadata.requestId,"fixture-version-"+number);assert.equal(metadata.bytes,Buffer.byteLength(JSON.stringify(payload)));assert.equal(metadata.sha256,digest(JSON.stringify(payload)));
+   });
+   await test("R1-nonreceipt-version-preserved",async()=>{
+     const calls:string[]=[];globalThis.fetch=async(url,init)=>{calls.push(String(url));assert.equal(new Headers(init?.headers).get("X-GitHub-Api-Version"),"2026-03-10");return new Response("{}",{status:200});};
+     const api=new GitHubTransport("fixture-token");await api.json("/git/ref/heads/main");await api.json("/pulls/12");assert.equal(calls.length,2);
+   });
+ }finally{globalThis.fetch=versionFetch;console.log=versionLog;}
+
  // Execute the exact workflow summary rule, not a second TypeScript implementation.
  const workflow=readFileSync(join(root,".github/workflows/acceptance-wp002.yml"),"utf8");
  const rule=workflow.split("# FS24R1_REQUIRED_BEGIN\n")[1]?.split("# FS24R1_REQUIRED_END")[0];
