@@ -1,0 +1,562 @@
+name: WP-002 Foundation Acceptance
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+concurrency:
+  group: fs24-foundation-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+env:
+  FS_HEAD: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha || github.sha }}
+  FS_BRANCH: ${{ github.head_ref || github.ref_name }}
+  FS_TITLE: ${{ github.event.pull_request.title || '' }}
+  FS_EVENT: ${{ github.event_name }}
+  GH_TOKEN: ${{ github.token }}
+jobs:
+  foundation:
+    if: ${{ !github.event.deleted && (github.event_name == 'push' || (github.head_ref == 'wp/002' && github.event.pull_request.head.repo.full_name
+      == github.repository)) }}
+    runs-on: ubuntu-24.04
+    env:
+      FS_JOB: foundation
+    outputs:
+      summary: ${{ steps.evidence.outputs.summary }}
+    steps:
+    - name: Initialize evidence directory
+      id: init
+      shell: bash
+      run: 'set -euo pipefail
+
+        task_root="$(mktemp -d "$RUNNER_TEMP/fs24-$FS_JOB.XXXXXX")"
+
+        mkdir "$task_root/evidence"
+
+        printf ''TASK_ROOT=%s
+
+        FS_EVIDENCE=%s/evidence
+
+        '' "$task_root" "$task_root" >> "$GITHUB_ENV"
+
+        '
+    - name: Checkout exact candidate
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      with:
+        ref: ${{ env.FS_HEAD }}
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Preflight scope secret policy and checkpoint
+      id: preflight
+      shell: bash
+      run: "set -euo pipefail\npython3 - <<'PY'\nimport os,json,subprocess,pathlib,hashlib,re,urllib.request\nroot=pathlib.Path(os.environ['GITHUB_WORKSPACE']);\
+        \ evidence=pathlib.Path(os.environ['FS_EVIDENCE'])\ndef git(*args):return subprocess.check_output(['git','-C',str(root),*args]).decode()\n\
+        head=os.environ['FS_HEAD'];branch=os.environ['FS_BRANCH'];event=os.environ['FS_EVENT']\nassert os.environ['GITHUB_REPOSITORY']=='HungQuach301/fulcrum-studio'\n\
+        assert os.environ['GITHUB_RUN_ATTEMPT']=='1'\nassert re.fullmatch('[a-f0-9]{40}',head) and git('rev-parse','HEAD').strip()==head\n\
+        request=urllib.request.Request('https://api.github.com/repos/HungQuach301/fulcrum-studio/git/ref/heads/main',headers={'Authorization':'Bearer\
+        \ '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})\nwith urllib.request.urlopen(request) as response:raw=response.read()\n\
+        (evidence/'main-ref.before.json').write_bytes(raw);main=json.loads(raw)['object']['sha']\nbase=git('rev-parse',head+'^1').strip()\
+        \ if branch=='main' and event=='push' else main\nwith open(os.environ['GITHUB_ENV'],'a') as f:f.write('FS_BASE='+base+'\\\
+        n')\nassert main=='bd7f0eb5b225ed43d610af12b5febbe82a7dbec4' and base==main,'main-checkpoint'\nassert branch=='wp/002'\
+        \ and event in ['push','pull_request'],'branch-event'\ndiff=git('diff','--no-renames','--name-only','-z',base,head).split('\\\
+        0')[:-1]\n\nfs24b=[]\nif branch=='wp/002':\n grant={'base': 'bd7f0eb5b225ed43d610af12b5febbe82a7dbec4', 'start': 'd021d3d662d619ae802fa483e1e36c5a94feb38b',\
+        \ 'policy': '76aae91e0bd415176e102136a11449791e4ecc7e', 'files': {'engine/docs/02-decisions.md': 'e4273586d427e4b127757b7b7d61d536fe317036',\
+        \ 'engine/ops/work-packages/WP-002-interfaces.md': 'c48b8da739695e8ef6135532a94a18ddcd8e2afc'}, 'paths': ['engine/docs/02-decisions.md',\
+        \ 'engine/ops/work-packages/WP-002-interfaces.md', '.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts',\
+        \ 'scripts/guardrails/guardrails.test.ts', '.github/workflows/acceptance-wp002.yml', 'engine/io/repo-store.ts', 'engine/io/repo-store.test.ts',\
+        \ 'engine/io/github-transport.ts', 'engine/io/github-writer.ts', 'engine/io/wp002-integration.ts', 'engine/io/wp002-integration.test.ts',\
+        \ '.github/workflows/commit-artifacts.yml', '.github/workflows/reindex.yml']}\n assert base==grant['base'],'B-base'\n\
+        \ git('merge-base','--is-ancestor',grant['policy'],head)\n assert git('rev-list','--parents','-n','1',grant['policy']).strip()==grant['policy']+'\
+        \ '+grant['start'],'B-policy-parent'\n assert set(git('diff','--name-only',grant['start'],grant['policy']).splitlines())==set(grant['files']),'B-policy-scope'\n\
+        \ for p,b in grant['files'].items():\n  assert git('rev-parse',grant['policy']+':'+p).strip()==b and git('rev-parse',head+':'+p).strip()==b,'B-policy-freeze'\n\
+        \  assert git('show',grant['policy']+':'+p).startswith(git('show',grant['start']+':'+p)),'B-policy-prefix'\n chain=git('rev-list','--reverse',grant['policy']+'..'+head).splitlines();assert\
+        \ len(chain)<=5,'B-commit-limit'\n parent=grant['policy']\n for i,sha in enumerate(chain,1):\n  assert git('rev-list','--parents','-n','1',sha).strip()==sha+'\
+        \ '+parent,'B-parent'\n  msg=git('show','-s','--format=%B',sha)\n  for k,v in [('Grant','FS24-B'),('Phase','implementation'),('Iteration',str(i))]:assert\
+        \ re.findall(r'^Fulcrum-'+k+': (.*)$',msg,re.M)==[v],'B-trailer'\n  parent=sha\n fs24b=grant['paths']\n assert set(git('diff','--name-only',grant['start'],head).splitlines())<=set(fs24b),'B-scope'\n\
+        \ for p in git('ls-tree','-r','--name-only',grant['start']).splitlines():\n  if p not in fs24b:assert git('ls-tree',grant['start'],'--',p)==git('ls-tree',head,'--',p),('B-preservation',p)\n\
+        for path in diff:\n assert not path.startswith('/') and not any(x in ['..','.',''] for x in path.split('/')) and '\\\
+        \\' not in path\n patch=git('diff','--no-ext-diff','--unified=0',base,head,'--',path)\n for line in patch.splitlines():\n\
+        \  if not line.startswith('+') or line.startswith('+++'):continue\n  value=line[1:]\n  assert not re.search(r'\\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})\\\
+        b',value),('secret-redacted',path)\n  assert ('PRIVATE'+' KEY') not in value,('private-key-redacted',path)\n  assert\
+        \ all(re.fullmatch('[a-fA-F0-9]+',x) for x in re.findall(r'[A-Za-z0-9+/]{80,}={0,2}',value)),('base64-redacted',path)\n\
+        names=git('ls-files','-z').split('\\0')[:-1]\nassert not git('status','--porcelain=v1','--untracked-files=all').strip()\n\
+        snapshot={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in names}\n(evidence/'source.before.json').write_text(json.dumps(snapshot,sort_keys=True)+'\\\
+        n')\n(evidence/'preflight.json').write_text(json.dumps({'result':'pass','head':head,'base':base,'branch':branch,'event':event,'eventSha':os.environ['GITHUB_SHA'],'grant':'FS24-B','repository':os.environ['GITHUB_REPOSITORY'],'policy':None,'paths':diff,'sourceFiles':len(names)})+'\\\
+        n')\nPY\n"
+    - name: Checksum-pinned runtime
+      id: runtime
+      shell: bash
+      run: 'set -euo pipefail
+
+        curl --fail --silent --show-error --location https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz -o "$TASK_ROOT/node.tar.xz"
+
+        printf ''%s  %s\n'' df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d "$TASK_ROOT/node.tar.xz" | sha256sum
+        -c -
+
+        tar -xJf "$TASK_ROOT/node.tar.xz" -C "$TASK_ROOT"
+
+        node_path="$TASK_ROOT/node-v20.20.2-linux-x64/bin/node"
+
+        npm_cli="$TASK_ROOT/node-v20.20.2-linux-x64/lib/node_modules/npm/bin/npm-cli.js"
+
+        test "$($node_path --version)" = v20.20.2
+
+        test "$($node_path "$npm_cli" --version)" = 10.8.2
+
+        printf ''FS_NODE=%s\nFS_NPM=%s\n'' "$node_path" "$npm_cli" >> "$GITHUB_ENV"
+
+        python3 - <<''PY''
+
+        import os,json,pathlib
+
+        pathlib.Path(os.environ[''FS_EVIDENCE''],''runtime.json'').write_text(json.dumps({''node'':''20.20.2'',''npm'':''10.8.2'',''archiveSha256'':''df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d'',''archiveChecksum'':''pass'',''node20EolException'':''FS24-B-only'',''actionNode24Patch'':''unproven'',''runnerOS'':os.environ.get(''RUNNER_OS''),''runnerArch'':os.environ.get(''RUNNER_ARCH''),''imageVersion'':os.environ.get(''ImageVersion''),''billedCostUsd'':None,''B1B2'':''unverified''})+''\n'')
+
+        PY
+
+        '
+    - name: Set up action runtime tooling
+      id: setup
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      with:
+        node-version: '20'
+    - name: Install exact lockfile without lifecycle scripts
+      id: install
+      shell: bash
+      run: 'set -euo pipefail
+
+        mkdir "$TASK_ROOT/mirror"
+
+        git archive "$FS_HEAD" | tar -x -C "$TASK_ROOT/mirror"
+
+        printf ''FS_TSX=%s/mirror/node_modules/tsx/dist/cli.mjs\n'' "$TASK_ROOT" >> "$GITHUB_ENV"
+
+        export npm_config_cache="$TASK_ROOT/npm-cache"
+
+        set +e
+
+        "$FS_NODE" "$FS_NPM" ci --prefix "$TASK_ROOT/mirror" --ignore-scripts --no-audit --no-fund --include=dev --include=optional
+        > "$FS_EVIDENCE/npm-ci.stdout.txt" 2> "$FS_EVIDENCE/npm-ci.stderr.txt"
+
+        code=$?
+
+        set -e
+
+        printf ''%s\n'' "$code" > "$FS_EVIDENCE/npm-ci.exit.txt"
+
+        exit "$code"
+
+        '
+    - name: Run foundation model and registry checks
+      id: check
+      shell: bash
+      run: "set -euo pipefail\npython3 - <<'PY'\nimport os,json,pathlib,subprocess,hashlib\ne=pathlib.Path(os.environ['FS_EVIDENCE']);mirror=pathlib.Path(os.environ['TASK_ROOT'],'mirror');node=os.environ['FS_NODE'];tsx=os.environ['FS_TSX'];root=os.environ['GITHUB_WORKSPACE'];head=os.environ['FS_HEAD'];base=os.environ['FS_BASE'];job=os.environ['FS_JOB']\n\
+        commands=[('repo-store-tests',[node,tsx,'engine/io/repo-store.test.ts']),('registry-tests',[node,tsx,'engine/providers/registry.test.ts']),('integration-tests',[node,tsx,'engine/io/wp002-integration.test.ts'])]\n\
+        receipts=[];failed=False\nfor name,args in commands:\n with (e/(name+'.stdout.txt')).open('wb') as out,(e/(name+'.stderr.txt')).open('wb')\
+        \ as err:\n  r=subprocess.run(args,cwd=mirror,stdout=out,stderr=err,env=os.environ.copy())\n row={'name':name,'args':args,'cwd':str(mirror),'status':r.returncode}\n\
+        \ for stream in ['stdout','stderr']:\n  data=(e/(name+'.'+stream+'.txt')).read_bytes();row[stream+'Bytes']=len(data);row[stream+'Sha256']=hashlib.sha256(data).hexdigest()\n\
+        \ receipts.append(row);failed|=r.returncode!=0\n(e/'commands.json').write_text(json.dumps(receipts,indent=2)+'\\n')\n\
+        raise SystemExit(1 if failed else 0)\nPY\n"
+    - name: Prepare pinned artifact payload
+      id: handoff
+      shell: bash
+      run: 'cd "$TASK_ROOT/mirror"
+
+        "$FS_NODE" "$FS_TSX" engine/io/wp002-integration.ts prepare
+
+        '
+    - name: Upload new FS24-B artifact
+      id: upload
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: ${{ steps.handoff.outputs.artifact_name }}
+        path: ${{ env.TASK_ROOT }}/handoff/*
+        if-no-files-found: error
+        retention-days: 1
+    - name: Receive and verify original new artifact
+      id: reception
+      shell: bash
+      env:
+        FS_ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+      run: 'cd "$TASK_ROOT/mirror"
+
+        "$FS_NODE" "$FS_TSX" engine/io/wp002-integration.ts receive
+
+        '
+    - name: Verify source mirror and live main unchanged
+      id: preservation
+      if: ${{ always() }}
+      shell: bash
+      run: 'set -euo pipefail
+
+        python3 - <<''PY''
+
+        import os,pathlib,json,hashlib,subprocess,urllib.request
+
+        e=pathlib.Path(os.environ[''FS_EVIDENCE'']);root=pathlib.Path(os.environ[''GITHUB_WORKSPACE'']);mirror=pathlib.Path(os.environ[''TASK_ROOT''],''mirror'')
+
+        before=json.loads((e/''source.before.json'').read_text());after={p:hashlib.sha256((root/p).read_bytes()).hexdigest()
+        for p in before}
+
+        (e/''source.after.json'').write_text(json.dumps(after,sort_keys=True)+''\n'');assert before==after
+
+        if mirror.exists():assert all(hashlib.sha256((mirror/p).read_bytes()).hexdigest()==v for p,v in before.items())
+
+        assert subprocess.check_output([''git'',''rev-parse'',''HEAD'']).decode().strip()==os.environ[''FS_HEAD'']
+
+        assert not subprocess.check_output([''git'',''status'',''--porcelain=v1'',''--untracked-files=all'']).strip()
+
+        request=urllib.request.Request(''https://api.github.com/repos/HungQuach301/fulcrum-studio/git/ref/heads/main'',headers={''Authorization'':''Bearer
+        ''+os.environ[''GH_TOKEN''],''Accept'':''application/vnd.github+json''})
+
+        with urllib.request.urlopen(request) as response:raw=response.read()
+
+        (e/''main-ref.after.json'').write_bytes(raw);assert json.loads(raw)[''object''][''sha'']==json.loads((e/''main-ref.before.json'').read_text())[''object''][''sha'']
+
+        (e/''preservation.json'').write_text(json.dumps({''result'':''pass'',''sourceUnchanged'':True,''mirrorUnchanged'':mirror.exists(),''mainUnchanged'':True,''sourceFiles'':len(before),''stateAndDependencyBytesUnchanged'':True})+''\n'')
+
+        PY
+
+        '
+    - name: Remove temporary execution data
+      id: cleanup
+      if: ${{ always() }}
+      shell: bash
+      run: "set -euo pipefail\npython3 - <<'PY'\nimport os,pathlib,shutil,json\np=pathlib.Path(os.environ['TASK_ROOT']);assert\
+        \ p.parent==pathlib.Path(os.environ['RUNNER_TEMP']) and p.name.startswith('fs24-')\nfor x in p.iterdir():\n if x.name=='evidence':continue\n\
+        \ if x.is_dir():shutil.rmtree(x)\n else:x.unlink()\n(p/'evidence/cleanup.json').write_text(json.dumps({'executionDataRemoved':True,'reportDataRemainingUntilFrame':True})+'\\\
+        n')\nPY\n"
+    - name: Emit complete evidence bytes
+      id: evidence
+      if: ${{ always() }}
+      shell: bash
+      env:
+        FS_STEPS: ${{ toJSON(steps) }}
+      run: "set -euo pipefail\npython3 - <<'PY'\nimport os,pathlib,json,hashlib,base64,re\np=pathlib.Path(os.environ['FS_EVIDENCE']);steps=json.loads(os.environ['FS_STEPS']);(p/'steps-at-emission.json').write_text(json.dumps(steps,indent=2)+'\\\
+        n')\nrequired=['preflight','runtime','setup','install','check','handoff','upload','reception','preservation','cleanup'];ok=all(steps.get(s,{}).get('outcome')=='success'\
+        \ for s in required)\nerrors=[]\nfor f in sorted(p.glob('*.stderr.txt')):\n for line in f.read_text(errors='replace').splitlines():\n\
+        \  if line.strip():errors.append(line[:400])\nfor f in sorted(p.glob('*.stdout.txt')):\n for line in f.read_text(errors='replace').splitlines():\n\
+        \  if re.search(r'error TS\\d+|AssertionError|Error:',line):errors.append(line[:400])\ndef redact(x):\n if re.search(r'\\\
+        b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})\\b',x) or ('PRIVATE'+' KEY') in x:return '[redacted]'\n\
+        \ if any(not re.fullmatch('[a-fA-F0-9]+',v) for v in re.findall(r'[A-Za-z0-9+/]{80,}={0,2}',x)):return '[redacted]'\n\
+        \ return x\nsummary={'head':os.environ['FS_HEAD'],'base':os.environ.get('FS_BASE',''),'job':os.environ['FS_JOB'],'result':'success'\
+        \ if ok else 'failure','errors':[redact(x) for x in errors[:20]],'finalJobStatus':'requires-API-readback'}\n(p/'job-summary.json').write_text(json.dumps(summary,ensure_ascii=False)+'\\\
+        n')\nwith open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write('summary='+json.dumps(summary,ensure_ascii=True)+'\\\
+        n')\nidentity=['FS24-A',os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_RUN_ATTEMPT'],os.environ['FS_HEAD'],os.environ['FS_JOB'],os.environ['FS_EVENT'],os.environ.get('FS_BASE','')]\n\
+        print('FS24_BEGIN\\t'+'\\t'.join(identity))\nfiles=sorted(p.iterdir())\nfor f in files:\n assert f.is_file() and re.fullmatch('[A-Za-z0-9_.-]+',f.name)\n\
+        \ data=f.read_bytes();name=base64.b64encode(f.name.encode()).decode();print('FS24_FILE\\t'+name+'\\t'+str(len(data))+'\\\
+        t'+hashlib.sha256(data).hexdigest());value=base64.b64encode(data).decode()\n for i in range(0,len(value),2048):print('FS24_DATA\\\
+        t'+str(i//2048+1)+'\\t'+value[i:i+2048])\n print('FS24_END\\t'+name)\nprint('FS24_COMPLETE\\t'+str(len(files)))\n\
+        PY\n"
+    - name: Remove final report data
+      id: final_cleanup
+      if: ${{ always() }}
+      shell: bash
+      run: 'set -euo pipefail
+
+        case "$TASK_ROOT" in "$RUNNER_TEMP"/fs24-*) rm -rf -- "$TASK_ROOT" ;; *) exit 1 ;; esac
+
+        test ! -e "$TASK_ROOT"
+
+        printf ''FS24_FINAL_REPORT_CLEANUP=pass;job=%s\n'' "$FS_JOB"
+
+        '
+  admit:
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch
+      == 'main' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.run_attempt == 1 }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    env:
+      FS_JOB: admit
+    outputs:
+      code: ${{ steps.admit.outputs.code }}
+      batch: ${{ steps.admit.outputs.batch }}
+    steps:
+    - &id001
+      name: Initialize bounded work directory
+      shell: bash
+      run: 'set -euo pipefail
+
+        task_root="$(mktemp -d "$RUNNER_TEMP/fs24b.XXXXXX")"
+
+        mkdir "$task_root/evidence"
+
+        printf ''TASK_ROOT=%s
+
+        FS_EVIDENCE=%s/evidence
+
+        '' "$task_root" "$task_root" >> "$GITHUB_ENV"
+
+        '
+    - &id002
+      name: Checkout approved immutable code
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      with:
+        ref: ${{ env.FS_HEAD }}
+        fetch-depth: 0
+        persist-credentials: false
+    - &id003
+      name: Read-only admission before project execution
+      shell: bash
+      run: 'set -euo pipefail
+
+        python3 - <<''PY''
+
+        import os,json,re,urllib.request,subprocess
+
+        assert os.environ[''GITHUB_REPOSITORY'']==''HungQuach301/fulcrum-studio''
+
+        assert os.environ[''GITHUB_RUN_ATTEMPT'']==''1''
+
+        head=os.environ[''FS_HEAD''];assert re.fullmatch(''[a-f0-9]{40}'',head)
+
+        assert subprocess.check_output([''git'',''rev-parse'',''HEAD'']).decode().strip()==head
+
+        req=urllib.request.Request(''https://api.github.com/repos/HungQuach301/fulcrum-studio/pulls/12'',headers={''Authorization'':''Bearer
+        ''+os.environ[''GH_TOKEN''],''Accept'':''application/vnd.github+json''})
+
+        with urllib.request.urlopen(req) as response:pr=json.load(response)
+
+        assert pr[''merged''] and pr[''merge_commit_sha'']==head
+
+        parents=subprocess.check_output([''git'',''rev-list'',''--parents'',''-n'',''1'',head]).decode().split()
+
+        assert parents==[head,''bd7f0eb5b225ed43d610af12b5febbe82a7dbec4'',pr[''head''][''sha'']]
+
+        subprocess.check_call([''git'',''merge-base'',''--is-ancestor'',''76aae91e0bd415176e102136a11449791e4ecc7e'',parents[2]])
+
+        assert subprocess.check_output([''git'',''rev-parse'',head+''^{tree}''])==subprocess.check_output([''git'',''rev-parse'',parents[2]+''^{tree}''])
+
+        PY
+
+        '
+    - &id004
+      name: Checksum-pinned runtime and exact lockfile
+      shell: bash
+      run: 'set -euo pipefail
+
+        curl --fail --silent --show-error --location https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz -o "$TASK_ROOT/node.tar.xz"
+
+        printf ''%s  %s
+
+        '' df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d "$TASK_ROOT/node.tar.xz" | sha256sum -c -
+
+        tar -xJf "$TASK_ROOT/node.tar.xz" -C "$TASK_ROOT"
+
+        node_path="$TASK_ROOT/node-v20.20.2-linux-x64/bin/node"
+
+        npm_cli="$TASK_ROOT/node-v20.20.2-linux-x64/lib/node_modules/npm/bin/npm-cli.js"
+
+        test "$($node_path --version)" = v20.20.2
+
+        test "$($node_path "$npm_cli" --version)" = 10.8.2
+
+        mkdir "$TASK_ROOT/mirror"
+
+        git archive "$FS_HEAD" | tar -x -C "$TASK_ROOT/mirror"
+
+        export npm_config_cache="$TASK_ROOT/npm-cache"
+
+        "$node_path" "$npm_cli" ci --prefix "$TASK_ROOT/mirror" --ignore-scripts --no-audit --no-fund --include=dev --include=optional
+
+        printf ''FS_NODE=%s
+
+        FS_TSX=%s/mirror/node_modules/tsx/dist/cli.mjs
+
+        '' "$node_path" "$TASK_ROOT" >> "$GITHUB_ENV"
+
+        printf ''FS24B_RUNTIME=node20.20.2;npm10.8.2;checksum=pass;Node20EOL=accepted-B;Node24Patch=unproven;billing=unknown
+
+        ''
+
+        '
+    - name: Execute admit
+      shell: bash
+      run: 'set -euo pipefail
+
+        cd "$TASK_ROOT/mirror"
+
+        "$FS_NODE" "$FS_TSX" engine/io/wp002-integration.ts admit
+
+        '
+      id: admit
+    - &id005
+      name: Cleanup and outcome evidence
+      shell: bash
+      run: "set -euo pipefail\npython3 - <<'PY'\nimport os,json,pathlib,shutil\np=pathlib.Path(os.environ['TASK_ROOT']);assert\
+        \ p.parent==pathlib.Path(os.environ['RUNNER_TEMP']) and p.name.startswith('fs24b.')\nprint('FS24B_STEPS\t'+os.environ['FS24_STEPS'])\n\
+        shutil.rmtree(p);assert not p.exists()\nprint('FS24B_CLEANUP=pass')\nPY\n"
+      if: ${{ always() }}
+      env:
+        FS24_STEPS: ${{ toJSON(steps) }}
+  producer-left:
+    needs: admit
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
+      pull-requests: read
+    env:
+      FS_JOB: producer-left
+      FS_PRODUCER: left
+    outputs:
+      writer_run: ${{ steps.dispatch.outputs.writer_run }}
+      artifact: ${{ steps.dispatch.outputs.artifact }}
+      manifest_hash: ${{ steps.dispatch.outputs.manifest_hash }}
+    steps:
+    - *id001
+    - *id002
+    - *id003
+    - *id004
+    - name: Execute prepare
+      shell: bash
+      run: 'set -euo pipefail
+
+        cd "$TASK_ROOT/mirror"
+
+        "$FS_NODE" "$FS_TSX" engine/io/wp002-integration.ts prepare
+
+        '
+      id: prepare
+    - name: Upload new integration artifact
+      id: upload
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: ${{ steps.prepare.outputs.artifact_name }}
+        path: ${{ env.TASK_ROOT }}/handoff/*
+        if-no-files-found: error
+        retention-days: 1
+    - name: Execute producer-dispatch
+      shell: bash
+      run: 'set -euo pipefail
+
+        cd "$TASK_ROOT/mirror"
+
+        "$FS_NODE" "$FS_TSX" engine/io/wp002-integration.ts producer-dispatch
+
+        '
+      id: dispatch
+      env:
+        FS_ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+    - *id005
+  producer-right:
+    needs: admit
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
+      pull-requests: read
+    env:
+      FS_JOB: producer-right
+      FS_PRODUCER: right
+    outputs:
+      writer_run: ${{ steps.dispatch.outputs.writer_run }}
+      artifact: ${{ steps.dispatch.outputs.artifact }}
+      manifest_hash: ${{ steps.dispatch.outputs.manifest_hash }}
+    steps:
+    - *id001
+    - *id002
+    - *id003
+    - *id004
+    - name: Execute prepare
+      shell: bash
+      run: 'set -euo pipefail
+
+        cd "$TASK_ROOT/mirror"
+
+        "$FS_NODE" "$FS_TSX" engine/io/wp002-integration.ts prepare
+
+        '
+      id: prepare
+    - name: Upload new integration artifact
+      id: upload
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: ${{ steps.prepare.outputs.artifact_name }}
+        path: ${{ env.TASK_ROOT }}/handoff/*
+        if-no-files-found: error
+        retention-days: 1
+    - name: Execute producer-dispatch
+      shell: bash
+      run: 'set -euo pipefail
+
+        cd "$TASK_ROOT/mirror"
+
+        "$FS_NODE" "$FS_TSX" engine/io/wp002-integration.ts producer-dispatch
+
+        '
+      id: dispatch
+      env:
+        FS_ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+    - *id005
+  controller:
+    needs:
+    - admit
+    - producer-left
+    - producer-right
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
+      pull-requests: read
+    env:
+      FS_JOB: controller
+      FS_LEFT_RUN: ${{ needs.producer-left.outputs.writer_run }}
+      FS_LEFT_ARTIFACT: ${{ needs.producer-left.outputs.artifact }}
+      FS_LEFT_HASH: ${{ needs.producer-left.outputs.manifest_hash }}
+      FS_RIGHT_RUN: ${{ needs.producer-right.outputs.writer_run }}
+      FS_RIGHT_ARTIFACT: ${{ needs.producer-right.outputs.artifact }}
+      FS_RIGHT_HASH: ${{ needs.producer-right.outputs.manifest_hash }}
+    outputs:
+      final: ${{ steps.controller.outputs.final }}
+      ci: ${{ steps.controller.outputs.ci }}
+    steps:
+    - *id001
+    - *id002
+    - *id003
+    - *id004
+    - name: Execute controller
+      shell: bash
+      run: 'set -euo pipefail
+
+        cd "$TASK_ROOT/mirror"
+
+        "$FS_NODE" "$FS_TSX" engine/io/wp002-integration.ts controller
+
+        '
+      id: controller
+    - *id005
+  integration-report:
+    needs:
+    - admit
+    - producer-left
+    - producer-right
+    - controller
+    if: ${{ always() && github.event_name == 'workflow_run' && needs.admit.result != 'skipped' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+    - name: Report integration outcome
+      shell: bash
+      run: "python3 - <<'PY'\nimport os,json\nn=json.loads(os.environ['NEEDS']);print('FS24B_CONTROLLER_FINAL\t'+json.dumps(n))\n\
+        assert all(v['result']=='success' for v in n.values())\nPY\n"
+      env:
+        NEEDS: ${{ toJSON(needs) }}
+'on':
+  push:
+    branches:
+    - wp/002
+  pull_request:
+    branches:
+    - main
+    types:
+    - opened
+    - synchronize
+  workflow_run:
+    workflows:
+    - Fulcrum CI
+    types:
+    - completed
+    branches:
+    - main

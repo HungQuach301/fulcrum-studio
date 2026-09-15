@@ -47,7 +47,7 @@ export function matches(path: string, pattern: string): boolean {
   return !pattern.includes("*") && path === pattern;
 }
 export function context(root: string, base: string, branch: string, title: string, event: string): Context {
-  if (branch === "main" && event === "push") return { kind: "main", code: "main", wpPath: "", patterns: [] };
+  if (branch === "main" && (event === "push" || event === "workflow_dispatch")) return { kind: "main", code: "main", wpPath: "", patterns: [] };
   const m = /^(wp|cp)\/([0-9]{3}(?:[a-z])?)$/.exec(branch);
   if (!m) throw new Error("branch-context-invalid");
   const code = m[1].toUpperCase() + "-" + m[2];

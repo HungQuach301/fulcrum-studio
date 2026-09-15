@@ -1,0 +1,149 @@
+name: WP-002 Serialized Writer
+'on':
+  workflow_dispatch:
+    inputs:
+      request:
+        required: true
+        type: string
+        description: Owner-approved FS24-B request
+permissions:
+  contents: read
+concurrency:
+  group: repo-write
+  cancel-in-progress: false
+  queue: max
+env:
+  FS_HEAD: ${{ fromJSON(inputs.request).code }}
+  FS24_INPUT: ${{ inputs.request }}
+  FS24_OPERATION: ${{ fromJSON(inputs.request).operation }}
+  GH_TOKEN: ${{ github.token }}
+jobs:
+  write:
+    if: ${{ !fromJSON(inputs.request).cancelAfterPush }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    env:
+      FS_JOB: writer
+    steps: &id001
+    - name: Initialize bounded work directory
+      shell: bash
+      run: 'set -euo pipefail
+
+        task_root="$(mktemp -d "$RUNNER_TEMP/fs24b.XXXXXX")"
+
+        mkdir "$task_root/evidence"
+
+        printf ''TASK_ROOT=%s
+
+        FS_EVIDENCE=%s/evidence
+
+        '' "$task_root" "$task_root" >> "$GITHUB_ENV"
+
+        '
+    - name: Checkout approved immutable code
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      with:
+        ref: ${{ env.FS_HEAD }}
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Read-only admission before project execution
+      shell: bash
+      run: 'set -euo pipefail
+
+        python3 - <<''PY''
+
+        import os,json,re,urllib.request,subprocess
+
+        assert os.environ[''GITHUB_REPOSITORY'']==''HungQuach301/fulcrum-studio''
+
+        assert os.environ[''GITHUB_RUN_ATTEMPT'']==''1''
+
+        head=os.environ[''FS_HEAD''];assert re.fullmatch(''[a-f0-9]{40}'',head)
+
+        assert subprocess.check_output([''git'',''rev-parse'',''HEAD'']).decode().strip()==head
+
+        req=urllib.request.Request(''https://api.github.com/repos/HungQuach301/fulcrum-studio/pulls/12'',headers={''Authorization'':''Bearer
+        ''+os.environ[''GH_TOKEN''],''Accept'':''application/vnd.github+json''})
+
+        with urllib.request.urlopen(req) as response:pr=json.load(response)
+
+        assert pr[''merged''] and pr[''merge_commit_sha'']==head
+
+        parents=subprocess.check_output([''git'',''rev-list'',''--parents'',''-n'',''1'',head]).decode().split()
+
+        assert parents==[head,''bd7f0eb5b225ed43d610af12b5febbe82a7dbec4'',pr[''head''][''sha'']]
+
+        subprocess.check_call([''git'',''merge-base'',''--is-ancestor'',''76aae91e0bd415176e102136a11449791e4ecc7e'',parents[2]])
+
+        assert subprocess.check_output([''git'',''rev-parse'',head+''^{tree}''])==subprocess.check_output([''git'',''rev-parse'',parents[2]+''^{tree}''])
+
+        PY
+
+        '
+    - name: Checksum-pinned runtime and exact lockfile
+      shell: bash
+      run: 'set -euo pipefail
+
+        curl --fail --silent --show-error --location https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz -o "$TASK_ROOT/node.tar.xz"
+
+        printf ''%s  %s
+
+        '' df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d "$TASK_ROOT/node.tar.xz" | sha256sum -c -
+
+        tar -xJf "$TASK_ROOT/node.tar.xz" -C "$TASK_ROOT"
+
+        node_path="$TASK_ROOT/node-v20.20.2-linux-x64/bin/node"
+
+        npm_cli="$TASK_ROOT/node-v20.20.2-linux-x64/lib/node_modules/npm/bin/npm-cli.js"
+
+        test "$($node_path --version)" = v20.20.2
+
+        test "$($node_path "$npm_cli" --version)" = 10.8.2
+
+        mkdir "$TASK_ROOT/mirror"
+
+        git archive "$FS_HEAD" | tar -x -C "$TASK_ROOT/mirror"
+
+        export npm_config_cache="$TASK_ROOT/npm-cache"
+
+        "$node_path" "$npm_cli" ci --prefix "$TASK_ROOT/mirror" --ignore-scripts --no-audit --no-fund --include=dev --include=optional
+
+        printf ''FS_NODE=%s
+
+        FS_TSX=%s/mirror/node_modules/tsx/dist/cli.mjs
+
+        '' "$node_path" "$TASK_ROOT" >> "$GITHUB_ENV"
+
+        printf ''FS24B_RUNTIME=node20.20.2;npm10.8.2;checksum=pass;Node20EOL=accepted-B;Node24Patch=unproven;billing=unknown
+
+        ''
+
+        '
+    - name: Execute write
+      shell: bash
+      run: 'set -euo pipefail
+
+        cd "$TASK_ROOT/mirror"
+
+        "$FS_NODE" "$FS_TSX" engine/io/github-writer.ts write
+
+        '
+    - name: Cleanup and outcome evidence
+      shell: bash
+      run: "set -euo pipefail\npython3 - <<'PY'\nimport os,json,pathlib,shutil\np=pathlib.Path(os.environ['TASK_ROOT']);assert\
+        \ p.parent==pathlib.Path(os.environ['RUNNER_TEMP']) and p.name.startswith('fs24b.')\nprint('FS24B_STEPS\t'+os.environ['FS24_STEPS'])\n\
+        shutil.rmtree(p);assert not p.exists()\nprint('FS24B_CLEANUP=pass')\nPY\n"
+      if: ${{ always() }}
+      env:
+        FS24_STEPS: ${{ toJSON(steps) }}
+  cancel-test:
+    if: ${{ fromJSON(inputs.request).cancelAfterPush }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: write
+    env:
+      FS_JOB: writer-cancel
+    steps: *id001

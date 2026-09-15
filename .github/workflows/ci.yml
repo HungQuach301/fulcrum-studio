@@ -1,6 +1,17 @@
 name: Fulcrum CI
 
 on:
+  workflow_dispatch:
+    inputs:
+      expected_head:
+        required: true
+        type: string
+      code:
+        required: true
+        type: string
+      batch:
+        required: true
+        type: string
   push:
     branches: ['**']
   pull_request:
@@ -16,7 +27,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  FS_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  FS_HEAD: ${{ inputs.expected_head || github.event.pull_request.head.sha || github.sha }}
+  FS24_FINAL_CODE: ${{ inputs.code || '' }}
+  FS24_FINAL_BATCH: ${{ inputs.batch || '' }}
   FS_BRANCH: ${{ github.head_ref || github.ref_name }}
   FS_TITLE: ${{ github.event.pull_request.title || '' }}
   FS_EVENT: ${{ github.event_name }}
@@ -65,10 +78,48 @@ jobs:
           with urllib.request.urlopen(request) as response:raw=response.read()
           (evidence/'main-ref.before.json').write_bytes(raw);main=json.loads(raw)['object']['sha']
           base=git('rev-parse',head+'^1').strip() if branch=='main' and event=='push' else main
+          if event=='workflow_dispatch':
+           assert branch=='main' and head==main,'final-main'
+           base=os.environ['FS24_FINAL_CODE'];batch=os.environ['FS24_FINAL_BATCH']
+           assert re.fullmatch('[a-f0-9]{40}',base) and re.fullmatch('[0-9]+',batch)
+           parents=git('rev-list','--parents','-n','1',base).split();assert len(parents)==3 and parents[1]=='bd7f0eb5b225ed43d610af12b5febbe82a7dbec4'
+           assert git('rev-parse',base+'^{tree}')==git('rev-parse',parents[2]+'^{tree}')
+           git('merge-base','--is-ancestor','76aae91e0bd415176e102136a11449791e4ecc7e',parents[2])
+           assert 'Fulcrum-Grant: FS24-B' in git('show','-s','--format=%B',base).splitlines()
+           allowed=['pipeline/runs.jsonl','pipeline/state.json']+[f'episodes/us-personal-finance/2026-09-fs24-{s}/{f}' for s in ['left','right'] for f in ['state.json','00-brief.json']]
+           chain=git('rev-list','--reverse',base+'..'+head).splitlines();assert len(chain)==9
+           previous=base
+           for sha in chain:
+            assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+previous
+            assert 'FS24-B-Batch: '+batch in git('show','-s','--format=%B',sha).splitlines()
+            assert set(git('diff','--name-only',previous,sha).splitlines())<=set(allowed)
+            previous=sha
           with open(os.environ['GITHUB_ENV'],'a') as f:f.write('FS_BASE='+base+'\n')
           boot={'base': '48bdbe2932ab012ae3edcaf4eabe54b7af21f223', 'files': {'AGENTS.md': '2933f22521c1c8789e93e79959e9fe16c1108956', 'PROJECT.md': '31121b2db859cb01b52e55fec8bb91890a0a5fa5', 'engine/docs/02-decisions.md': '7c9fb2b11bc6560f7a9d45b5e012d1556b768700', 'engine/ops/definition-of-done.md': 'f7a9d16655700594e1e1580932b416754a0b26c6', 'engine/ops/guardrails.md': 'e33413e64af7dab996b78b7c358416ea0248949c', 'engine/ops/work-packages/WP-001-ci-guardrails.md': '4fd0949a13f7fa36b75fed052984e2ac42145758'}, 'policy': '754d90c4632c6771d8a81e3c6c5b78f7a5ed3812'}
           impl=['.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/content.ts', 'scripts/guardrails/secrets.ts', 'scripts/guardrails/guardrails.test.ts', 'scripts/ci-report.ts', 'engine/ops/backlog.md']
           diff=git('diff','--no-renames','--name-only','-z',base,head).split('\0')[:-1]
+
+          fs24b=[]
+          if branch=='wp/002':
+           grant={'base': 'bd7f0eb5b225ed43d610af12b5febbe82a7dbec4', 'start': 'd021d3d662d619ae802fa483e1e36c5a94feb38b', 'policy': '76aae91e0bd415176e102136a11449791e4ecc7e', 'files': {'engine/docs/02-decisions.md': 'e4273586d427e4b127757b7b7d61d536fe317036', 'engine/ops/work-packages/WP-002-interfaces.md': 'c48b8da739695e8ef6135532a94a18ddcd8e2afc'}, 'paths': ['engine/docs/02-decisions.md', 'engine/ops/work-packages/WP-002-interfaces.md', '.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/guardrails.test.ts', '.github/workflows/acceptance-wp002.yml', 'engine/io/repo-store.ts', 'engine/io/repo-store.test.ts', 'engine/io/github-transport.ts', 'engine/io/github-writer.ts', 'engine/io/wp002-integration.ts', 'engine/io/wp002-integration.test.ts', '.github/workflows/commit-artifacts.yml', '.github/workflows/reindex.yml']}
+           assert base==grant['base'],'B-base'
+           git('merge-base','--is-ancestor',grant['policy'],head)
+           assert git('rev-list','--parents','-n','1',grant['policy']).strip()==grant['policy']+' '+grant['start'],'B-policy-parent'
+           assert set(git('diff','--name-only',grant['start'],grant['policy']).splitlines())==set(grant['files']),'B-policy-scope'
+           for p,b in grant['files'].items():
+            assert git('rev-parse',grant['policy']+':'+p).strip()==b and git('rev-parse',head+':'+p).strip()==b,'B-policy-freeze'
+            assert git('show',grant['policy']+':'+p).startswith(git('show',grant['start']+':'+p)),'B-policy-prefix'
+           chain=git('rev-list','--reverse',grant['policy']+'..'+head).splitlines();assert len(chain)<=5,'B-commit-limit'
+           parent=grant['policy']
+           for i,sha in enumerate(chain,1):
+            assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+parent,'B-parent'
+            msg=git('show','-s','--format=%B',sha)
+            for k,v in [('Grant','FS24-B'),('Phase','implementation'),('Iteration',str(i))]:assert re.findall(r'^Fulcrum-'+k+': (.*)$',msg,re.M)==[v],'B-trailer'
+            parent=sha
+           fs24b=grant['paths']
+           assert set(git('diff','--name-only',grant['start'],head).splitlines())<=set(fs24b),'B-scope'
+           for p in git('ls-tree','-r','--name-only',grant['start']).splitlines():
+            if p not in fs24b:assert git('ls-tree',grant['start'],'--',p)==git('ls-tree',head,'--',p),('B-preservation',p)
           # FS23_WP_CHANGE_RULE_BEGIN
           def wp_change_exception(path,wp_path,changed_paths,messages):
            return path==wp_path and all(p.endswith('.md') for p in changed_paths) and '[wp-change]' in messages
@@ -102,6 +153,7 @@ jobs:
            text=git('show',base+':'+wp[0]);part=re.search(r'^###?\s+4\.\s+Phạm vi cho phép\s*\n(.*?)(?=^###?\s|\Z)',text,re.M|re.S);assert part
            patterns=re.findall(r'`([^`]+)`',part[1]);assert patterns
            for path in diff:
+            if path in fs24b:continue
             if branch=='wp/001' and path in boot['files']:continue
             if path=='engine/ops/backlog.md':
              old=git('show',base+':'+path);new=git('show',head+':'+path);lines=old.splitlines(keepends=True);count=0
@@ -172,6 +224,11 @@ jobs:
           import os,json,pathlib,subprocess,hashlib
           e=pathlib.Path(os.environ['FS_EVIDENCE']);mirror=pathlib.Path(os.environ['TASK_ROOT'],'mirror');node=os.environ['FS_NODE'];tsx=os.environ['FS_TSX'];root=os.environ['GITHUB_WORKSPACE'];head=os.environ['FS_HEAD'];base=os.environ['FS_BASE'];job=os.environ['FS_JOB']
           commands={'validate':[('validator',[node,tsx,'scripts/validate.ts','--root',root,'--commit',head])],'typecheck':[('typecheck',[node,str(mirror/'node_modules/typescript/bin/tsc'),'--noEmit'])],'guardrails':[('guardrails',[node,tsx,'scripts/guardrails/index.ts','--root',root,'--base',base,'--head',head,'--branch',os.environ['FS_BRANCH'],'--event',os.environ['FS_EVENT']]),('guardrails-tests',[node,tsx,'scripts/guardrails/guardrails.test.ts'])],'report':[('report',[node,tsx,'scripts/ci-report.ts'])]}[job]
+          if job=='validate':
+           for side in ['left','right']:
+            episode='us-personal-finance/2026-09-fs24-'+side
+            exists=subprocess.run(['git','-C',root,'cat-file','-e',head+':episodes/'+episode+'/state.json'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
+            if exists:commands[0][1].extend(['--source',episode+'=bd7f0eb5b225ed43d610af12b5febbe82a7dbec4'])
           receipts=[];failed=False
           for name,args in commands:
            with (e/(name+'.stdout.txt')).open('wb') as out,(e/(name+'.stderr.txt')).open('wb') as err:
@@ -304,10 +361,48 @@ jobs:
           with urllib.request.urlopen(request) as response:raw=response.read()
           (evidence/'main-ref.before.json').write_bytes(raw);main=json.loads(raw)['object']['sha']
           base=git('rev-parse',head+'^1').strip() if branch=='main' and event=='push' else main
+          if event=='workflow_dispatch':
+           assert branch=='main' and head==main,'final-main'
+           base=os.environ['FS24_FINAL_CODE'];batch=os.environ['FS24_FINAL_BATCH']
+           assert re.fullmatch('[a-f0-9]{40}',base) and re.fullmatch('[0-9]+',batch)
+           parents=git('rev-list','--parents','-n','1',base).split();assert len(parents)==3 and parents[1]=='bd7f0eb5b225ed43d610af12b5febbe82a7dbec4'
+           assert git('rev-parse',base+'^{tree}')==git('rev-parse',parents[2]+'^{tree}')
+           git('merge-base','--is-ancestor','76aae91e0bd415176e102136a11449791e4ecc7e',parents[2])
+           assert 'Fulcrum-Grant: FS24-B' in git('show','-s','--format=%B',base).splitlines()
+           allowed=['pipeline/runs.jsonl','pipeline/state.json']+[f'episodes/us-personal-finance/2026-09-fs24-{s}/{f}' for s in ['left','right'] for f in ['state.json','00-brief.json']]
+           chain=git('rev-list','--reverse',base+'..'+head).splitlines();assert len(chain)==9
+           previous=base
+           for sha in chain:
+            assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+previous
+            assert 'FS24-B-Batch: '+batch in git('show','-s','--format=%B',sha).splitlines()
+            assert set(git('diff','--name-only',previous,sha).splitlines())<=set(allowed)
+            previous=sha
           with open(os.environ['GITHUB_ENV'],'a') as f:f.write('FS_BASE='+base+'\n')
           boot={'base': '48bdbe2932ab012ae3edcaf4eabe54b7af21f223', 'files': {'AGENTS.md': '2933f22521c1c8789e93e79959e9fe16c1108956', 'PROJECT.md': '31121b2db859cb01b52e55fec8bb91890a0a5fa5', 'engine/docs/02-decisions.md': '7c9fb2b11bc6560f7a9d45b5e012d1556b768700', 'engine/ops/definition-of-done.md': 'f7a9d16655700594e1e1580932b416754a0b26c6', 'engine/ops/guardrails.md': 'e33413e64af7dab996b78b7c358416ea0248949c', 'engine/ops/work-packages/WP-001-ci-guardrails.md': '4fd0949a13f7fa36b75fed052984e2ac42145758'}, 'policy': '754d90c4632c6771d8a81e3c6c5b78f7a5ed3812'}
           impl=['.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/content.ts', 'scripts/guardrails/secrets.ts', 'scripts/guardrails/guardrails.test.ts', 'scripts/ci-report.ts', 'engine/ops/backlog.md']
           diff=git('diff','--no-renames','--name-only','-z',base,head).split('\0')[:-1]
+
+          fs24b=[]
+          if branch=='wp/002':
+           grant={'base': 'bd7f0eb5b225ed43d610af12b5febbe82a7dbec4', 'start': 'd021d3d662d619ae802fa483e1e36c5a94feb38b', 'policy': '76aae91e0bd415176e102136a11449791e4ecc7e', 'files': {'engine/docs/02-decisions.md': 'e4273586d427e4b127757b7b7d61d536fe317036', 'engine/ops/work-packages/WP-002-interfaces.md': 'c48b8da739695e8ef6135532a94a18ddcd8e2afc'}, 'paths': ['engine/docs/02-decisions.md', 'engine/ops/work-packages/WP-002-interfaces.md', '.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/guardrails.test.ts', '.github/workflows/acceptance-wp002.yml', 'engine/io/repo-store.ts', 'engine/io/repo-store.test.ts', 'engine/io/github-transport.ts', 'engine/io/github-writer.ts', 'engine/io/wp002-integration.ts', 'engine/io/wp002-integration.test.ts', '.github/workflows/commit-artifacts.yml', '.github/workflows/reindex.yml']}
+           assert base==grant['base'],'B-base'
+           git('merge-base','--is-ancestor',grant['policy'],head)
+           assert git('rev-list','--parents','-n','1',grant['policy']).strip()==grant['policy']+' '+grant['start'],'B-policy-parent'
+           assert set(git('diff','--name-only',grant['start'],grant['policy']).splitlines())==set(grant['files']),'B-policy-scope'
+           for p,b in grant['files'].items():
+            assert git('rev-parse',grant['policy']+':'+p).strip()==b and git('rev-parse',head+':'+p).strip()==b,'B-policy-freeze'
+            assert git('show',grant['policy']+':'+p).startswith(git('show',grant['start']+':'+p)),'B-policy-prefix'
+           chain=git('rev-list','--reverse',grant['policy']+'..'+head).splitlines();assert len(chain)<=5,'B-commit-limit'
+           parent=grant['policy']
+           for i,sha in enumerate(chain,1):
+            assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+parent,'B-parent'
+            msg=git('show','-s','--format=%B',sha)
+            for k,v in [('Grant','FS24-B'),('Phase','implementation'),('Iteration',str(i))]:assert re.findall(r'^Fulcrum-'+k+': (.*)$',msg,re.M)==[v],'B-trailer'
+            parent=sha
+           fs24b=grant['paths']
+           assert set(git('diff','--name-only',grant['start'],head).splitlines())<=set(fs24b),'B-scope'
+           for p in git('ls-tree','-r','--name-only',grant['start']).splitlines():
+            if p not in fs24b:assert git('ls-tree',grant['start'],'--',p)==git('ls-tree',head,'--',p),('B-preservation',p)
           # FS23_WP_CHANGE_RULE_BEGIN
           def wp_change_exception(path,wp_path,changed_paths,messages):
            return path==wp_path and all(p.endswith('.md') for p in changed_paths) and '[wp-change]' in messages
@@ -341,6 +436,7 @@ jobs:
            text=git('show',base+':'+wp[0]);part=re.search(r'^###?\s+4\.\s+Phạm vi cho phép\s*\n(.*?)(?=^###?\s|\Z)',text,re.M|re.S);assert part
            patterns=re.findall(r'`([^`]+)`',part[1]);assert patterns
            for path in diff:
+            if path in fs24b:continue
             if branch=='wp/001' and path in boot['files']:continue
             if path=='engine/ops/backlog.md':
              old=git('show',base+':'+path);new=git('show',head+':'+path);lines=old.splitlines(keepends=True);count=0
@@ -411,6 +507,11 @@ jobs:
           import os,json,pathlib,subprocess,hashlib
           e=pathlib.Path(os.environ['FS_EVIDENCE']);mirror=pathlib.Path(os.environ['TASK_ROOT'],'mirror');node=os.environ['FS_NODE'];tsx=os.environ['FS_TSX'];root=os.environ['GITHUB_WORKSPACE'];head=os.environ['FS_HEAD'];base=os.environ['FS_BASE'];job=os.environ['FS_JOB']
           commands={'validate':[('validator',[node,tsx,'scripts/validate.ts','--root',root,'--commit',head])],'typecheck':[('typecheck',[node,str(mirror/'node_modules/typescript/bin/tsc'),'--noEmit'])],'guardrails':[('guardrails',[node,tsx,'scripts/guardrails/index.ts','--root',root,'--base',base,'--head',head,'--branch',os.environ['FS_BRANCH'],'--event',os.environ['FS_EVENT']]),('guardrails-tests',[node,tsx,'scripts/guardrails/guardrails.test.ts'])],'report':[('report',[node,tsx,'scripts/ci-report.ts'])]}[job]
+          if job=='validate':
+           for side in ['left','right']:
+            episode='us-personal-finance/2026-09-fs24-'+side
+            exists=subprocess.run(['git','-C',root,'cat-file','-e',head+':episodes/'+episode+'/state.json'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
+            if exists:commands[0][1].extend(['--source',episode+'=bd7f0eb5b225ed43d610af12b5febbe82a7dbec4'])
           receipts=[];failed=False
           for name,args in commands:
            with (e/(name+'.stdout.txt')).open('wb') as out,(e/(name+'.stderr.txt')).open('wb') as err:
@@ -543,10 +644,48 @@ jobs:
           with urllib.request.urlopen(request) as response:raw=response.read()
           (evidence/'main-ref.before.json').write_bytes(raw);main=json.loads(raw)['object']['sha']
           base=git('rev-parse',head+'^1').strip() if branch=='main' and event=='push' else main
+          if event=='workflow_dispatch':
+           assert branch=='main' and head==main,'final-main'
+           base=os.environ['FS24_FINAL_CODE'];batch=os.environ['FS24_FINAL_BATCH']
+           assert re.fullmatch('[a-f0-9]{40}',base) and re.fullmatch('[0-9]+',batch)
+           parents=git('rev-list','--parents','-n','1',base).split();assert len(parents)==3 and parents[1]=='bd7f0eb5b225ed43d610af12b5febbe82a7dbec4'
+           assert git('rev-parse',base+'^{tree}')==git('rev-parse',parents[2]+'^{tree}')
+           git('merge-base','--is-ancestor','76aae91e0bd415176e102136a11449791e4ecc7e',parents[2])
+           assert 'Fulcrum-Grant: FS24-B' in git('show','-s','--format=%B',base).splitlines()
+           allowed=['pipeline/runs.jsonl','pipeline/state.json']+[f'episodes/us-personal-finance/2026-09-fs24-{s}/{f}' for s in ['left','right'] for f in ['state.json','00-brief.json']]
+           chain=git('rev-list','--reverse',base+'..'+head).splitlines();assert len(chain)==9
+           previous=base
+           for sha in chain:
+            assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+previous
+            assert 'FS24-B-Batch: '+batch in git('show','-s','--format=%B',sha).splitlines()
+            assert set(git('diff','--name-only',previous,sha).splitlines())<=set(allowed)
+            previous=sha
           with open(os.environ['GITHUB_ENV'],'a') as f:f.write('FS_BASE='+base+'\n')
           boot={'base': '48bdbe2932ab012ae3edcaf4eabe54b7af21f223', 'files': {'AGENTS.md': '2933f22521c1c8789e93e79959e9fe16c1108956', 'PROJECT.md': '31121b2db859cb01b52e55fec8bb91890a0a5fa5', 'engine/docs/02-decisions.md': '7c9fb2b11bc6560f7a9d45b5e012d1556b768700', 'engine/ops/definition-of-done.md': 'f7a9d16655700594e1e1580932b416754a0b26c6', 'engine/ops/guardrails.md': 'e33413e64af7dab996b78b7c358416ea0248949c', 'engine/ops/work-packages/WP-001-ci-guardrails.md': '4fd0949a13f7fa36b75fed052984e2ac42145758'}, 'policy': '754d90c4632c6771d8a81e3c6c5b78f7a5ed3812'}
           impl=['.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/content.ts', 'scripts/guardrails/secrets.ts', 'scripts/guardrails/guardrails.test.ts', 'scripts/ci-report.ts', 'engine/ops/backlog.md']
           diff=git('diff','--no-renames','--name-only','-z',base,head).split('\0')[:-1]
+
+          fs24b=[]
+          if branch=='wp/002':
+           grant={'base': 'bd7f0eb5b225ed43d610af12b5febbe82a7dbec4', 'start': 'd021d3d662d619ae802fa483e1e36c5a94feb38b', 'policy': '76aae91e0bd415176e102136a11449791e4ecc7e', 'files': {'engine/docs/02-decisions.md': 'e4273586d427e4b127757b7b7d61d536fe317036', 'engine/ops/work-packages/WP-002-interfaces.md': 'c48b8da739695e8ef6135532a94a18ddcd8e2afc'}, 'paths': ['engine/docs/02-decisions.md', 'engine/ops/work-packages/WP-002-interfaces.md', '.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/guardrails.test.ts', '.github/workflows/acceptance-wp002.yml', 'engine/io/repo-store.ts', 'engine/io/repo-store.test.ts', 'engine/io/github-transport.ts', 'engine/io/github-writer.ts', 'engine/io/wp002-integration.ts', 'engine/io/wp002-integration.test.ts', '.github/workflows/commit-artifacts.yml', '.github/workflows/reindex.yml']}
+           assert base==grant['base'],'B-base'
+           git('merge-base','--is-ancestor',grant['policy'],head)
+           assert git('rev-list','--parents','-n','1',grant['policy']).strip()==grant['policy']+' '+grant['start'],'B-policy-parent'
+           assert set(git('diff','--name-only',grant['start'],grant['policy']).splitlines())==set(grant['files']),'B-policy-scope'
+           for p,b in grant['files'].items():
+            assert git('rev-parse',grant['policy']+':'+p).strip()==b and git('rev-parse',head+':'+p).strip()==b,'B-policy-freeze'
+            assert git('show',grant['policy']+':'+p).startswith(git('show',grant['start']+':'+p)),'B-policy-prefix'
+           chain=git('rev-list','--reverse',grant['policy']+'..'+head).splitlines();assert len(chain)<=5,'B-commit-limit'
+           parent=grant['policy']
+           for i,sha in enumerate(chain,1):
+            assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+parent,'B-parent'
+            msg=git('show','-s','--format=%B',sha)
+            for k,v in [('Grant','FS24-B'),('Phase','implementation'),('Iteration',str(i))]:assert re.findall(r'^Fulcrum-'+k+': (.*)$',msg,re.M)==[v],'B-trailer'
+            parent=sha
+           fs24b=grant['paths']
+           assert set(git('diff','--name-only',grant['start'],head).splitlines())<=set(fs24b),'B-scope'
+           for p in git('ls-tree','-r','--name-only',grant['start']).splitlines():
+            if p not in fs24b:assert git('ls-tree',grant['start'],'--',p)==git('ls-tree',head,'--',p),('B-preservation',p)
           # FS23_WP_CHANGE_RULE_BEGIN
           def wp_change_exception(path,wp_path,changed_paths,messages):
            return path==wp_path and all(p.endswith('.md') for p in changed_paths) and '[wp-change]' in messages
@@ -580,6 +719,7 @@ jobs:
            text=git('show',base+':'+wp[0]);part=re.search(r'^###?\s+4\.\s+Phạm vi cho phép\s*\n(.*?)(?=^###?\s|\Z)',text,re.M|re.S);assert part
            patterns=re.findall(r'`([^`]+)`',part[1]);assert patterns
            for path in diff:
+            if path in fs24b:continue
             if branch=='wp/001' and path in boot['files']:continue
             if path=='engine/ops/backlog.md':
              old=git('show',base+':'+path);new=git('show',head+':'+path);lines=old.splitlines(keepends=True);count=0
@@ -650,6 +790,11 @@ jobs:
           import os,json,pathlib,subprocess,hashlib
           e=pathlib.Path(os.environ['FS_EVIDENCE']);mirror=pathlib.Path(os.environ['TASK_ROOT'],'mirror');node=os.environ['FS_NODE'];tsx=os.environ['FS_TSX'];root=os.environ['GITHUB_WORKSPACE'];head=os.environ['FS_HEAD'];base=os.environ['FS_BASE'];job=os.environ['FS_JOB']
           commands={'validate':[('validator',[node,tsx,'scripts/validate.ts','--root',root,'--commit',head])],'typecheck':[('typecheck',[node,str(mirror/'node_modules/typescript/bin/tsc'),'--noEmit'])],'guardrails':[('guardrails',[node,tsx,'scripts/guardrails/index.ts','--root',root,'--base',base,'--head',head,'--branch',os.environ['FS_BRANCH'],'--event',os.environ['FS_EVENT']]),('guardrails-tests',[node,tsx,'scripts/guardrails/guardrails.test.ts'])],'report':[('report',[node,tsx,'scripts/ci-report.ts'])]}[job]
+          if job=='validate':
+           for side in ['left','right']:
+            episode='us-personal-finance/2026-09-fs24-'+side
+            exists=subprocess.run(['git','-C',root,'cat-file','-e',head+':episodes/'+episode+'/state.json'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
+            if exists:commands[0][1].extend(['--source',episode+'=bd7f0eb5b225ed43d610af12b5febbe82a7dbec4'])
           receipts=[];failed=False
           for name,args in commands:
            with (e/(name+'.stdout.txt')).open('wb') as out,(e/(name+'.stderr.txt')).open('wb') as err:
@@ -784,10 +929,48 @@ jobs:
           with urllib.request.urlopen(request) as response:raw=response.read()
           (evidence/'main-ref.before.json').write_bytes(raw);main=json.loads(raw)['object']['sha']
           base=git('rev-parse',head+'^1').strip() if branch=='main' and event=='push' else main
+          if event=='workflow_dispatch':
+           assert branch=='main' and head==main,'final-main'
+           base=os.environ['FS24_FINAL_CODE'];batch=os.environ['FS24_FINAL_BATCH']
+           assert re.fullmatch('[a-f0-9]{40}',base) and re.fullmatch('[0-9]+',batch)
+           parents=git('rev-list','--parents','-n','1',base).split();assert len(parents)==3 and parents[1]=='bd7f0eb5b225ed43d610af12b5febbe82a7dbec4'
+           assert git('rev-parse',base+'^{tree}')==git('rev-parse',parents[2]+'^{tree}')
+           git('merge-base','--is-ancestor','76aae91e0bd415176e102136a11449791e4ecc7e',parents[2])
+           assert 'Fulcrum-Grant: FS24-B' in git('show','-s','--format=%B',base).splitlines()
+           allowed=['pipeline/runs.jsonl','pipeline/state.json']+[f'episodes/us-personal-finance/2026-09-fs24-{s}/{f}' for s in ['left','right'] for f in ['state.json','00-brief.json']]
+           chain=git('rev-list','--reverse',base+'..'+head).splitlines();assert len(chain)==9
+           previous=base
+           for sha in chain:
+            assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+previous
+            assert 'FS24-B-Batch: '+batch in git('show','-s','--format=%B',sha).splitlines()
+            assert set(git('diff','--name-only',previous,sha).splitlines())<=set(allowed)
+            previous=sha
           with open(os.environ['GITHUB_ENV'],'a') as f:f.write('FS_BASE='+base+'\n')
           boot={'base': '48bdbe2932ab012ae3edcaf4eabe54b7af21f223', 'files': {'AGENTS.md': '2933f22521c1c8789e93e79959e9fe16c1108956', 'PROJECT.md': '31121b2db859cb01b52e55fec8bb91890a0a5fa5', 'engine/docs/02-decisions.md': '7c9fb2b11bc6560f7a9d45b5e012d1556b768700', 'engine/ops/definition-of-done.md': 'f7a9d16655700594e1e1580932b416754a0b26c6', 'engine/ops/guardrails.md': 'e33413e64af7dab996b78b7c358416ea0248949c', 'engine/ops/work-packages/WP-001-ci-guardrails.md': '4fd0949a13f7fa36b75fed052984e2ac42145758'}, 'policy': '754d90c4632c6771d8a81e3c6c5b78f7a5ed3812'}
           impl=['.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/content.ts', 'scripts/guardrails/secrets.ts', 'scripts/guardrails/guardrails.test.ts', 'scripts/ci-report.ts', 'engine/ops/backlog.md']
           diff=git('diff','--no-renames','--name-only','-z',base,head).split('\0')[:-1]
+
+          fs24b=[]
+          if branch=='wp/002':
+           grant={'base': 'bd7f0eb5b225ed43d610af12b5febbe82a7dbec4', 'start': 'd021d3d662d619ae802fa483e1e36c5a94feb38b', 'policy': '76aae91e0bd415176e102136a11449791e4ecc7e', 'files': {'engine/docs/02-decisions.md': 'e4273586d427e4b127757b7b7d61d536fe317036', 'engine/ops/work-packages/WP-002-interfaces.md': 'c48b8da739695e8ef6135532a94a18ddcd8e2afc'}, 'paths': ['engine/docs/02-decisions.md', 'engine/ops/work-packages/WP-002-interfaces.md', '.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/guardrails.test.ts', '.github/workflows/acceptance-wp002.yml', 'engine/io/repo-store.ts', 'engine/io/repo-store.test.ts', 'engine/io/github-transport.ts', 'engine/io/github-writer.ts', 'engine/io/wp002-integration.ts', 'engine/io/wp002-integration.test.ts', '.github/workflows/commit-artifacts.yml', '.github/workflows/reindex.yml']}
+           assert base==grant['base'],'B-base'
+           git('merge-base','--is-ancestor',grant['policy'],head)
+           assert git('rev-list','--parents','-n','1',grant['policy']).strip()==grant['policy']+' '+grant['start'],'B-policy-parent'
+           assert set(git('diff','--name-only',grant['start'],grant['policy']).splitlines())==set(grant['files']),'B-policy-scope'
+           for p,b in grant['files'].items():
+            assert git('rev-parse',grant['policy']+':'+p).strip()==b and git('rev-parse',head+':'+p).strip()==b,'B-policy-freeze'
+            assert git('show',grant['policy']+':'+p).startswith(git('show',grant['start']+':'+p)),'B-policy-prefix'
+           chain=git('rev-list','--reverse',grant['policy']+'..'+head).splitlines();assert len(chain)<=5,'B-commit-limit'
+           parent=grant['policy']
+           for i,sha in enumerate(chain,1):
+            assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+parent,'B-parent'
+            msg=git('show','-s','--format=%B',sha)
+            for k,v in [('Grant','FS24-B'),('Phase','implementation'),('Iteration',str(i))]:assert re.findall(r'^Fulcrum-'+k+': (.*)$',msg,re.M)==[v],'B-trailer'
+            parent=sha
+           fs24b=grant['paths']
+           assert set(git('diff','--name-only',grant['start'],head).splitlines())<=set(fs24b),'B-scope'
+           for p in git('ls-tree','-r','--name-only',grant['start']).splitlines():
+            if p not in fs24b:assert git('ls-tree',grant['start'],'--',p)==git('ls-tree',head,'--',p),('B-preservation',p)
           # FS23_WP_CHANGE_RULE_BEGIN
           def wp_change_exception(path,wp_path,changed_paths,messages):
            return path==wp_path and all(p.endswith('.md') for p in changed_paths) and '[wp-change]' in messages
@@ -821,6 +1004,7 @@ jobs:
            text=git('show',base+':'+wp[0]);part=re.search(r'^###?\s+4\.\s+Phạm vi cho phép\s*\n(.*?)(?=^###?\s|\Z)',text,re.M|re.S);assert part
            patterns=re.findall(r'`([^`]+)`',part[1]);assert patterns
            for path in diff:
+            if path in fs24b:continue
             if branch=='wp/001' and path in boot['files']:continue
             if path=='engine/ops/backlog.md':
              old=git('show',base+':'+path);new=git('show',head+':'+path);lines=old.splitlines(keepends=True);count=0
@@ -891,6 +1075,11 @@ jobs:
           import os,json,pathlib,subprocess,hashlib
           e=pathlib.Path(os.environ['FS_EVIDENCE']);mirror=pathlib.Path(os.environ['TASK_ROOT'],'mirror');node=os.environ['FS_NODE'];tsx=os.environ['FS_TSX'];root=os.environ['GITHUB_WORKSPACE'];head=os.environ['FS_HEAD'];base=os.environ['FS_BASE'];job=os.environ['FS_JOB']
           commands={'validate':[('validator',[node,tsx,'scripts/validate.ts','--root',root,'--commit',head])],'typecheck':[('typecheck',[node,str(mirror/'node_modules/typescript/bin/tsc'),'--noEmit'])],'guardrails':[('guardrails',[node,tsx,'scripts/guardrails/index.ts','--root',root,'--base',base,'--head',head,'--branch',os.environ['FS_BRANCH'],'--event',os.environ['FS_EVENT']]),('guardrails-tests',[node,tsx,'scripts/guardrails/guardrails.test.ts'])],'report':[('report',[node,tsx,'scripts/ci-report.ts'])]}[job]
+          if job=='validate':
+           for side in ['left','right']:
+            episode='us-personal-finance/2026-09-fs24-'+side
+            exists=subprocess.run(['git','-C',root,'cat-file','-e',head+':episodes/'+episode+'/state.json'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
+            if exists:commands[0][1].extend(['--source',episode+'=bd7f0eb5b225ed43d610af12b5febbe82a7dbec4'])
           receipts=[];failed=False
           for name,args in commands:
            with (e/(name+'.stdout.txt')).open('wb') as out,(e/(name+'.stderr.txt')).open('wb') as err:
@@ -981,3 +1170,4 @@ jobs:
           case "$TASK_ROOT" in "$RUNNER_TEMP"/fs23-*) rm -rf -- "$TASK_ROOT" ;; *) exit 1 ;; esac
           test ! -e "$TASK_ROOT"
           printf 'FS23_FINAL_REPORT_CLEANUP=pass;job=%s\n' "$FS_JOB"
+

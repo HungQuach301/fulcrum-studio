@@ -1,3 +1,4 @@
+import { integrationPolicy, IntegrationPolicy } from "./index";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -129,6 +130,21 @@ try {
   test("wrong-baseline",()=>{const f=fixture();const r=inspect({root:f.root,base:"0".repeat(40),head:f.base,branch:"wp/001",title:"WP-001",event:"push"});assert.equal(r.result,"fail");});
   test("bootstrap-freeze-and-decision",()=>{const f=fixture();const path="engine/docs/02-decisions.md";write(f.root,path,at(f.root,f.base,path)+"\n## D-02\nFixture policy.\n");const policy=commit(f.root,"fixture [wp-change]\n\nFulcrum-Grant: FS23-WP001\nFulcrum-Phase: policy");const boot:Bootstrap={base:f.base,policy,files:{[path]:git(f.root,"rev-parse",policy+":"+path).trim()}};write(f.root,"scripts/ci-report.ts","changed\n");let head=commit(f.root,"fixture code");const opts={root:f.root,base:f.base,head,branch:"wp/001",title:"WP-001",event:"push",bootstrap:boot};assert.equal(inspect(opts).result,"pass");write(f.root,path,at(f.root,f.base,path));head=commit(f.root,"remove policy");assert.equal(inspect({...opts,head}).result,"fail");});
   test("content-scan-exclusions",()=>{assert.equal(contentPath("engine/docs/a.md"),false);assert.equal(contentPath("engine/contracts/a.yml"),false);assert.equal(scanContent("engine/library/a.md","housing",[{line:1,text:"housing"}],["housing"]).length,0);});
+
+  test("B-policy-freeze-scope-and-trailer",()=>{
+    const f=fixture(),path="engine/docs/02-decisions.md";
+    write(f.root,path,at(f.root,f.base,path)+"\n## D-24\nFixture grant.\n");
+    const policy=commit(f.root,"fixture policy\n\nFulcrum-Grant: FS24-B\nFulcrum-Phase: policy");
+    const spec:IntegrationPolicy={base:f.base,start:f.base,policy,files:{[path]:git(f.root,"rev-parse",policy+":"+path).trim()},paths:[path,"scripts/ci-report.ts"]};
+    write(f.root,"scripts/ci-report.ts","changed\n");
+    const msg="fixture implementation\n\nFulcrum-Grant: FS24-B\nFulcrum-Phase: implementation\nFulcrum-Iteration: 1";
+    const h=commit(f.root,msg);assert.deepEqual(integrationPolicy(f.root,h,spec),spec.paths);
+    assert.throws(()=>integrationPolicy(f.root,h,{...spec,files:{[path]:"0".repeat(40)}}),/B-policy-freeze/);
+    assert.throws(()=>integrationPolicy(f.root,h,{...spec,paths:[path]}),/B-outside-scope/);
+    assert.throws(()=>integrationPolicy(f.root,h,{...spec,start:policy}),/B-policy-parent/);
+    write(f.root,"scripts/ci-report.ts","changed again\n");const wrong=commit(f.root,"missing trailers");
+    assert.throws(()=>integrationPolicy(f.root,wrong,spec),/B-trailer/);
+  });
   const head="a".repeat(40),base="b".repeat(40);
   function needs(verdict:Verdict):Record<string,Need>{return Object.fromEntries(["validate","typecheck","guardrails"].map(job=>[job,{result:verdict,outputs:{summary:JSON.stringify({job,head,base,result:verdict,errors:[]})}}]));}
   for(const verdict of ["success","failure","skipped","cancelled"] as Verdict[])test("report-verdict-"+verdict,()=>{const r=render(head,base,needs(verdict));assert.equal(r.pass,verdict==="success");assert.ok(r.text.includes("verdict="+verdict));assert.ok(r.text.split("\n").length<100);});
@@ -147,3 +163,4 @@ try {
   if(process.env.FS_EVIDENCE)writeFileSync(join(process.env.FS_EVIDENCE,"guardrails-tests.json"),JSON.stringify(report,null,2)+"\n");
   process.stdout.write(JSON.stringify(report,null,2)+"\n");process.exitCode=failures?1:0;
 }
+
