@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { GitSource, Schemas, frozen } from "../../scripts/validate";
-import { GitHubTransport, Manifest, Operation, Entry, SOURCE, REPOSITORY, digest, emitFile } from "./github-transport";
+import { GitHubTransport, Manifest, Operation, Entry, SOURCE, REPOSITORY, digest, emitFile, Run, Job } from "./github-transport";
 
 export const git=(root:string,...args:string[])=>execFileSync("git",["-C",root,...args],{encoding:"utf8"}).trimEnd();
 export function bundle(root:string,head:string,run:string,producer:string):{manifest:Manifest;files:Record<string,string>} {
@@ -43,6 +43,16 @@ async function main() {
   if(process.env.GITHUB_REPOSITORY!==REPOSITORY||process.env.GITHUB_RUN_ATTEMPT!=="1") throw new Error("RuntimeIdentity");
   const producer=process.env.FS_PRODUCER??"foundation";
   const value=bundle(root,head,run,producer);
+  const api=new GitHubTransport(process.env.GH_TOKEN!);
+  if(mode==="admit") {
+    const {admittedCode}=await import("./github-writer");await admittedCode(root,head,run,api);
+    const ref=await api.json<{object:{sha:string}}>("/git/ref/heads/main");if(ref.object.sha!==head)throw new Error("InitialMainCheckpoint");
+    const ledger=await api.json<{total_count:number;workflow_runs:Run[]}>("/actions/runs?per_page=100");
+    const same=ledger.workflow_runs.filter(x=>x.head_sha===head&&x.event==="workflow_run"&&x.path===".github/workflows/acceptance-wp002.yml");
+    if(same.length!==1||same[0].id!==Number(run))throw new Error("OneBatchOnly");
+    writeFileSync(process.env.GITHUB_OUTPUT!,"code="+head+"\nbatch="+run+"\n",{flag:"a"});
+    emitFile("admission.json",Buffer.from(JSON.stringify({head,run,ledgerTotal:ledger.total_count,controller:same[0]})+"\n"));return;
+  }
   if(mode==="prepare") {
     const dest=join(dir,"handoff");mkdirSync(dest,{recursive:true});
     for(const [name,content]of Object.entries(value.files))writeFileSync(join(dest,name),content);
@@ -50,10 +60,60 @@ async function main() {
     emitFile("producer-manifest.json",Buffer.from(value.files["manifest.json"]));
   } else if(mode==="receive") {
     const {operations,...expected}=value.manifest;
-    const api=new GitHubTransport(process.env.GH_TOKEN!);
     const got=await api.artifact(Number(process.env.FS_ARTIFACT_ID),expected,digest(value.files["manifest.json"]),join(dir,"artifact-received"));
     for(const [name,content]of Object.entries(value.files))if(got.files[name]!==content)throw new Error("ProducerReceiverMismatch");
     writeFileSync(join(process.env.FS_EVIDENCE!,"artifact-prequalification.json"),JSON.stringify({result:"pass",artifactId:got.metadata.id,head,run,manifestHash:digest(value.files["manifest.json"]),payloadHashAgreement:true,originalZipRetainedInFrames:true})+"\n");
+  } else if(mode==="producer-dispatch") {
+    const input={batch:run,code:head,producer,artifact:Number(process.env.FS_ARTIFACT_ID),manifestHash:digest(value.files["manifest.json"]),operation:"initial-"+producer};
+    const id=await api.dispatch("commit-artifacts.yml",{request:JSON.stringify(input)});
+    writeFileSync(process.env.GITHUB_OUTPUT!,"writer_run="+id+"\nartifact="+input.artifact+"\nmanifest_hash="+input.manifestHash+"\n",{flag:"a"});
+  } else if(mode==="controller") {
+    const {admittedCode}=await import("./github-writer");await admittedCode(root,head,run,api);
+    const results:Array<{name:string;run:Run;receipt:unknown}>=[];let dispatches=2;
+    const complete=async(name:string,id:number,expected="success")=>{
+      const finished=await api.wait(id);if(finished.conclusion!==expected)throw new Error("UnexpectedConclusion:"+name+":"+finished.conclusion);
+      const jobs=await api.json<{jobs:Job[]}>("/actions/runs/"+id+"/jobs?per_page=100");const active=jobs.jobs.filter(x=>x.conclusion!=="skipped");if(active.length!==1||jobs.jobs.length>2)throw new Error("WriterJobCount");
+      const log=(await api.bytes("/actions/jobs/"+active[0].id+"/logs",16*1024*1024)).toString("utf8");
+      const line=log.split("\n").find(x=>x.includes("FS24B_RECEIPT\t{"));
+      const receipt=line?JSON.parse(line.slice(line.indexOf("FS24B_RECEIPT\t")+"FS24B_RECEIPT\t".length)):null;
+      if(expected!=="failure"&&!receipt)throw new Error("MissingWriteReceipt");
+      if(expected==="failure"&&(!log.includes("FS24B_WRITE_ERROR\tError: SchemaRejected")||receipt))throw new Error("WrongNegativeFailure");
+      results.push({name,run:finished,receipt});return receipt;
+    };
+    const input=(operation:string,side="left")=>({batch:run,code:head,producer:side,artifact:Number(process.env[side==="left"?"FS_LEFT_ARTIFACT":"FS_RIGHT_ARTIFACT"]),manifestHash:process.env[side==="left"?"FS_LEFT_HASH":"FS_RIGHT_HASH"]!,operation});
+    const dispatch=async(operation:string,side="left",expected="success")=>{
+      if(++dispatches>13)throw new Error("DispatchCap");
+      const id=await api.dispatch("commit-artifacts.yml",{request:JSON.stringify({...input(operation,side),cancelAfterPush:expected==="cancelled"})});return complete(operation,id,expected);
+    };
+    await Promise.all([complete("initial-left",Number(process.env.FS_LEFT_RUN)),complete("initial-right",Number(process.env.FS_RIGHT_RUN))]);
+    await dispatch("update-one");await dispatch("update-two");
+    const duplicate=await dispatch("initial-left");if(!duplicate.duplicate)throw new Error("DuplicateCreatedCommit");
+    await dispatch("pending");await dispatch("side-effect","left","cancelled");
+    const replay=await dispatch("side-effect");if(!replay.duplicate)throw new Error("ReplayCreatedCommit");
+    await dispatch("invalid-state","left","failure");
+    await Promise.all([dispatch("logs-left"),dispatch("logs-right","right")]);
+    const reindex=await api.dispatch("reindex.yml",{request:JSON.stringify({...input("reindex"),artifact:0,manifestHash:"none"})});dispatches++;
+    const indexReceipt=await complete("reindex",reindex);
+    const final=indexReceipt.commit as string;
+    const ci=await api.dispatch("ci.yml",{expected_head:final,code:head,batch:run});dispatches++;
+    if(dispatches!==13)throw new Error("DispatchAccounting");
+    const finished=await api.wait(ci);if(finished.conclusion!=="success")throw new Error("FinalCIFailed:"+ci);
+    const jobs=await api.json<{jobs:Job[]}>("/actions/runs/"+ci+"/jobs?per_page=100");
+    if(jobs.jobs.length!==4||jobs.jobs.some(x=>x.conclusion!=="success"))throw new Error("FinalCIJobs");
+    const ref=await api.json<{object:{sha:string}}>("/git/ref/heads/main");if(ref.object.sha!==final)throw new Error("FinalMainChanged");
+    // Read the final immutable state through GitHub blob objects, independently of writer memory.
+    execFileSync("git",["-C",root,"fetch","origin","main"],{stdio:["ignore","pipe","pipe"]});
+    const chain=git(root,"rev-list",head+".."+final).split("\n");if(chain.length!==9)throw new Error("ExpectedNineDataCommits");
+    const expectedLogs=[...bundle(root,head,run,"left").files["log.jsonl"].trimEnd().split("\n"),...bundle(root,head,run,"right").files["log.jsonl"].trimEnd().split("\n")];
+    const log=git(root,"show",final+":pipeline/runs.jsonl").split("\n");
+    const actual=log.filter(x=>{try{return String(JSON.parse(x).runId).startsWith("FS24-B:"+run+":");}catch{return false;}});
+    if(actual.length!==50||new Set(actual).size!==50||actual.some(x=>!expectedLogs.includes(x)))throw new Error("LogCoverage");
+    const left=bundle(root,head,run,"left").manifest.operations[0].episodeId;
+    const state=JSON.parse(git(root,"show",final+":episodes/"+left+"/state.json"));
+    if(!state.pendingSideEffects?.length||state.revision!==4)throw new Error("IncompleteStateLost");
+    const report={result:"pass",head,final,dispatches,dataCommits:chain.length,logs:actual.length,results,finalCI:finished,finalJobs:jobs.jobs,providerCalls:0,billedCostUsd:null};
+    emitFile("integration-result.json",Buffer.from(JSON.stringify(report,null,2)+"\n"));
+    writeFileSync(process.env.GITHUB_OUTPUT!,"final="+final+"\nci="+ci+"\n",{flag:"a"});
   } else throw new Error("ModeNotEnabled");
 }
 if(require.main===module)main().catch(error=>{console.error(String(error));process.exitCode=1;});
