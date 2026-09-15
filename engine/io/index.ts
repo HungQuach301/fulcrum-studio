@@ -30,3 +30,7 @@ export class UnimplementedArtifactStore implements ArtifactStore {
   async write(_request: ArtifactWrite): Promise<WriteReceipt> { throw new Error("NotImplemented"); }
   async appendLine(_request: ArtifactWrite): Promise<WriteReceipt> { throw new Error("NotImplemented"); }
 }
+
+// FS24-A: explicit adapter injection; production workflow admission remains separate.
+export { RepoStore, SerializedRepositoryWriter } from "./repo-store";
+export type { RepositoryTransport, RepositoryBackend, SchemaCheck } from "./repo-store";
