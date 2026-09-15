@@ -1,6 +1,7 @@
+import { GitSource, Schemas, Validator, frozen } from "../../scripts/validate";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -19,8 +20,8 @@ const runLogSchema = JSON.parse(readFileSync("engine/contracts/run-log.schema.js
 };
 const stamp = "2026-09-15T00:00:00.000Z";
 const channel = "fixture-channel";
-const episode = (name: string) => "2026-09-" + name;
-const pathFor = (name: string) => "episodes/" + channel + "/" + episode(name) + "/state.json";
+const episode = (name: string) => channel + "/2026-09-" + name;
+const pathFor = (name: string) => "episodes/" + episode(name) + "/state.json";
 const state = (name: string, revision = 1) => ({ episodeId: episode(name), channel,
   currentStage: "fixture", stageStatus: "pending", updatedAt: stamp, spendUsd: 0, versions: {}, revision });
 const line = (id: string) => ({ ts: stamp, runId: id, episodeId: episode("a"), stage: "fixture",
@@ -178,6 +179,48 @@ async function worker() {
   process.disconnect?.();
 }
 async function main() {
+
+  await test("F1-identity-compatible-with-production-validator", async () => {
+    const root=mkdtempSync(join(tmpdir(),"fs24-cross-validator-"));
+    try {
+      const source=process.env.GITHUB_WORKSPACE;
+      assert.ok(source,"Actions source checkout required");
+      const clone=spawnSync("git",["clone","--shared","--no-checkout",source,root],{encoding:"utf8"});
+      assert.equal(clone.status,0,clone.stderr);
+      const base="bd7f0eb5b225ed43d610af12b5febbe82a7dbec4";
+      git(root,["checkout","--detach",base]);
+      const channelPath=git(root,["ls-tree","-r","--name-only",base,"--","channels"]).split("\n").find(x=>x.endsWith("/channel.json"))!;
+      const slug=channelPath.split("/")[1], id=slug+"/2026-09-fs24-left";
+      const gs=new GitSource(root,base), schemas=new Schemas(gs), context=frozen(gs,schemas,id,base);
+      const format=context.format, pack=context.channel;
+      const limits=format.limits as Record<string,unknown>;
+      const brief={episodeId:id,channel:slug,topic:"FS24 synthetic integration fixture",thesis:"FS24 synthetic test fixture; no production claim or publication approval is represented.",
+        thesisId:String(pack.genre)+"/TB-001",thesisArchetype:(format.thesisArchetypes as string[])[0],pillar:(pack.pillars as string[])[0],audience:{ageRange:"fixture",decisionContext:"Synthetic test context only",priorBelief:"Synthetic test assumption only"},targetDurationMin:(limits.targetDurationMin as number[])[0],proposedBy:"machine",approvedBy:"human",workingTitle:"FS24 synthetic fixture",noveltyCheck:{videosChecked:limits.noveltyVideosCheckedMin,contradictingVideos:0,verdict:"novel",checkedBy:"machine"},versions:context.versions};
+      const value={...state("a"),episodeId:id,channel:slug,versions:context.versions};
+      const path="episodes/"+id+"/state.json";
+      const transport:RepositoryTransport={read:async()=>JSON.stringify(value)+"\n",submit:async command=>({writeId:command.writeId,commit:base,blob:blobHash(command.content)})};
+      const store=new RepoStore(check,transport);
+      await store.write({path,content:JSON.stringify(value)+"\n",schemaId:"episode-state.schema.json",expectedSourceCommit:base,writeId:"F1-valid"});
+      for(const invalid of [{...value,episodeId:id.split("/")[1]},{...value,episodeId:slug+"/2026-09-other"},{...value,channel:"other"},{...value,episodeId:"other/2026-09-fs24-left"}]) {
+        await assert.rejects(()=>store.write({path,content:JSON.stringify(invalid),schemaId:"episode-state.schema.json",expectedSourceCommit:base,writeId:"F1-invalid"}),/StatePathMismatch/);
+      }
+      mkdirSync(join(root,"episodes",id),{recursive:true});
+      writeFileSync(join(root,path),JSON.stringify(value)+"\n");
+      writeFileSync(join(root,"episodes",id,"00-brief.json"),JSON.stringify(brief)+"\n");
+      git(root,["add","episodes"]);git(root,["commit","-m","Synthetic integration fixture"]);
+      const candidate=git(root,["rev-parse","HEAD"]);
+      const result=new Validator(new GitSource(root,candidate),new Schemas(new GitSource(root,candidate)),[{episodeId:id,commit:base}]).run();
+      assert.equal(result.sourceValidation,"pass",JSON.stringify(result.issues));
+      proofs.push({kind:"F1-production-validator",base,candidate,identity:id,result});
+    } finally {rmSync(root,{recursive:true,force:true});}
+  });
+  await test("pending-done-reindex-is-blocked",()=>{
+    const value={...state("a"),stageStatus:"done",pendingSideEffects:[{kind:"fixture",writeId:"pending-write",startedAt:stamp}]};
+    const output=buildIndex([value],"a".repeat(40),stamp,check) as {episodes:{stageStatus:string}[]};
+    assert.equal(output.episodes[0].stageStatus,"blocked");
+    assert.equal(value.stageStatus,"done");
+  });
+
   await test("default-transport-denied", async () => {
     await assert.rejects(new RepoStore(check).write(request("a".repeat(40), "a")), /TransportUnavailable/);
   });

@@ -51,7 +51,7 @@ export function stateRecord(value: unknown): Record<string, unknown> {
 }
 export function assertStateIdentity(path: string, value: unknown): void {
   const state = stateRecord(value), parts = path.split("/");
-  if (state.channel !== parts[1] || state.episodeId !== parts[2]) throw new Error("StatePathMismatch");
+  if (state.channel !== parts[1] || state.episodeId !== parts.slice(1, 3).join("/")) throw new Error("StatePathMismatch");
 }
 export function validateCommand(input: WriteCommand, check: SchemaCheck): WriteCommand {
   const command = { ...input }; // Detach from caller before the first await.

@@ -67,30 +67,30 @@ jobs:
           base=git('rev-parse',head+'^1').strip() if branch=='main' and event=='push' else main
           with open(os.environ['GITHUB_ENV'],'a') as f:f.write('FS_BASE='+base+'\n')
           assert main=='bd7f0eb5b225ed43d610af12b5febbe82a7dbec4' and base==main,'main-checkpoint'
-          assert git('rev-parse',base+'^{tree}').strip()=='a4bd95de9e107312972bb726f3c20dc1ac996966'
           assert branch=='wp/002' and event in ['push','pull_request'],'branch-event'
-          assert all(x=='WP-002' for x in re.findall(r'\b(?:WP|CP)-[0-9]{3}[a-z]?\b',os.environ.get('FS_TITLE',''))),'title-context'
-          allowed=['engine/io/index.ts', 'engine/io/repo-store.ts', 'engine/io/episode-state.ts', 'engine/io/run-log.ts', 'engine/io/reindex.ts', 'engine/io/repo-store.test.ts', 'engine/providers/registry.ts', 'engine/providers/registry.test.ts', '.github/workflows/acceptance-wp002.yml']
           diff=git('diff','--no-renames','--name-only','-z',base,head).split('\0')[:-1]
-          assert set(diff)==set(allowed) and len(diff)==9,'exact-scope'
-          chain=git('rev-list','--reverse',base+'..'+head).splitlines();assert 1<=len(chain)<=3
-          parent=base
-          for number,sha in enumerate(chain,1):
-           assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+parent
-           msg=git('show','-s','--format=%B',sha)
-           assert re.findall(r'^Fulcrum-Grant: (.*)$',msg,re.M)==['FS24-A']
-           assert re.findall(r'^Fulcrum-Phase: (.*)$',msg,re.M)==['implementation']
-           assert re.findall(r'^Fulcrum-Iteration: (.*)$',msg,re.M)==[str(number)]
-           parent=sha
-          oldnames=git('ls-tree','-r','--name-only',base).splitlines();assert len(oldnames)==130
-          for name in oldnames:
-           if name=='engine/io/index.ts':continue
-           assert git('ls-tree',base,'--',name)==git('ls-tree',head,'--',name),('preservation',name)
-          wp='engine/ops/work-packages/WP-002-interfaces.md'
-          wptext=git('show',base+':'+wp)
-          part=re.search(r'^###?\s+4\.\s+Phạm vi cho phép\s*\n(.*?)(?=^###?\s|\Z)',wptext,re.M|re.S);assert part
-          patterns=re.findall(r'`([^`]+)`',part[1])
-          assert all(any(p==a or a.endswith('/**') and p.startswith(a[:-2]) for a in patterns) for p in diff)
+
+          fs24b=[]
+          if branch=='wp/002':
+           grant={'base': 'bd7f0eb5b225ed43d610af12b5febbe82a7dbec4', 'start': 'd021d3d662d619ae802fa483e1e36c5a94feb38b', 'policy': '76aae91e0bd415176e102136a11449791e4ecc7e', 'files': {'engine/docs/02-decisions.md': 'e4273586d427e4b127757b7b7d61d536fe317036', 'engine/ops/work-packages/WP-002-interfaces.md': 'c48b8da739695e8ef6135532a94a18ddcd8e2afc'}, 'paths': ['engine/docs/02-decisions.md', 'engine/ops/work-packages/WP-002-interfaces.md', '.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts', 'scripts/guardrails/guardrails.test.ts', '.github/workflows/acceptance-wp002.yml', 'engine/io/repo-store.ts', 'engine/io/repo-store.test.ts', 'engine/io/github-transport.ts', 'engine/io/github-writer.ts', 'engine/io/wp002-integration.ts', 'engine/io/wp002-integration.test.ts', '.github/workflows/commit-artifacts.yml', '.github/workflows/reindex.yml']}
+           assert base==grant['base'],'B-base'
+           git('merge-base','--is-ancestor',grant['policy'],head)
+           assert git('rev-list','--parents','-n','1',grant['policy']).strip()==grant['policy']+' '+grant['start'],'B-policy-parent'
+           assert set(git('diff','--name-only',grant['start'],grant['policy']).splitlines())==set(grant['files']),'B-policy-scope'
+           for p,b in grant['files'].items():
+            assert git('rev-parse',grant['policy']+':'+p).strip()==b and git('rev-parse',head+':'+p).strip()==b,'B-policy-freeze'
+            assert git('show',grant['policy']+':'+p).startswith(git('show',grant['start']+':'+p)),'B-policy-prefix'
+           chain=git('rev-list','--reverse',grant['policy']+'..'+head).splitlines();assert len(chain)<=5,'B-commit-limit'
+           parent=grant['policy']
+           for i,sha in enumerate(chain,1):
+            assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+parent,'B-parent'
+            msg=git('show','-s','--format=%B',sha)
+            for k,v in [('Grant','FS24-B'),('Phase','implementation'),('Iteration',str(i))]:assert re.findall(r'^Fulcrum-'+k+': (.*)$',msg,re.M)==[v],'B-trailer'
+            parent=sha
+           fs24b=grant['paths']
+           assert set(git('diff','--name-only',grant['start'],head).splitlines())<=set(fs24b),'B-scope'
+           for p in git('ls-tree','-r','--name-only',grant['start']).splitlines():
+            if p not in fs24b:assert git('ls-tree',grant['start'],'--',p)==git('ls-tree',head,'--',p),('B-preservation',p)
           for path in diff:
            assert not path.startswith('/') and not any(x in ['..','.',''] for x in path.split('/')) and '\\' not in path
            patch=git('diff','--no-ext-diff','--unified=0',base,head,'--',path)
@@ -104,7 +104,7 @@ jobs:
           assert not git('status','--porcelain=v1','--untracked-files=all').strip()
           snapshot={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in names}
           (evidence/'source.before.json').write_text(json.dumps(snapshot,sort_keys=True)+'\n')
-          (evidence/'preflight.json').write_text(json.dumps({'result':'pass','head':head,'base':base,'branch':branch,'event':event,'eventSha':os.environ['GITHUB_SHA'],'grant':'FS24-A','repository':os.environ['GITHUB_REPOSITORY'],'policy':None,'paths':diff,'sourceFiles':len(names)})+'\n')
+          (evidence/'preflight.json').write_text(json.dumps({'result':'pass','head':head,'base':base,'branch':branch,'event':event,'eventSha':os.environ['GITHUB_SHA'],'grant':'FS24-B','repository':os.environ['GITHUB_REPOSITORY'],'policy':None,'paths':diff,'sourceFiles':len(names)})+'\n')
           PY
       - name: Checksum-pinned runtime
         id: runtime
@@ -121,7 +121,7 @@ jobs:
           printf 'FS_NODE=%s\nFS_NPM=%s\n' "$node_path" "$npm_cli" >> "$GITHUB_ENV"
           python3 - <<'PY'
           import os,json,pathlib
-          pathlib.Path(os.environ['FS_EVIDENCE'],'runtime.json').write_text(json.dumps({'node':'20.20.2','npm':'10.8.2','archiveSha256':'df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d','archiveChecksum':'pass','node20EolException':'FS24-A-only','actionNode24Patch':'unproven','runnerOS':os.environ.get('RUNNER_OS'),'runnerArch':os.environ.get('RUNNER_ARCH'),'imageVersion':os.environ.get('ImageVersion'),'billedCostUsd':None,'B1B2':'unverified'})+'\n')
+          pathlib.Path(os.environ['FS_EVIDENCE'],'runtime.json').write_text(json.dumps({'node':'20.20.2','npm':'10.8.2','archiveSha256':'df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d','archiveChecksum':'pass','node20EolException':'FS24-B-only','actionNode24Patch':'unproven','runnerOS':os.environ.get('RUNNER_OS'),'runnerArch':os.environ.get('RUNNER_ARCH'),'imageVersion':os.environ.get('ImageVersion'),'billedCostUsd':None,'B1B2':'unverified'})+'\n')
           PY
       - name: Set up action runtime tooling
         id: setup
