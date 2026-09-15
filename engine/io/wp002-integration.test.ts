@@ -1,11 +1,13 @@
+import { assertDataParent, assertReceiptCollision, assertRemoteBlob } from "./github-writer";
+import { assertFinalJobEvidence } from "./wp002-integration";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFileSync } from "node:child_process";
 import { readFileSync,readdirSync,writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { applyEntries, validateBatchInput, inspectMergeReceipt, repairIdentity, collectMergeReceipts, diagnoseMerge } from "./github-writer";
-import { GitHubTransport,digest,validateManifest } from "./github-transport";
-import { FS24R1, repairPolicy } from "../../scripts/guardrails/index";
-import { bundle } from "./wp002-integration";
+import { applyEntries, validateBatchInput, inspectMergeReceipt, repairIdentity, collectMergeReceipts, diagnoseMerge, validateSuccessorInput } from "./github-writer";
+import { GitHubTransport,digest,validateManifest,validateDispatchedRun } from "./github-transport";
+import { FS24R1, repairPolicy, FS24C, successorPolicy } from "../../scripts/guardrails/index";
+import { bundle, bundleC, producerOverlap } from "./wp002-integration";
 import { schemaChecker } from "./repo-store";
 
 async function main(){
@@ -41,7 +43,7 @@ async function main(){
  await test("R1-reject-wrong-base",()=>assert.throws(()=>repairIdentity([head,head,head],"tree","tree",marker),/R1-merge-checkpoint/));
  await test("R1-reject-tree",()=>assert.throws(()=>repairIdentity([head,FS24R1.base,head],"one","two",marker),/R1-merge-checkpoint/));
  await test("R1-reject-duplicate-marker",()=>assert.throws(()=>repairIdentity([head,FS24R1.base,head],"tree","tree",marker+"Fulcrum-Repair-PR: 13\n"),/R1-PR-marker/));
- await test("R1-real-candidate-policy",()=>assert.equal(repairPolicy(root,head).length,9));
+ await test("R1-real-candidate-policy",()=>assert.equal(repairPolicy(root,FS24C.historicalCandidate).length,9));
  await test("R1-reject-unmodified-base",()=>assert.throws(()=>repairPolicy(root,FS24R1.base),/R1-commit-count/));
  const fetchBefore=globalThis.fetch,logBefore=console.log;let frames:string[]=[];
  try {
@@ -89,7 +91,7 @@ async function main(){
  }finally{globalThis.fetch=versionFetch;console.log=versionLog;}
 
  // Execute the exact workflow summary rule, not a second TypeScript implementation.
- const workflow=readFileSync(join(root,".github/workflows/acceptance-wp002.yml"),"utf8");
+ const workflow=execFileSync("git",["-C",root,"show",FS24C.historicalCandidate+":.github/workflows/acceptance-wp002.yml"],{encoding:"utf8"});
  const rule=workflow.split("# FS24R1_REQUIRED_BEGIN\n")[1]?.split("# FS24R1_REQUIRED_END")[0];
  const summarySteps=Object.fromEntries(["preflight","runtime","setup","install","check","diagnostic","preservation","cleanup"].map(x=>[x,{outcome:"success"}]));
  for(const outcome of ["success","failure","skipped","missing"])await test("R1-summary-diagnostic-"+outcome,()=>{
@@ -123,6 +125,42 @@ async function main(){
   await test("api-outside-scope",()=>assert.rejects(()=>new GitHubTransport("fixture-token").json("/settings/x"),/ApiScope/));
   await test("dispatch-unlisted-workflow",()=>assert.rejects(()=>new GitHubTransport("fixture-token").dispatch("other.yml",{}),/DispatchScope/));
  }finally{globalThis.fetch=original;}
+ const successor=bundleC(root,head,"123","left");
+ await test("C-manifest-and-namespace",()=>{validateManifest(successor.manifest,successor.files);assert.equal(successor.manifest.grant,"FS24-C");assert.equal(successor.manifest.head,head);assert.ok(successor.files["log.jsonl"].includes("FS24-C:123:"));});
+ await test("C-policy-candidate",()=>assert.equal(successorPolicy(root,head).length,12));
+ const body={grant:"FS24-C" as const,batch:"123",code:head,producer:"left" as const,artifact:1,manifestHash:digest(successor.files["manifest.json"]),operation:"initial-left",cancelAfterPush:false};
+ const request={...body,requestId:digest(JSON.stringify(body))};
+ await test("C-input-valid",()=>validateSuccessorInput(request,false));
+ for(const [name,patch]of Object.entries({grant:{grant:"FS24-B"},digest:{requestId:"0".repeat(64)},code:{code:"bad"},producer:{producer:"right"},cancel:{cancelAfterPush:true},extra:{unexpected:true}}))await test("C-input-reject-"+name,()=>{const {requestId,...changed}={...request,...patch};assert.throws(()=>validateSuccessorInput({...changed,requestId:name==="digest"?requestId:digest(JSON.stringify(changed))} as typeof request,false));});
+ const indexBody={...body,operation:"reindex",artifact:0,manifestHash:"none"};
+ await test("C-reindex-input-valid",()=>validateSuccessorInput({...indexBody,requestId:digest(JSON.stringify(indexBody))},true));
+ await test("C-reindex-reject-artifact",()=>{const wrong={...indexBody,artifact:1};assert.throws(()=>validateSuccessorInput({...wrong,requestId:digest(JSON.stringify(wrong))},true));});
+ const pair=["left","right"].map((side,i)=>({id:i+1,name:"producer-"+side,status:"completed",conclusion:"success",started_at:"2026-09-15T00:00:00Z",completed_at:"2026-09-15T00:00:02Z"}));
+ await test("C-overlap-real-interval-rule",()=>assert.equal(producerOverlap(pair),true));
+ await test("C-serial-not-parallel",()=>assert.equal(producerOverlap([pair[0],{...pair[1],started_at:"2026-09-15T00:00:03Z",completed_at:"2026-09-15T00:00:05Z"}]),false));
+ await test("C-missing-producer",()=>assert.equal(producerOverlap(pair.slice(0,1)),false));
+ const rid="1".repeat(64),runValue={id:4,head_sha:head,event:"workflow_dispatch",head_branch:"main",path:".github/workflows/ci.yml",status:"completed",conclusion:"success",run_attempt:1,display_title:"FS24-C "+rid,repository:{full_name:"HungQuach301/fulcrum-studio"},head_repository:{full_name:"HungQuach301/fulcrum-studio"}};
+ await test("C-dispatch-binding",()=>validateDispatchedRun(runValue,4,"ci.yml",rid));
+ for(const [name,patch]of Object.entries({event:{event:"push"},attempt:{run_attempt:2},title:{display_title:"other"},branch:{head_branch:"wp/002"},repo:{repository:{full_name:"outside"}},path:{path:".github/workflows/other.yml"}}))await test("C-dispatch-reject-"+name,()=>assert.throws(()=>validateDispatchedRun({...runValue,...patch},4,"ci.yml",rid)));
+ const savedFetch=globalThis.fetch,savedLog=console.log;
+ try {
+   console.log=()=>{};
+   await test("C-pagination-over-100",async()=>{let count=0;globalThis.fetch=async()=>{count++;return new Response(JSON.stringify({total_count:101,workflow_runs:Array.from({length:count===1?100:1},(_,i)=>({id:count===1?i+1:101}))}),{status:200});};assert.equal((await new GitHubTransport("fixture-token").page("/actions/runs","workflow_runs")).length,101);assert.equal(count,2);});
+   await test("C-pagination-duplicate",async()=>{globalThis.fetch=async()=>new Response(JSON.stringify({total_count:2,workflow_runs:[{id:1}]}),{status:200});await assert.rejects(()=>new GitHubTransport("fixture-token").page("/actions/runs","workflow_runs"),/PaginationDuplicate/);});
+   await test("C-pagination-incomplete",async()=>{globalThis.fetch=async()=>new Response(JSON.stringify({total_count:2,workflow_runs:[]}),{status:200});await assert.rejects(()=>new GitHubTransport("fixture-token").page("/actions/runs","workflow_runs"),/PaginationIncomplete/);});
+   await test("C-dispatch-200-run-id",async()=>{let count=0;globalThis.fetch=async()=>{count++;return new Response(JSON.stringify(count===1?{workflow_run_id:4,run_url:"https://api.github.com/repos/HungQuach301/fulcrum-studio/actions/runs/4",html_url:"https://github.com/HungQuach301/fulcrum-studio/actions/runs/4"}:runValue),{status:200});};assert.equal(await new GitHubTransport("fixture-token").dispatchC("ci.yml",{},rid),4);assert.equal(count,2);});
+   await test("C-dispatch-missing-ack-no-retry",async()=>{let count=0;globalThis.fetch=async()=>{count++;return new Response("",{status:200});};await assert.rejects(()=>new GitHubTransport("fixture-token").dispatchC("ci.yml",{},rid));assert.equal(count,1);});
+   await test("C-dispatch-403-once",async()=>{let count=0;globalThis.fetch=async()=>{count++;return new Response("{}",{status:403});};await assert.rejects(()=>new GitHubTransport("fixture-token").dispatchC("ci.yml",{},rid),/GitHubHTTP:403/);assert.equal(count,1);});
+ }finally{globalThis.fetch=savedFetch;console.log=savedLog;}
+ await test("C-data-foreign-parent",()=>assert.throws(()=>assertDataParent("next foreign","next","prior"),/C-data-parent/));
+ await test("C-data-multiple-parents",()=>assert.throws(()=>assertDataParent("next prior extra","next","prior"),/C-data-parent/));
+ await test("C-replay-manifest-collision",()=>assert.throws(()=>assertReceiptCollision("Input-Manifest: wrong\nArtifact-Id: 1",digest("expected"),1),/WriteIdCollision/));
+ await test("C-remote-content-mismatch",()=>assert.throws(()=>assertRemoteBlob({sha:head,encoding:"base64",size:3,content:Buffer.from("bad").toString("base64")},head,"good"),/RemoteContentReadbackMismatch/));
+ const evidenceFiles=Object.fromEntries(Object.entries({"preflight.json":{result:"pass"},"runtime.json":{archiveChecksum:"pass"},"preservation.json":{result:"pass"},"cleanup.json":{executionDataRemoved:true},"job-summary.json":{result:"success"},"commands.json":[{status:0}]}).map(([k,v])=>[k,Buffer.from(JSON.stringify(v))]));
+ const evidenceJob={id:1,name:"validate",status:"completed",conclusion:"success",steps:[{name:"Remove final report data",conclusion:"success"}]};
+ await test("C-required-cleanup-step-missing",()=>assert.throws(()=>assertFinalJobEvidence({...evidenceJob,steps:[]},"FS23_FINAL_REPORT_CLEANUP=pass;job=validate",evidenceFiles),/FinalCICleanup/));
+ await test("C-final-incomplete-json",()=>assert.throws(()=>assertFinalJobEvidence(evidenceJob,"FS23_FINAL_REPORT_CLEANUP=pass;job=validate",{...evidenceFiles,"commands.json":Buffer.from("[")})));
+ if(rows.length!==83||new Set(rows.map(x=>x.name)).size!==83)rows.push({name:"C-case-manifest-incomplete",result:"fail"});
  const report={result:rows.every(x=>x.result==="pass")?"pass":"fail",tests:rows.length,rows,networkFixturesOnly:true};
  if(process.env.FS_EVIDENCE)writeFileSync(join(process.env.FS_EVIDENCE,"integration-tests.json"),JSON.stringify(report,null,2)+"\n");
  console.log(JSON.stringify(report,null,2));process.exitCode=report.result==="pass"?0:1;complete=true;

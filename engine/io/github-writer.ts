@@ -5,11 +5,11 @@ import { join } from "node:path";
 import { schemaChecker, validateCommand, stateRecord, isStatePath, assertCommit } from "./repo-store";
 import { buildIndex } from "./reindex";
 import { GitSource, Schemas, Validator } from "../../scripts/validate";
-import { integrationPolicy, repairPolicy, FS24R1 } from "../../scripts/guardrails/index";
+import { integrationPolicy, repairPolicy, FS24R1, successorPolicy, FS24C } from "../../scripts/guardrails/index";
 import { GitHubTransport, Manifest, SOURCE, REPOSITORY, digest, emitFile, Run } from "./github-transport";
-import { bundle, git } from "./wp002-integration";
+import { bundleC as bundle, git } from "./wp002-integration";
 
-export interface BatchInput { batch: string; code: string; producer: "left" | "right"; artifact: number; manifestHash: string; operation: string; cancelAfterPush?: boolean; }
+export interface BatchInput { grant?:"FS24-C"; requestId?:string; batch: string; code: string; producer: "left" | "right"; artifact: number; manifestHash: string; operation: string; cancelAfterPush?: boolean; }
 export interface Receipt { writeId: string; commit: string; parent: string; tree: string; duplicate: boolean; paths: Record<string,{blob:string;sha256:string;bytes:number}>; }
 export const operationNames=["initial-left","initial-right","update-one","update-two","pending","side-effect","invalid-state","logs-left","logs-right"];
 export function validateBatchInput(value:BatchInput):void {
@@ -111,6 +111,83 @@ export async function admittedCode(root:string,code:string,batch:string,api:GitH
   const msg=git(root,"show","-s","--format=%B",code);
   if(!msg.split("\n").includes("Fulcrum-Grant: FS24-B")||!msg.split("\n").includes("Fulcrum-Phase: integration-bootstrap"))throw new Error("MergeGrant");
 }
+export function activationIdentity(root:string,code:string) {
+  assertCommit(code);
+  const parts=git(root,"rev-list","--parents","-n","1",code).split(" ");
+  if(parts.length!==3||parts[1]!==FS24C.base||git(root,"rev-parse",code+"^{tree}")!==git(root,"rev-parse",parts[2]+"^{tree}"))throw new Error("C-merge");
+  successorPolicy(root,parts[2]);
+  const message=git(root,"show","-s","--format=%B",code);
+  for(const [key,value]of [["Grant","FS24-C"],["Phase","integration-bootstrap"]])if(message.split("\n").filter(x=>x.startsWith("Fulcrum-"+key+": ")).join("\n")!=="Fulcrum-"+key+": "+value)throw new Error("C-merge-trailer");
+  const rows=message.split("\n").filter(x=>x.startsWith("Fulcrum-Integration-PR: "));
+  if(rows.length!==1||!/^Fulcrum-Integration-PR: [1-9][0-9]*$/.test(rows[0]))throw new Error("C-merge-PR");
+  const number=Number(rows[0].split(": ")[1]);if(!Number.isSafeInteger(number)||number<=13)throw new Error("C-old-PR");
+  return {number,merge:code,head:parts[2],branch:"wp/002"};
+}
+export async function successorReceipts(root:string,code:string,api:GitHubTransport,merged:boolean) {
+  const expected:ReceiptExpectation[]=[{number:12,merge:FS24R1.base,head:FS24R1.historicalHead,branch:"wp/002"},{number:13,merge:FS24C.base,head:FS24C.historicalCandidate,branch:"wp/002"}];
+  if(git(root,"rev-list","--parents","-n","1",FS24R1.base)!==[FS24R1.base,SOURCE,FS24R1.historicalHead].join(" ")||git(root,"rev-list","--parents","-n","1",FS24C.base)!==[FS24C.base,FS24R1.base,FS24C.historicalCandidate].join(" "))throw new Error("C-history");
+  if(merged)expected.push(activationIdentity(root,code));else successorPolicy(root,code);
+  const labels=["merge-history","merge-repair","merge-activation"];
+  const results=await Promise.allSettled(expected.map(async (x,i)=>inspectMergeReceipt(await api.mergeReceipt(x.number,labels[i]),x)));
+  emitFile("c-merge-outcomes.json",Buffer.from(JSON.stringify(results)+"\n"));
+  if(results.some(x=>x.status!=="fulfilled"||!x.value.pass))throw new Error("C-MergeReceipt");
+}
+export async function admittedSuccessor(root:string,code:string,batch:string,api:GitHubTransport):Promise<void> {
+  activationIdentity(root,code);
+  if(!/^[1-9][0-9]*$/.test(batch))throw new Error("C-batch");
+  const run=await api.json<Run>("/actions/runs/"+batch);
+  if(run.head_sha!==code||run.event!=="workflow_run"||run.head_branch!=="main"||run.run_attempt!==1||run.path!==".github/workflows/acceptance-wp002.yml")throw new Error("C-controller");
+  await successorReceipts(root,code,api,true);
+}
+export function validateSuccessorInput(input:BatchInput,reindex:boolean):void {
+  if(input.grant!=="FS24-C"||typeof input.requestId!=="string")throw new Error("C-input-grant");
+  const {requestId,...body}=input;
+  if(digest(JSON.stringify(body))!==requestId)throw new Error("C-request-digest");
+  if(Object.keys(input).some(x=>!["grant","requestId","batch","code","producer","artifact","manifestHash","operation","cancelAfterPush"].includes(x)))throw new Error("C-input-extra");
+  if(typeof input.cancelAfterPush!=="boolean")throw new Error("C-cancel-type");
+  if(!reindex){validateBatchInput(input);return;}
+  assertCommit(input.code);
+  if(!/^[1-9][0-9]*$/.test(input.batch)||input.operation!=="reindex"||input.producer!=="left"||input.artifact!==0||input.manifestHash!=="none"||input.cancelAfterPush)throw new Error("C-reindex-input");
+}
+export function assertDataParent(actual:string,sha:string,previous:string):void {
+  if(actual!==sha+" "+previous)throw new Error("C-data-parent");
+}
+export function assertReceiptCollision(message:string,hash:string,artifact:number):void {
+  if(!message.split("\n").includes("Input-Manifest: "+hash)||!message.split("\n").includes("Artifact-Id: "+artifact))throw new Error("WriteIdCollision");
+}
+export function assertRemoteBlob(blob:{sha:string;encoding:string;size:number;content:string},expectedSha:string,content:string):void {
+  const bytes=Buffer.from(blob.content.replace(/\s/g,""),"base64");
+  if(blob.sha!==expectedSha||blob.encoding!=="base64"||blob.size!==bytes.length||!bytes.equals(Buffer.from(content)))throw new Error("RemoteContentReadbackMismatch");
+}
+export function successorChain(root:string,code:string,head:string,batch:string):string[] {
+  git(root,"merge-base","--is-ancestor",code,head);
+  const chain=git(root,"rev-list","--reverse",code+".."+head).split("\n").filter(Boolean);
+  if(chain.length>9)throw new Error("C-data-cap");
+  const seen=new Set<string>();let previous=code;
+  for(const sha of chain) {
+    assertDataParent(git(root,"rev-list","--parents","-n","1",sha),sha,previous);
+    const lines=git(root,"show","-s","--format=%B",sha).split("\n");
+    const field=(name:string)=>{const rows=lines.filter(x=>x.startsWith(name+": "));if(rows.length!==1)throw new Error("C-data-trailer");return rows[0].slice(name.length+2);};
+    if(field("Fulcrum-Grant")!=="FS24-C"||field("FS24-C-Batch")!==batch)throw new Error("ExternalMainChange");
+    const writeId=field("Write-Id"),op=writeId.slice(("FS24-C:"+batch+":").length);
+    if(!writeId.startsWith("FS24-C:"+batch+":")||seen.has(writeId)||![...operationNames.filter(x=>x!=="invalid-state"),"reindex"].includes(op))throw new Error("C-data-write-id");seen.add(writeId);
+    const producer=op.endsWith("right")?"right":"left",value=bundle(root,code,batch,producer);
+    const operation=value.manifest.operations.find(x=>x.name===op);
+    const paths=op==="reindex"?["pipeline/state.json"]:operation!.entries.map(x=>x.path);
+    const actual=git(root,"diff","--name-only",previous,sha).split("\n").filter(Boolean);
+    if(JSON.stringify([...actual].sort())!==JSON.stringify([...paths].sort())||JSON.stringify(JSON.parse(field("Write-Paths")))!==JSON.stringify(paths))throw new Error("C-data-paths");
+    for(const path of paths)if(git(root,"ls-tree",sha,"--",path).split(" ")[0]!=="100644")throw new Error("C-data-mode");
+    if(op!=="reindex") {
+      if(field("Input-Manifest")!==digest(value.files["manifest.json"])||!/^\d+$/.test(field("Artifact-Id")))throw new Error("C-data-manifest");
+      for(const entry of operation!.entries) {
+        const before=contentAt(root,previous,entry.path)??"",after=contentAt(root,sha,entry.path);
+        if(after!==(entry.mode==="append"?before:"")+value.files[entry.name])throw new Error("C-data-content");
+      }
+    } else if(sha!==head)throw new Error("C-index-not-final");
+    previous=sha;
+  }
+  return chain;
+}
 function authEnv():NodeJS.ProcessEnv {
   const token=process.env.GH_TOKEN;if(!token)throw new Error("MissingGitToken");
   return {...process.env,GIT_TERMINAL_PROMPT:"0",GIT_CONFIG_COUNT:"1",GIT_CONFIG_KEY_0:"http.https://github.com/.extraheader",GIT_CONFIG_VALUE_0:"AUTHORIZATION: basic "+Buffer.from("x-access-token:"+token).toString("base64"),GIT_AUTHOR_NAME:"github-actions[bot]",GIT_AUTHOR_EMAIL:"41898282+github-actions[bot]@users.noreply.github.com",GIT_COMMITTER_NAME:"github-actions[bot]",GIT_COMMITTER_EMAIL:"41898282+github-actions[bot]@users.noreply.github.com"};
@@ -128,10 +205,11 @@ function receipt(root:string,commit:string,writeId:string,duplicate:boolean):Rec
   }))};
 }
 export async function writeBatch(root:string,input:BatchInput,api:GitHubTransport,reindex=false):Promise<Receipt> {
+  validateSuccessorInput(input,reindex);
   if(!reindex)validateBatchInput(input);
   else if(input.operation!=="reindex"||process.env.GITHUB_WORKFLOW!=="WP-002 Reindex")throw new Error("OnlyReindexMayWriteIndex");
-  await admittedCode(root,input.code,input.batch,api);
-  const writeId="FS24-B:"+input.batch+":"+input.operation;
+  await admittedSuccessor(root,input.code,input.batch,api);
+  const writeId="FS24-C:"+input.batch+":"+input.operation;
   const generated=bundle(root,input.code,input.batch,input.producer);
   const {operations,...expected}=generated.manifest;
   if(!reindex&&digest(generated.files["manifest.json"])!==input.manifestHash)throw new Error("ApprovedProducerManifestMismatch");
@@ -142,15 +220,16 @@ export async function writeBatch(root:string,input:BatchInput,api:GitHubTranspor
   for(let attempt=1;attempt<=5;attempt++) {
     execFileSync("git",["-C",root,"fetch","--no-tags","origin","main"],{env:authEnv(),stdio:["ignore","pipe","pipe"]});
     const head=git(root,"rev-parse","FETCH_HEAD");git(root,"merge-base","--is-ancestor",input.code,head);
-    const chain=git(root,"rev-list","--reverse",input.code+".."+head).split("\n").filter(Boolean);
+    const chain=successorChain(root,input.code,head,input.batch);
     if(chain.length>9)throw new Error("DataCommitCap");
     for(const sha of chain) {
       const text=git(root,"show","-s","--format=%B",sha);
-      if(!text.split("\n").includes("FS24-B-Batch: "+input.batch))throw new Error("ExternalMainChange");
+      if(!text.split("\n").includes("FS24-C-Batch: "+input.batch))throw new Error("ExternalMainChange");
       if(git(root,"diff-tree","--no-commit-id","--name-only","-r",sha).split("\n").some(p=>!allowed.includes(p)))throw new Error("DataScopeHistory");
       if(text.split("\n").includes("Write-Id: "+writeId)) {
-        if(!reindex&&(!text.split("\n").includes("Input-Manifest: "+input.manifestHash)||!text.split("\n").includes("Artifact-Id: "+input.artifact)))throw new Error("WriteIdCollision");
-        return receipt(root,sha,writeId,true);
+        if(!reindex)assertReceiptCollision(text,input.manifestHash,input.artifact);
+        const existing=receipt(root,sha,writeId,true);
+        emitFile("write-receipt.json",Buffer.from(JSON.stringify({input,result:existing})+"\n"));return existing;
       }
     }
     if(chain.length>=9)throw new Error("DataCommitCap");
@@ -172,7 +251,7 @@ export async function writeBatch(root:string,input:BatchInput,api:GitHubTranspor
       run(["read-tree",head]);
       for(const [path,content]of Object.entries(updates)){const blob=run(["hash-object","-w","--stdin"],content);run(["update-index","--add","--cacheinfo","100644,"+blob+","+path]);}
       const tree=run(["write-tree"]);
-      const message="FS24-B synthetic integration write\n\nFulcrum-Grant: FS24-B\nFS24-B-Batch: "+input.batch+"\nWrite-Id: "+writeId+"\nInput-Manifest: "+input.manifestHash+"\nArtifact-Id: "+input.artifact+"\nWrite-Paths: "+JSON.stringify(Object.keys(updates))+"\n";
+      const message="FS24-C synthetic integration write\n\nFulcrum-Grant: FS24-C\nFS24-C-Batch: "+input.batch+"\nWrite-Id: "+writeId+"\nInput-Manifest: "+input.manifestHash+"\nArtifact-Id: "+input.artifact+"\nWrite-Paths: "+JSON.stringify(Object.keys(updates))+"\n";
       const commit=run(["commit-tree",tree,"-p",head],message);
       // Validate the complete candidate tree, with owner-approved frozen mappings, before push.
       const source=new GitSource(root,commit),v=new Validator(source,new Schemas(source),ids.map(episodeId=>({episodeId,commit:SOURCE}))).run();
@@ -189,7 +268,11 @@ export async function writeBatch(root:string,input:BatchInput,api:GitHubTranspor
       const ref=await api.json<{object:{sha:string}}>("/git/ref/heads/main");
       if(ref.object.sha!==commit)throw new Error("MainReadbackMismatch");
       const result=receipt(root,commit,writeId,false);
-      for(const [path,content]of Object.entries(updates))if(result.paths[path].sha256!==digest(content))throw new Error("ContentReadbackMismatch");
+      for(const [path,content]of Object.entries(updates)) {
+        const blob=await api.json<{sha:string;encoding:string;size:number;content:string}>("/git/blobs/"+result.paths[path].blob);
+        assertRemoteBlob(blob,result.paths[path].blob,content);
+        emitFile("remote-"+blob.sha+".json",Buffer.from(content));
+      }
       emitFile("write-receipt.json",Buffer.from(JSON.stringify({input,result,validation:v})+"\n"));
       return result;
     } finally {rmSync(directory,{recursive:true,force:true});}
@@ -197,10 +280,13 @@ export async function writeBatch(root:string,input:BatchInput,api:GitHubTranspor
   throw new Error("CASExhausted");
 }
 async function main(){
-  if(process.env.GITHUB_REPOSITORY!==REPOSITORY||process.env.GITHUB_RUN_ATTEMPT!=="1")throw new Error("RuntimeIdentity");
+  if(process.env.GITHUB_REPOSITORY!==REPOSITORY||process.env.GITHUB_RUN_ATTEMPT!=="1"||process.env.FS_GRANT!=="FS24-C")throw new Error("RuntimeIdentity");
   const input=JSON.parse(process.env.FS24_INPUT!) as BatchInput,api=new GitHubTransport(process.env.GH_TOKEN!);
   const result=await writeBatch(process.env.GITHUB_WORKSPACE!,input,api,process.argv[2]==="reindex");
   console.log("FS24B_RECEIPT\t"+JSON.stringify(result));
-  if(input.operation==="side-effect"&&input.cancelAfterPush&&!result.duplicate){await api.cancelOwnRun(process.env.GITHUB_RUN_ID!);setInterval(()=>console.log("FS24B_CANCEL_AWAIT_PLATFORM"),10000);}
+  if(input.operation==="side-effect"&&input.cancelAfterPush&&!result.duplicate){await api.cancelC(process.env.GITHUB_RUN_ID!);setInterval(()=>console.log("FS24B_CANCEL_AWAIT_PLATFORM"),10000);}
 }
-if(require.main===module)main().catch(error=>{console.error("FS24B_WRITE_ERROR\t"+String(error));process.exitCode=1;});
+if(require.main===module)main().catch(async error=>{
+  emitFile("write-error.json",Buffer.from(JSON.stringify({input:JSON.parse(process.env.FS24_INPUT??"{}"),error:String(error)})+"\n"));
+  console.error("FS24B_WRITE_ERROR\t"+String(error));process.exitCode=1;
+});

@@ -12,10 +12,10 @@ export const POLICY = "76aae91e0bd415176e102136a11449791e4ecc7e";
 export const digest = (bytes: string | Buffer) => createHash("sha256").update(bytes).digest("hex");
 export interface Entry { name: string; path: string; schema: string; mode: "replace" | "append"; bytes: number; sha256: string; }
 export interface Operation { name: string; episodeId: string; entries: Entry[]; }
-export interface Manifest { grant: "FS24-B"; repository: string; run: string; attempt: string; head: string; tree: string; producer: string; artifactName: string; operations: Operation[]; }
+export interface Manifest { grant: "FS24-B" | "FS24-C"; repository: string; run: string; attempt: string; head: string; tree: string; producer: string; artifactName: string; operations: Operation[]; }
 export interface ArtifactMeta { id: number; name: string; expired: boolean; digest?: string; workflow_run: { id: number; head_sha: string }; }
-export interface Run { id: number; head_sha: string; event: string; head_branch: string; path: string; status: string; conclusion: string | null; run_attempt: number; }
-export interface Job { id: number; name: string; status: string; conclusion: string | null; }
+export interface Run { display_title?: string; repository?: {full_name:string}; head_repository?: {full_name:string}; id: number; head_sha: string; event: string; head_branch: string; path: string; status: string; conclusion: string | null; run_attempt: number; }
+export interface Job { steps?:Array<{name:string;conclusion:string|null}>; started_at?:string; completed_at?:string; run_id?:number; run_attempt?:number; id: number; name: string; status: string; conclusion: string | null; }
 
 /** Authenticated calls are confined to this repository. Redirect destinations never receive the token. */
 export class GitHubTransport {
@@ -36,7 +36,7 @@ export class GitHubTransport {
   async json<T>(path: string): Promise<T> { return await (await this.request(path)).json() as T; }
 
   async mergeReceipt(number:number,label:string):Promise<unknown> {
-    if(!Number.isSafeInteger(number)||number<1||!/^merge-(history|repair)$/.test(label))throw new Error("MergeReceiptScope");
+    if(!Number.isSafeInteger(number)||number<1||!/^merge-(history|repair|activation)$/.test(label))throw new Error("MergeReceiptScope");
     let raw:Buffer|undefined;
     await this.request("/pulls/"+number,"GET",undefined,async response=>{
       const chunks:Buffer[]=[];let size=0;
@@ -54,6 +54,46 @@ export class GitHubTransport {
     catch{throw new Error("MergeReceiptInvalidJSON");}
   }
 
+  async control(path:string,method:string,body:unknown,label:string):Promise<{status:number;raw:Buffer}> {
+    let raw=Buffer.alloc(0),status=0;
+    await this.request(path,method,body,async response=>{
+      status=response.status;const chunks:Buffer[]=[];let size=0;
+      let capped=false;
+      if(response.body)for await(const chunk of response.body as unknown as AsyncIterable<Uint8Array>){size+=chunk.length;if(size>1024*1024){chunks.push(Buffer.from(chunk).subarray(0,Math.max(0,1024*1024-(size-chunk.length))));capped=true;break;}chunks.push(Buffer.from(chunk));}
+      raw=Buffer.concat(chunks);
+      emitFile(label+"-raw.json",raw);
+      emitFile(label+"-metadata.json",Buffer.from(JSON.stringify({method,path,status,request:body,requestDigest:digest(JSON.stringify(body)??""),capped,requestedApiVersion:"2026-03-10",selectedApiVersion:response.headers.get("x-github-api-version-selected"),requestId:response.headers.get("x-github-request-id"),bytes:raw.length,sha256:digest(raw)})+"\n"));
+      if(capped)throw new Error("ControlResponseCap");
+    });
+    return {status,raw};
+  }
+  async dispatchC(workflow:string,inputs:Record<string,string>,requestId:string):Promise<number> {
+    if(!["commit-artifacts.yml","reindex.yml","ci.yml"].includes(workflow)||!/^[a-f0-9]{64}$/.test(requestId))throw new Error("DispatchScope");
+    const response=await this.control("/actions/workflows/"+workflow+"/dispatches","POST",{ref:"main",inputs},"dispatch-"+requestId);
+    if(response.status!==200)throw new Error("DispatchStatusDoNotRetry");
+    const body=JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(response.raw)) as {workflow_run_id:number;run_url:string;html_url:string};
+    if(!Number.isSafeInteger(body.workflow_run_id)||body.workflow_run_id<1||body.run_url!=="https://api.github.com/repos/"+REPOSITORY+"/actions/runs/"+body.workflow_run_id||body.html_url!=="https://github.com/"+REPOSITORY+"/actions/runs/"+body.workflow_run_id)throw new Error("DispatchReceiptMissingDoNotRetry");
+    const run=await this.json<Run>("/actions/runs/"+body.workflow_run_id);
+    validateDispatchedRun(run,body.workflow_run_id,workflow,requestId);
+    emitFile("dispatch-"+requestId+"-bound.json",Buffer.from(JSON.stringify(run)+"\n"));return body.workflow_run_id;
+  }
+  async page<T extends {id:number}>(path:string,key:string):Promise<T[]> {
+    const rows:T[]=[];const ids=new Set<number>();let total:number|undefined;
+    for(let page=1;;page++) {
+      const body=await this.json<Record<string,unknown>>(path+(path.includes("?")?"&":"?")+"per_page=100&page="+page);
+      if(!Number.isSafeInteger(body.total_count)||Number(body.total_count)<0||!Array.isArray(body[key]))throw new Error("PaginationShape");
+      if(total===undefined)total=Number(body.total_count);else if(total!==body.total_count)throw new Error("PaginationChanged");
+      const batch=body[key] as T[];
+      for(const row of batch){if(!Number.isSafeInteger(row.id)||ids.has(row.id))throw new Error("PaginationDuplicate");ids.add(row.id);rows.push(row);}
+      if(rows.length===total)return rows;
+      if(!batch.length||rows.length>total)throw new Error("PaginationIncomplete");
+    }
+  }
+  async cancelC(run:string):Promise<void> {
+    if(run!==process.env.GITHUB_RUN_ID||process.env.FS24_OPERATION!=="side-effect"||process.env.FS_GRANT!=="FS24-C")throw new Error("CancelScope");
+    const response=await this.control("/actions/runs/"+run+"/cancel","POST",undefined,"cancel-"+run);
+    if(response.status!==202)throw new Error("CancelStatusDoNotRetry");
+  }
   async dispatch(workflow: string, inputs: Record<string,string>): Promise<number> {
     if (!["commit-artifacts.yml","reindex.yml","ci.yml"].includes(workflow)) throw new Error("DispatchScope");
     const response=await this.request("/actions/workflows/"+workflow+"/dispatches","POST",{ref:"main",inputs});
@@ -96,7 +136,18 @@ export class GitHubTransport {
     if(!Number.isSafeInteger(id)||id<=0||!/^[a-f0-9]{64}$/.test(expectedManifestHash)) throw new Error("ArtifactIdentity");
     const meta=await this.json<ArtifactMeta>("/actions/artifacts/"+id);
     if(meta.id!==id||meta.expired||meta.name!==expected.artifactName||meta.workflow_run.id!==Number(expected.run)||meta.workflow_run.head_sha!==expected.head) throw new Error("ArtifactMetadataMismatch");
+    if(expected.grant==="FS24-C") {
+      const run=await this.json<Run>("/actions/runs/"+expected.run);
+      const jobs=await this.page<Job>("/actions/runs/"+expected.run+"/jobs","jobs");
+      const name=expected.producer==="foundation"?"foundation":"producer-"+expected.producer;
+      const producer=jobs.filter(x=>x.name===name);
+      if(run.run_attempt!==1||run.head_sha!==expected.head||run.path!==".github/workflows/acceptance-wp002.yml"||producer.length!==1||!["in_progress","completed"].includes(producer[0].status)||producer[0].status==="completed"&&producer[0].conclusion!=="success")throw new Error("ArtifactProducerJob");
+      if(expected.producer==="foundation"?!["push","pull_request"].includes(run.event)||run.head_branch!=="wp/002":run.event!=="workflow_run"||run.head_branch!=="main")throw new Error("ArtifactProducerEvent");
+      emitFile("artifact-"+id+"-producer.json",Buffer.from(JSON.stringify({run,job:producer[0],expected})+"\n"));
+    }
     const bytes=await this.bytes("/actions/artifacts/"+id+"/zip",2*1024*1024);
+    emitFile("artifact-"+id+"-original.zip",bytes);
+    emitFile("artifact-"+id+"-metadata.json",Buffer.from(JSON.stringify(meta)+"\n"));
     if(meta.digest && meta.digest!=="sha256:"+digest(bytes)) throw new Error("ArtifactZipDigestMismatch");
     mkdirSync(directory,{recursive:true});const zip=join(directory,"original.zip");writeFileSync(zip,bytes,{flag:"wx"});
     const result=spawnSync("python3",["-c",ZIP_READER,zip],{encoding:"utf8",maxBuffer:4*1024*1024});
@@ -107,13 +158,13 @@ export class GitHubTransport {
     for(const key of Object.keys(expected) as Array<keyof typeof expected>) if(manifest[key]!==expected[key]) throw new Error("ManifestIdentity:"+key);
     validateManifest(manifest,entries);
     writeFileSync(join(directory,"receipt.json"),JSON.stringify({metadata:meta,zipBytes:bytes.length,zipSha256:digest(bytes),upstreamZipDigest:meta.digest??null,manifestSha256:expectedManifestHash,expected,crc:"pass",members:Object.keys(entries)},null,2)+"\n");
-    for(const name of ["original.zip","receipt.json"]) emitFile("artifact-"+id+"-"+name,readFileSync(join(directory,name)));
+    for(const name of ["receipt.json"]) emitFile("artifact-"+id+"-"+name,readFileSync(join(directory,name)));
     return {manifest,files:entries,metadata:meta};
   }
 }
 export function validateManifest(manifest: Manifest, files: Record<string,string>): void {
   assertCommit(manifest.head);assertCommit(manifest.tree);
-  if(manifest.grant!=="FS24-B"||manifest.repository!==REPOSITORY||manifest.attempt!=="1"||!/^\d+$/.test(manifest.run)) throw new Error("ManifestGrant");
+  if(!["FS24-B","FS24-C"].includes(manifest.grant)||manifest.repository!==REPOSITORY||manifest.attempt!=="1"||!/^\d+$/.test(manifest.run)) throw new Error("ManifestGrant");
   const declared=new Set(["manifest.json"]), operations=new Set<string>();
   for(const operation of manifest.operations) {
     if(!/^[a-z][a-z0-9-]+$/.test(operation.name)||operations.has(operation.name)||!operation.entries.length) throw new Error("ManifestOperation");operations.add(operation.name);
@@ -145,3 +196,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
   out[x.filename]=z.read(x).decode('utf-8')
 print(json.dumps(out))
 `;
+
+export function validateDispatchedRun(run:Run,id:number,workflow:string,requestId:string):void {
+  if(run.id!==id||run.run_attempt!==1||run.event!=="workflow_dispatch"||run.head_branch!=="main"||run.path!==".github/workflows/"+workflow||run.display_title!=="FS24-C "+requestId||run.repository?.full_name!==REPOSITORY||run.head_repository?.full_name!==REPOSITORY)throw new Error("DispatchRunBinding");
+}
