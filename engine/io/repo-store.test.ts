@@ -13,6 +13,10 @@ import { buildIndex } from "./reindex";
 
 const check = schemaChecker(readdirSync("engine/contracts").filter(x => x.endsWith(".schema.json"))
   .map(name => JSON.parse(readFileSync(join("engine/contracts", name), "utf8"))));
+// The fixture's duration is sourced from the existing contract, not an Engine content constant.
+const runLogSchema = JSON.parse(readFileSync("engine/contracts/run-log.schema.json", "utf8")) as {
+  properties: { durationMs: { minimum: number } }
+};
 const stamp = "2026-09-15T00:00:00.000Z";
 const channel = "fixture-channel";
 const episode = (name: string) => "2026-09-" + name;
@@ -20,7 +24,7 @@ const pathFor = (name: string) => "episodes/" + channel + "/" + episode(name) + 
 const state = (name: string, revision = 1) => ({ episodeId: episode(name), channel,
   currentStage: "fixture", stageStatus: "pending", updatedAt: stamp, spendUsd: 0, versions: {}, revision });
 const line = (id: string) => ({ ts: stamp, runId: id, episodeId: episode("a"), stage: "fixture",
-  attempt: 1, verdict: "pass", durationMs: 0, costUsd: 0 });
+  attempt: 1, verdict: "pass", durationMs: runLogSchema.properties.durationMs.minimum, costUsd: 0 });
 function git(root: string, args: string[], input?: string, extra?: NodeJS.ProcessEnv): string {
   const r = spawnSync("git", ["-C", root, ...args], { encoding: "utf8", input,
     env: { ...process.env, GIT_AUTHOR_NAME: "Fixture", GIT_AUTHOR_EMAIL: "fixture@example.invalid",
@@ -116,11 +120,20 @@ async function withFixture(work: (f: ReturnType<typeof fixture>) => Promise<void
 async function concurrent(root: string, base: string, mode: string) {
   const tsx = process.env.FS_TSX;
   if (!tsx) throw new Error("MissingFixtureRuntime");
+  // Two producer processes submit to ONE writer queue, mirroring D-15's boundary.
+  // These are not two Actions jobs and IPC is not a production artifact transport.
+  const queuedWriter = new SerializedRepositoryWriter(new GitFixture(root), check);
   const workers = ["left", "right"].map(name => {
     const child = spawn(process.execPath, [tsx, __filename, "--worker", root, base, mode, name],
       { stdio: ["ignore", "pipe", "pipe", "ipc"], env: process.env });
     let out = "", err = "";
-    child.stdout.on("data", chunk => out += chunk); child.stderr.on("data", chunk => err += chunk);
+    child.stdout!.on("data", chunk => out += chunk); child.stderr!.on("data", chunk => err += chunk);
+    child.on("message", message => {
+      if (!message || typeof message !== "object" || !("rpc" in message)) return;
+      const call = message as { rpc: number; method: string; value: ArtifactRef | WriteCommand };
+      const result = call.method === "read" ? queuedWriter.read(call.value as ArtifactRef) : queuedWriter.submit(call.value as WriteCommand);
+      void result.then(value => child.send({ rpc: call.rpc, value }), error => child.send({ rpc: call.rpc, error: String(error) }));
+    });
     const ready = new Promise<void>((resolve, reject) => {
       child.once("message", message => message === "ready" ? resolve() : reject(new Error("WorkerProtocol")));
       child.once("error", reject); child.once("exit", code => reject(new Error("WorkerBeforeReady:" + code)));
@@ -134,7 +147,8 @@ async function concurrent(root: string, base: string, mode: string) {
   });
   try {
     await Promise.all(workers.map(w => w.ready)); workers.forEach(w => w.child.send("go"));
-    await Promise.all(workers.map(w => w.done)); proofs.push({ mode, workers: workers.map(w => w.output()), commonBase: base });
+    await Promise.all(workers.map(w => w.done)); proofs.push({ mode, writers: 1, producerProcesses: 2,
+      transport: "fixture-IPC-only", workers: workers.map(w => w.output()), commonBase: base });
   } finally {
     for (const worker of workers) if (worker.child.exitCode === null) worker.child.kill();
     await Promise.allSettled(workers.map(w => w.done));
@@ -142,7 +156,22 @@ async function concurrent(root: string, base: string, mode: string) {
 }
 async function worker() {
   const [root, base, mode, name] = process.argv.slice(3);
-  const store = new RepoStore(check, new SerializedRepositoryWriter(new GitFixture(root), check));
+  // Root is passed solely as fixture identity; only the parent writer accesses Git.
+  assert.ok(root);
+  let sequence = 0;
+  const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+  process.on("message", message => {
+    if (!message || typeof message !== "object" || !("rpc" in message)) return;
+    const result = message as { rpc: number; value?: unknown; error?: string };
+    const task = pending.get(result.rpc); if (!task) throw new Error("UnexpectedRPCReceipt");
+    pending.delete(result.rpc);
+    if (result.error) task.reject(new Error(result.error)); else task.resolve(result.value);
+  });
+  const rpc = (method: string, value: ArtifactRef | WriteCommand): Promise<unknown> => new Promise((resolve, reject) => {
+    const id = ++sequence; pending.set(id, { resolve, reject }); process.send?.({ rpc: id, method, value });
+  });
+  const store = new RepoStore(check, { read: async ref => await rpc("read", ref) as string,
+    submit: async command => await rpc("submit", command) as WriteReceipt });
   await new Promise<void>(resolve => { process.once("message", () => resolve()); process.send?.("ready"); });
   if (mode === "states") console.log(JSON.stringify(await store.write(request(base, name))));
   else for (let i = 0; i < 25; i++) console.log(JSON.stringify(await new RunLog(store, check).append(line(name + i), base, name + i)));
