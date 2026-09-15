@@ -985,3 +985,194 @@ R1 does not dispatch, cancel, upload/download Actions artifacts, call providers 
 Proposed fresh R1 allowance, effective only with owner approval: one policy plus up to three implementation commits, one new PR/conditional merge, at most 20 active workflow runs/64 job records and 12 skipped workflow records, zero dispatch/cancel/data commits/artifacts/provider calls. Count all push/PR/main/listener records, failures included. Reserve 5 USD is not a price or hard cap; actual billing remains unknown. No inheritance of unused B budget. Runtime exception is Ubuntu24.04, Node20.20.2/npm10.8.2 with archive SHA256 df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d and existing pinned actions/lockfile, npm ci ignore-scripts only in Actions. Retain Node20 EOL/action Node24 patch unknown, B1/B2/billing unknown, main protected=false and base race, no hard-stop USD and possible reserve overrun.
 
 The agent may fix errors inside the seven implementation paths before merge without asking per error. After merge it collects diagnosis/main CI and reports any delta; no second merge, code fix, rollback or old batch replay in this grant. No task/job/phase deadline or silence threshold. Preserve secret/schema/scanner checks, all historical pins, prior partial acceptances and WP002 todo. This infrastructure diagnosis is recorded in CI evidence, not fabricated as a production stage or charged provider run.
+
+
+## D-26 · FS24-C — bounded successor integration
+
+This offline policy proposal is executable only after an explicit owner grant of the pinned offline package. Preparing these bytes does not grant execution. Preserve D-01–D-25, all R1 pins and the missing original B response. The source plan is libfile_9804771d85948191bc9005a2a8543102, 6494579 bytes, SHA256 0d522b0555e1f0c7d3195cc372ed7079d3a3f3f7471c4039d99c0eb3d3f81bde. The incorporated scope, counters, gates and reduced guarantees below are normative when approved. Q has sole parent R; its two appended policy blobs freeze before implementation. No grant is inherited.
+
+## 4. Phạm vi và policy của gói FS24-C — đề nghị duyệt mới
+
+Tên FS24-C do báo cáo này đề nghị để phân biệt batch mới với B/R1. Một approval cho toàn §4–§8 sẽ cấp sửa–kiểm–thu trong phạm vi, không hỏi lại từng sửa nhỏ còn trong slot trước merge. **Lượt hiện tại chưa có approval đó.**
+
+Ba dòng D-14 cho activation:
+
+- Ràng buộc: D-25/WP002§9 quy định “The nine-file repair cannot activate A1–A9” và cần “a separate explicit delta”; chỉ dẫn hiện tại chưa cho repo/CI/dispatch/data/provider/ngân sách mới.
+- Bị chặn: không có entrypoint/backend/final CI/grant mới được admit; A3/A4 và D-15 cần dispatch/artifact thật, A4 cần cancel thật. Mock hoặc GET đọc-only không thể thay các bằng chứng ấy.
+- Thay đổi tối thiểu: append D-26 và WP002§10 cho đúng12path policy/code +6data path dưới đây, một batch sau PR mới, cap/ngoại lệ cụ thể ở §7–§8; chấp nhận bootstrap merge trước full E2E, quyền token repo-wide và chín data commits kiểm thử được giữ trên main. Không mở provider/sản xuất.
+
+### 4.1 Mười hai path policy/code
+
+| # | Path | Delta tối thiểu |
+|---|---|---|
+|1|`engine/docs/02-decisions.md`|Append D-26, giữ toàn bộ prefix D01–D25; ghi grant/lineage/scope/counters/ngoại lệ/gate|
+|2|`engine/ops/work-packages/WP-002-interfaces.md`|Append§10, giữ§1–§9/A1–A9, WPtodo và nghiệm thu riêng|
+|3|`.github/workflows/ci.yml`|Bootstrap mới, mọi preflight và final-dispatch gate, source mappings; không giảm4 jobs|
+|4|`scripts/guardrails/index.ts`|Policy checker mới pinR/Q, linear chain/scope/freeze; giữ B/R1 validators/pins|
+|5|`scripts/guardrails/guardrails.test.ts`|Ca âm policy/base/event/scope/lineage mới qua scanner production, giữ89case cũ|
+|6|`.github/workflows/acceptance-wp002.yml`|Foundation/prequalification + admission/producers/controller/report theo graph§5; raw/cleanup/completeness|
+|7|`engine/io/github-transport.ts`|Grant manifest mới, observer receipt activation, raw dispatch/cancel, request binding/pagination/ZIP receipts|
+|8|`engine/io/github-writer.ts`|AdmissionT, strict batch/reindex input, exact data chain/remote readback/duplicate evidence|
+|9|`engine/io/wp002-integration.ts`|Grant mới, hai producers độc lập, coordinator11 writers+reindex+finalCI, A1–A9 assertions/counters|
+|10|`engine/io/wp002-integration.test.ts`|Giữ50regressions R1, bind lịch sửC3 đúng nghĩa, thêm ca âm mới và thiếu chứng cứ|
+|11|`.github/workflows/commit-artifacts.yml`|Writer admission mới; giữ repo-write/cancel:false/queue:max, hai job write/cancel-test, quyền hẹp|
+|12|`.github/workflows/reindex.yml`|Reindex admission/input mới; giữ groupreindex cancel:true và jobrepo-write cancel:false/queue:max|
+
+Chỉ1–2 ở Q; **đóng băng byte/blob hai policy từ Q xuyên I1–I3/D/T/F**. “Giữ policy pins” nghĩa là giữ nguyên pins và bytes lịch sử ở N/S/P1/C3/R, không thay constantB/R1 thành pin mới. D-26 có pinsQ riêng, được lấy từ commit thực, không tự tham chiếu Q trong chính bytes tạo Q. Candidate check xác minh cả prefixR và blobQ, historical checker kiểm đúngC3/H chứ không đòi policy mới phải bằng policy cũ.
+
+Mười path3–12 là implementation/fix scope mới, mở rộng từ chín path R1 có lý doC01–C11. Không sửa `scope.ts`, `repo-store.ts`, `repo-store.test.ts`, `reindex.ts`, providers, contracts, package/lock, PROJECT/AGENTS/guardrails.md/DoD/backlog. Chúng vẫn được đọc/kiểm. Lỗi buộc sửa ngoài12path hoặc sau I3/sau merge → lưu delta tối thiểu, không tự mở scope.
+
+### 4.2 Sáu path runtime, chỉ sau gate activation
+
+| Path | Quyền |
+|---|---|
+|`episodes/us-personal-finance/2026-09-fs24-left/00-brief.json`|Writer replace nguyên file, fixture|
+|`episodes/us-personal-finance/2026-09-fs24-left/state.json`|Writer replace, schema/revision/pending gates|
+|`episodes/us-personal-finance/2026-09-fs24-right/00-brief.json`|Writer replace nguyên file, fixture|
+|`episodes/us-personal-finance/2026-09-fs24-right/state.json`|Writer replace, schema/revision gates|
+|`pipeline/runs.jsonl`|Writer append đúng50 dòng mới, prefix bất biến|
+|`pipeline/state.json`|Chỉ reindex, từ states ở SHA trước index commit|
+
+Hai episode mapping đều **N**. Đọc limits/pillar/layout/version từ N, không tự tạo giá trị nội dung pack. Các trường human/approvedBy trong fixture schema không là Gate1 nội dung. Dữ liệu phải đánh dấu synthetic; không provider, publish hoặc kích hoạt stage sản xuất. RunId/writeId/manifest namespaceFS24-C:batch, không trùng B; pending marker dùng cùng namespace. 50 dòng có costUsd0 cho mock/provider0; không dùng chúng tuyên bố Actions miễn phí, billing infra báo riêng unknown.
+
+## 5. Trình tự sửa–kiểm–thu có điều kiện
+
+### 5.1 Trước merge
+
+1. Đọc checkpoint R/treeR/C3/PR12/13 và đủ ledger89 trước mọi ghi. Nếu delta nguồn ngoài gói, báo chính xác và chỉ chặn phần phụ thuộc; không tự chuyển base. Tự chuẩn bị diff local/candidate-manifest trước ghi, kiểm bytes, scope, prefix/pins, YAML/shell/Python; không chạy project ở Codex. Đây là công việc chỉ được làm sau approval execution của gói, chưa làm trong review này.
+2. Q sole parentR trên wp/002; vì C3 là parentR, fast-forward branch trực tiếp C3→Q, không ref trung gianR, không force/delete. Q chỉ hai policy. Đọc lại parent/tree/policy bytes/ledger. CI cũ có thể rejectQ vì baseR không nằm trong B/R1; giữ failure thật, không rerun hoặc gọi Qpass. D-26 được commit trước code, và được kiểm trong gates candidate mới trước acceptance.
+3. I1 triển khai đầy đủ route mới nhưng chỉ candidate prequalification trên push/PR; mở **một PR Draft mới ngay sau I1**, baseR. I2/I3 chỉ sửa trước merge nếu còn slots. Mỗi lần ghi xác minh expected prior branch/main, exact parent/tree/scope/frozenQ và cập nhật ledger. Không gộp/quên push+PR là hai sự kiện.
+4. Candidate cuốiD: CI push vàPR có đủ validate/typecheck/guardrails/report success; foundation/test/prequalification và report đều đạt ở **đúngD**. Không dùng bằng chứng I1 để nghiệm thu I2/I3. Thu raw output đầy đủ trước kết luận: commands/exit/stdout/stderr, structured tests đủ rows/noincomplete, CI report, runtime/preservation/cleanup, artifact transport và receipt lịch sửPR12/13. Main vẫnR và chưa có runtime writes.
+5. Quyền Ready/merge chỉ cho PR mới, tối đa một lần mỗi hành động, nếu được owner duyệt trong gói. Trước Ready và trước merge: GET lại mainR/headD/basePR/state/ledger/jobs; tự review diff cuối và mọi gate; PRbody báo cáo5mục. Merge_method=merge/expected_head=D; T phải parents[R,D], treeD, một trailer GrantFS24-C/Phaseintegration-bootstrap/Integration-PR số thực. Ack thiếu thì GET đối chiếu, không gọi merge lần2. Không gọi PR12/13.
+
+### 5.2 Graph workflow đề nghị để chốt counters
+
+`ci.yml` vẫn4job. `acceptance-wp002.yml` mới có **đúng6 job records**: `foundation`, `admit`, `producer-left`, `producer-right`, `controller`, `report`.
+
+- Pushwp002/PRopened,synchronize: foundation chạy tests + một upload/receive prequalification; report kiểm kết quả; bốn job còn lại skipped. Không dispatch/data. Preflight policy/source/secret thành công trước cài/chạy tests. Giữ explicit completeness/cleanup, không suy exit0 là pass.
+- Sau mergeT: push-mainCI4job phải success; listener `workflow_run` kiểm đúng cause pathCI/eventpush/main/head T/attempt 1/all4 jobs, exact new merge/grant và current main T. Admit job đọc-only thu **ba receipt** PR12/S/H, PR13/R/C3, PR mới/T/D độc lập với labels không đè file; local lineage/policy/scope phải đạt trước GET. Aggregate fail giữ toàn bộ outcome. Foundation skipped. Admit fail thì không producer/dispatch; report ghi fail với raw/meta.
+- Hai producers chỉ chạy sau admit; mỗi job dùng code T/source N, tạo/upload/receive artifact của chính mình rồi kết thúc. Ghi base T, job ID/attempt, payload/hash, started/completed thật. Controller cần cả hai success và bằng chứng khoảng thực thi giao nhau để nhận là hai producers song song; nếu nền tảng chỉ xếp tuần tự, không tự tuyên bố A1/A6pass hoặc dispatch dữ liệu. Không dùng barrier chờ job thứ hai vô hạn để che thiếu concurrency; không timeout/im-lặngSTOP.
+- Controller chỉ sau hai producer: kiểm lạiT và tất cả prequalification, reserve đủ slots cho **toàn bộ đuôi batch** trước first dispatch. Dispatch hai initial writers đồng thời từ hai manifest cùng source/base T; D-15 tuần tự hóa push nên latest-parent của writer thứ hai có thể làD1. Không đòi hai push đồng thời hoặc suy FIFO từ thời điểm dispatch.
+- Controller điều phối các bước§6; report dùng `always()` có điều kiện event đã admit/candidate thực, phân biệt expected failed/cancelled writer với infrastructure failure. FinalCI dispatch không được mở controller lần nữa: toàn bộ6 jobs listener tương ứng skipped, ghi record nếu GitHub tạo. Không activate trên arbitrary push-main, event/attempt khác, oldgrant hoặc replaycontroller.
+
+Graph này là **thiết kế đề nghị**, chưa có YAML mới được kiểm hoặc chạy. Job count/cap ở§7 ràng buộc implementation; thay graph phải tính lại trước ghi, không đẩy chênh lệch vào “không đáng kể”. Không cần workflow/file thứ13.
+
+### 5.3 Hợp đồng API, token, provenance
+
+GET receipt giữ pin **2022-11-28**, mở riêng label `merge-activation` bên cạnh history/repair; giữ observer2022 chỉ cho GET `/pulls/<positive number>`, default khác2026-03-10. Raw response → metadata → UTF8/JSON parse → field checks; độc lập expected.number/merged/mergeSHA/headSHA/headbranch/repos/basebranch và kiểm base SHA trong admission mới. Không fallbackSHA, không null hóa raw absent, không raw từ GET trễ thay response lỗi. Cap1MiB/no retry403 được giữ; vượtcap ghi truncation/error đúng thực tế, không nói đã có full raw.
+
+POST dispatch giữ2026-03-10: tài liệu hiện tại xác định HTTP200 có workflow_run_id và URLs. Mỗi POST chỉ một lần, emit metadata/request digest/raw trước parse, kiểm positive safeID và URL đúngrepo, sau đó GET run/job bind event/path/attempt/head_branch và eventSHA. Body rỗng/malformed/HTTP error/mấtack → unknown/fail-closed, đọc ledger để đối soát request identity, không tự POST lại. Không thêm fallback2022 hoặc dò version. [GitHub dispatch2026](https://docs.github.com/en/rest/actions/workflows?apiVersion=2026-03-10#create-a-workflow-dispatch-event).
+
+Writer/reindex được dispatch refmain nhưng checkout **code T**; eventSHA của run có thể làDk vì main đã có data. Verify eventSHA nằm trong chain được admit, giữ cả eventSHA/codeSHA, không gán giả tất cả bằngT. Request mang grant/code/batch/producer/operation/artifactID/manifestHash/request digest; sốrun thực từAPI, không đoán. Sau unknown POST chỉ nhận candidate run nếu có đủ identity/evidence duy nhất; nếu thiếu giữunknown, không tạo batch mới.
+
+| Vai trò | Quyền đề nghị |
+|---|---|
+|CI/foundation/admit/report|contents:read; CI/foundation giữpull-requests:read khi cần PR; actions:read cho run/jobs/receipt/artifact. Không contentswrite/actionswrite|
+|Hai producers|contents:read, actions:read; upload qua runtime artifact token của job; không dispatch hoặc ghi repo|
+|Controller|contents:read, actions:write để dispatch13; không contentswrite. Cancel A4 do chính writer-cancel thực hiện|
+|Writer thường|contents:write, actions:read; chỉ sáu path qua code gate, không ghi index|
+|Writer-cancel|như writer +actions:write, chỉ một self-cancel A4 sau push/readback|
+|Reindex|contents:write, actions:read; chỉ index và chungrepo-write lock|
+
+Contentsread đã là một permission set hợp lệ cho GET PR; không tăng quyền vô cớ. Tokenwrite không được nền tảng hạn chế theo path; admission/schema/fullcandidate-validator/remote readback là bảo đảm bù, không thay thế branch protection. Không PAT/secret mới/OIDC/admin/settings.
+
+Writer `repo-write/cancel:false/queue:max`; reindex workflow `reindex/cancel:true`, job ghi index cùngrepo-write/cancel:false/queue:max. GitHub hỗ trợ queue:max tới100 pending, không kết hợp nó với cancel:true; thứ tự chờ khác thứ tựdispatch, do đó A2 dùng receipt barrier. [GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+
+## 6. A1–A9 và nghiệm thu thật
+
+Giữ nguyên chín ca WP002 dù số thứ tự cuối trong§6 gốc lặp2/3/4. Chuẩn hóa A7=50 logs, A8=reindex, A9invalid; không xóa/sửa ý nghĩa acceptance.
+
+| Ca | Thao tác mới sau activation | Bằng chứng bắt buộc / pass |
+|---|---|---|
+|A1|Hai producers cùngbase T; dispatch initial-left/right thành hai writer runs|Hai producerjob ID/attempt/overlap thật, code T/source N, manifest/artifactpins; haiwriter run ID và serialization thật; hai atomic commits brief+state khác tập; remote latest giữ cả hai|
+|A2|update-one, nhận xong rồi update-two cùngleft|Hai job riêng; job2 đọc revision2/commit trước và ghi revision3; parent chain/readback, không mất cập nhật|
+|A3|dispatch lại initial-left cùngwriteId/artifact/hash|success, duplicate=true, receiptcommit cũ, delta commit0; ca payload cùngID nhưngkhác hash bị reject trong regression|
+|A4|side-effect push/readback xong, self-cancel đúngrun; dispatch mới cùngwriteId sau terminalcancelled|Một POSTcancel cóstatus202/request ID, APIrun kết luậncancelled, rawreceipt đãemittrước cancel; replayrun attempt 1 khácID nhận receiptcũ/delta0. Không dùng rerun API hoặc mô phỏng thay cancel thật|
+|A5|pending revision4 → briefsideeffect thànhcông → invalidstate bịreject|Đọc state sau failure thấy pendingWriteId đúng batch, inspectEpisode incomplete; briefđãđổi nhưng không báo done; index cũng không công bốfalse done|
+|A6|Cùng cặp producers/initialwriters của A1, hai tập giả|Dùng lại cùng bằng chứng thực cho yêu cầu trùng, không cộng thêmdispatch hoặc giả thêmjob; cả hai states tồn tại vàschema-valid|
+|A7|Hai requests logleft/right,25 dòng mỗi batch|25+25runId đúngset50, unique, oldprefixnguyên byte,2 log commits; inputs từhai producers song song, pushquaD15serialized; không gọi serializedpush là đồng thờithực thi|
+|A8|Dispatch reindex sau mọiwriterterminal|Đọc đầyđủhai states tạiF^1, buildIndexđúngschema/domain/sort/pending/sourceCommit=F^1; chỉindex pathđổi ởF; so remote blobvàprojection độc lập; sourceCommit không tựtrỏF|
+|A9|invalid-state request trongA5|Run failure đúngSchemaRejected trướccommit, structurednegative report/schemaerrors vàmainbefore=after; khôngacceptbấtkỳfailurekhác như403 đểgọiâm pass|
+
+Một request sequence cố định: initial-left, initial-right (2); update-one, update-two (2); duplicateinitial-left (1); pending (1); side-effectcancel (1); replayside-effect (1); invalid-state (1); logs-left,logs-right (2) = **11 writer dispatch**. Reindex1,finalCI1 → **13 dispatch**. A4 tựcancel1 riêng, khôngcộngcancel thànhdispatch. Chín data commits: initial2 +update2 +pending1 +sideeffect1 +logs2 +index1. Duplicate/replay/invalid tạo0.
+
+CAS retry-with-rebase tối đa5 chỉ cho xungđột ref thật, không HTTP403/auth/networkerror. Commit chain phải single-parent exactprevious, không merge lén, đúng unique operation/writeId/grant/batch, mode/scope và không hơn9. Reindexinput kiểm đủcode/batch/run vàoperation, artifact sentinel riêng; writerindex path bịreject. Mỗiwrite validate toàn candidate trước push; GET remotecommit/ref/blob chứng minh đúngparent/tree/bytes/hash. Readbackkhác thì giữdelta, không rollback/dọnfixture.
+
+Gate regression trongActions: giữ50integration R1,26store,5registry,89guardrails hiện có; các ca lịch sửR1 dùngpin C3 thíchhợp. Thêm ca âm ít nhất cho newpolicyparent/count/freeze/prefix/outsidescope; N≠R≠T; PR12/13/newPR bindings; wronggrant/run/job/event/attempt/code/eventSHA; rawbeforeparse/HTTP403 once/malformed/capped; dispatch200receipt/missingack; ledger>100/paginationduplicate/missingpage; foreign/multi-parentdatacommit; replaycollision; invalidreindex input; remoteblobmismatch; missingrequiredstep/incompleteJSON; A1overlap và A5/A8projection. Checklist ca phải manifesttheoID, không chỉ “count≥50”; mọi case cũ và case mới được khai ở candidate phải córow thực, exit0/allpass/noincomplete. Số case mới chỉ chốt từ implementation thực, không bịa testcount đã chạy.
+
+Artifact prequalification phải **qua chính receive path sẽ dùng khi ghi**, mock tests không thay transport thật. Tối đa8 artifactmới:6candidate (mỗi I tối đahai push/PR) +2 producerT. Uploadpin `ea165f8d65b6e75b540449e92b4886f43607fa02`, retention1ngày, payloadgiảitối đa1MiB, ZIP2MiB. ID/digestupstream chỉ chốt khi trảvề. Tổng **17 receivesZIP**:6 prequalification +2 producerreadback +9writer nonduplicate (gồminvalidstate). Reindex/duplicate/replay không tảiZIP. Mỗi lần là một operationjobđã khai; cache received bytes trong CASattempt cùngjob. Không GET ZIP lịch sử, không downloadlại saulỗi, không uploadđểxóa failure. Artifactexpired/receiptthiếu → phầnphụ thuộcbịchặn, không táitạo batch từhồsơ.
+
+Receiver kiểmmetarepo/run/attempt/job/head/tree/name/id; manifest độc lập vàtừngmemberbytes/hash, upstreamdigestnếucó, CRC/duplicate/pathtraversal/link/encryption/unexpectedmember/UTF8, không execute payload. Emit nguyênZIPđãnhận +manifest +receipt, khôngzip lại payload. Token không đi theo signed redirect; không logsignedURL. Tài liệu API mô tả metadata/digest và GETarchive302; không chứng minh download thực của batchmới, điều đó phải qua prequalification. [GitHub artifactsAPI](https://docs.github.com/en/rest/actions/artifacts?apiVersion=2026-03-10).
+
+CancelA4: cần ngoại lệ mới đúngmột run của grantFS24-C sau push; response202 chỉ làack, vẫn cần APIterminalcancelled. Không force-cancel/cancelrunkhác. Giữbằng chứng trước cancel, thu cleanup outcomes thực saucancel; không bịa cleanupsuccess khi nền tảng ngắt step. Cleanupthiếu được báo đúng mức bảođảm, không tựcancel/rerun bổsung. [GitHub cancelAPI](https://docs.github.com/en/rest/actions/workflow-runs?apiVersion=2026-03-10#cancel-a-workflow-run).
+
+FinalCI phải dispatchđúngF sauindex vì tokenpush không tựsinh CIpush. Giữ4 jobs, eventdispatch thật, fullsource validation vớihai mapping N, scans/secret/contracts/policy/scope. ExpectedCI head F/current main F, code T/batch đúng. Thu ci-report nguyênvăn, rawlogs/frames/receiverpins/APIstatus/steps/cleanup. [GitHub token-trigger behavior](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+
+Nghiệm thu kỹ thuậtbatch chỉ khi A1–A9, final4 CI jobs, code/policypreservation và từngwrite đúng. Expectednegative1/cancelled1 vẫn giữconclusion thật. **WP002không tựdone:** DoD§8owner đọc báo cáo/checkpoint và§9backlog chưa được cấp trong gói; ghi technical pass/ownerAcceptance pending/WP002 todo. Providerregistry test mock không làproviderproductionacceptance. Gói khép lại bằngbáo cáo5mục và toàn bộ lịch sử failure; nếu fail sauT khôngcodefix/sửa data/merge thêm trong gói.
+
+## 7. CI, ngân sách và điều kiện giảm quyền — đề nghị, chưa cấp
+
+### 7.1 Mô hình đếm, một policy + tối đa ba implementation
+
+| Nguồn sự kiện | Active workflows | Job records trong active | Artifact mới |
+|---|---:|---:|---:|
+|Q push, PR chưa mở: CI cũ4 +acceptanceR1 cũ3|2|7|0|
+|I1 push và PRopened: mỗi sựkiện CI4 +acceptance mới6|4|20|2|
+|I2 push và PRsynchronize, nếu cần|4|20|2|
+|I3 push và PRsynchronize, nếu cần|4|20|2|
+|MergeT push-mainCI|1|4|0|
+|Listener/controllerT,6 jobs gồmfoundation skipped|1|6|2|
+|11 writer workflows, mỗi workflow2 job gồm1skipped|11|22|0|
+|Reindex|1|1|0|
+|FinalCI dispatch|1|4|0|
+|**Tổng mô hình khi dùng đủI1–I3**|**29**|**104**|**8**|
+
+Không giả Q xanh; record failure vẫnactive. Tính skippedjobnội bộ trong6/2 ngay cảkhikhôngthực thi. Skippedworkflows riêng:Hai workflow FS22 chỉ nhận `synchronize`, không nhận `opened`: I2/I3 tạo tối đa 4 skipped records; final CI listener không admit thêm 1 → **5 workflow records**. Jobs riêng dự kiến 4 FS22 + 6 listener = 10. Khi đó ledger 89→123 (29+5 mới); tổng job mọi workflow mới theo mô hình là 114=104+10. Nếu GitHub không tạo một skippedrecord thì báo số thực, không dựngrecord cho khớpmôhình.
+
+**Cap đề nghị:34active /120job records trongactive /12skipped workflow records.** Buffer 5 active /16 job /7 skipped chỉ hấp thụ record thực khônglườngtrước, không cấp quyền rerun hoặc dispatchthêm. Không coi1commit=1CI; khôngtrừfailure/cancelled/negative khỏicap. Đếm toànrepo từbaseline89, dedupe ID/attempt và phântrang đầyđủ; record nguồn ngoàigói phải báo delta, không tựcoi nó thuộcquota gói. Sau mỗi ref/PR/merge/dispatch đọc ledger trước hànhđộng chủđộng tiếp; main vàeventcurrentraces phảiđượcđối soát.
+
+Trước mergeT phải còn đủđuôi **15active/37job** (mainCI1/4 +listener1/6 +writer11/22 +reindex1/1 +finalCI1/4), cùngrecord skipped dựkiến; trướclầndispatchđầu phải giữ12writer/reindexruns vàfinalCI tươngứng trongcap. Nếu không đủ, không tạo tác vụ mới; tiếp tụcthu/lưuresult đã chạy. Hếtcapkhôngđồngnghĩacancelrun đang chạy.
+
+| Loại quyền | Cap mới đề nghị |
+|---|---|
+|Policy /implementation|1Q +tối đa3I; freeze Q; khôngfixsau merge|
+|PR /Ready /merge|1PR mới, Ready1 vàmerge1 cóđiều kiện; khôngPR12/13|
+|Activation batch|1 trênT sauadmission/CI, khôngreplayB/R1|
+|Dispatch /cancel|13 dispatch đúngsequence;1self-cancelA4;rerun0/forcecancel0|
+|Data commits|tối đa9, đúng6paths; không dọn/xóa fixtures|
+|Artifacts /ZIPreceives|8newobjects /17 receivescórole; khônghistoricalZIP/retrydownload|
+|Provider /settings /credentials /dependency|0 /0 /0 /0|
+|Reserve đề nghị|**20USD mới cho FS24-C**, chưa cấp; không lấy từB/R1|
+
+20USD là khoản **dự phòng được đề nghị chọn**, không là báo giá, modelUSD từ runtime, actual cost hoặc hardcap. Có môhình sốrun/job cụthể ởtrên nhưng B1/B2, billingphút/quota/credit/actual USD chưa đủ, nên không suy29run=bao nhiêuUSD hoặc actual≤20. R1 reserve 5 USD đã duyệt không làsốdư. TổngR1 observed1279giây/41executedjob chỉ là elapsed seconds, khôngbilled minutes. Không truycập billing tài khoản/dựánkhác đểđoán.
+
+### 7.2 Runtime và bảo đảm giảm phải được duyệt riêng choFS24-C
+
+Giữ Ubuntu24.04; Node20.20.2/npm10.8.2; archiveSHA256 `df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d`; checkout `34e114876b0b11c390a56381ad16ebd13914f8d5`; setup-node `49933ea5288caeca8642d1e84afbd3f7d6820020`; upload pin§6; package/lock bấtbiến, `npm ci --ignore-scripts` chỉActions. Không tựnâng/hạdependency hoặccredential đểquagate.
+
+Owner cần duyệt lại phạm vi ngoại lệ choFS24-C: Node20 EOL/action Node24 patch unproven; B1/B2/billing unknown; mainprotected=false/base-race; tokenwrite repo-scoped khôngpath-scoped; bootstrapmerge trướcA1–A9thật; hai tậpgiả/50 log/index ởmain được giữ; có thểvượtreserve vì khônghardUSDstop; cancellation cóthểngắtcleanup. Bù bằngchecksum/exactlock/preflightread-only beforecode, strictsource/policy/transaction scope, serialization+CAS, đủ raw/remote readback và cấmrộngquyền khi fail. R1 đãchấpnhận cácngoại lệ đó choR1 không tựđộngcấp chúng cho gói mới.
+
+Khôngdeadline task/job/phase, không timeouttựđặt hoặcngưỡng im lặnggây STOP. Giới hạnpayload,caprun/commit,5CASconflictattempt vàđiều kiện correctness không phải deadline. Polling10giây đểđọc trạngthái không làthờihạn; sựchậmkhông tựtạofailure/cancel. Nếu nền tảng/jobchờ lâu, tiếp tụcthu/truyvết/trạngthái vàbàn giaođúngrun ID, không dùngimlặng làlýdo dừng.
+
+## 8. Blocker, phạm vi bảo lưu và quyết định cần duyệt
+
+| Blocker / chưa biết | Cách xử lý tối thiểu |
+|---|---|
+|Chưa có grantFS24-C|Ownerduyệt toàn§4–§8 hoặc giữreadonly; chưa động tới repo/CI/ngân sách|
+|BindingsC01–C11 chưa sửa/kiểm|Triểnkhai đúng12path trongQ+I1–I3; staticreview/pins vàActions gates trướcReady;không sửa2YAML rồiactivate|
+|Chưa có PR mới/Q/D/T/pins artifact|Lấy từreceipt thực đúng giai đoạn, pinreadback; không đoán hoặc yêu cầuownerđiền SHA|
+|Artifact/cancel chưa được duyệt mới|Không thể nghiệm thuD15/A4bằngmock; đềnghị đúng8objects/17 receive/1 cancel; nếuownerkhôngduyệt giữA1–A9phầnphụ thuộc chưađạt|
+|Ledger>100 / capđuôibatch|Phântrang đầyđủ; chốt counter trướcghi/merge/dispatch, reserveđuôi15/37 trước merge|
+|Concurrentjobcapacity chưa biết|Đọc jobtimestamps/overlap thật trongproducerprequalification; khôngclaimparallel nếuserial, không ghi data khi gate nàythiếu|
+|OriginalresponseB missing|Giữmissing. Không dựng, tảiZIPcũ, replayB hoặc gọi lạiPR12/13 để“chứngminh”nguyênnhân|
+|HTTP403/ackmất/digestmismatch/nguồnngoàigói|Ghi raw/meta/knownstate; đọc GETđối soát antoàn, không retry403/blindPOST/đổi token; dừngphầnphụ thuộc và trìnhdelta cụthể|
+|Fail sauT / cầnpaththứ13 hoặcI4|Lưu exactfile/bytes/response/patchđềnghịtối thiểu; cần grant mới. Khôngrollback, codefixdatafixhoặcmerge thêmtrong gói|
+|DoDclosure/billing/runtime chưa đủ|Technicalreport riêng, WP002 todo; ownerđọc/xácnhận cuối; backlogdone vàmọi ngân sáchkhác cầnquyềnriêng|
+
+Giữnguyên nghiệm thuriêng WP000/WP001/manifest11nguồn/chuỗihồsơ; ZIPgốc6634470/SHA256`14ab6b95c34521d7093eb4b8b5204977bee9a8b7a7662dd1eb771db6e94e9ae1`, ZIP lệch4098646/SHA256`caa92c00ada3f8fd22c154c49d54dcbc349f2cfcc3cc0615fd2547ecef529e74`; STOP lịch sử, timeout120s/exit124,HTTP403,missingZIPrun7,packingdelta32.021giây. Khôngtái kiểm/dựngphầnthiếu. P1failure/C1incomplete/C1–C2HTTP200thiếu merge_commit_sha giữđúnglịch sử; khônggọi response2026 cófieldabsent làrawJSONnull. C3/Rreceipt2022thànhcông khôngxácđịnhnguyênnhân batchB thiếuresponse.
+
+Giữci-reportR nguyênvăn kểcả `error=fatal: Not a valid commit name 0000000000000000000000000000000000000000`, ownerAcceptance pending/billingunknown. Không dùngdònglịch sửđó phủnhận4jobRđãpass, cũngkhông xóanó. Khôngrequestsupport, rollback, sửa settings/credential/dependency, provider hoặc sảnxuất.
+
+**Quyết định đề nghị một lần:** duyệt §4–§8 (12code/policy paths +6runtime paths;Q+≤3I;PR mới/Readymergecóđiều kiện;34/120/12;13 dispatch/1 self-cancel/9 data/8 artifact/17 receives;reserve 20 USD vàngoại lệđã khai). Mọi khả năng này vẫnpending; không thể diễn giải yêu cầu lập kế hoạch hiện tại thành approval. Nếu muốn reviewdiff trước cấpCI, câu giao việc giới hạn có sẵn ở§9.
+
+

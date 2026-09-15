@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { decode } from "../../scripts/ci-report";
 import { GitSource, Schemas, frozen } from "../../scripts/validate";
 import { GitHubTransport, Manifest, Operation, Entry, SOURCE, REPOSITORY, digest, emitFile, Run, Job } from "./github-transport";
 
@@ -38,97 +39,169 @@ export function bundle(root:string,head:string,run:string,producer:string):{mani
   files["manifest.json"]=JSON.stringify(manifest)+"\n";
   return {manifest,files};
 }
-async function main() {
-  const mode=process.argv[2],root=process.env.GITHUB_WORKSPACE!,head=process.env.FS_HEAD!,run=process.env.GITHUB_RUN_ID!,dir=process.env.TASK_ROOT!;
-  if(process.env.GITHUB_REPOSITORY!==REPOSITORY||process.env.GITHUB_RUN_ATTEMPT!=="1") throw new Error("RuntimeIdentity");
-  if(mode==="diagnose-history"||mode==="diagnose-repair") {
-    const api=new GitHubTransport(process.env.GH_TOKEN!);
-    if(mode==="diagnose-repair") {
-      const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH!,"utf8")) as {workflow_run:Run};
-      const cause=event.workflow_run;
-      if(process.env.GITHUB_EVENT_NAME!=="workflow_run"||cause.event!=="push"||cause.head_branch!=="main"||cause.head_sha!==head||cause.conclusion!=="success"||cause.run_attempt!==1||cause.path!==".github/workflows/ci.yml")throw new Error("DiagnosticTriggerIdentity");
-      const current=await api.json<Run>("/actions/runs/"+run);
-      if(current.head_sha!==head||current.event!=="workflow_run"||current.head_branch!=="main"||current.run_attempt!==1||current.path!==".github/workflows/acceptance-wp002.yml")throw new Error("DiagnosticRunIdentity");
-      const jobs=await api.json<{jobs:Job[]}>("/actions/runs/"+cause.id+"/jobs?per_page=100");
-      if(jobs.jobs.length!==4||jobs.jobs.some(x=>x.conclusion!=="success")||["validate","typecheck","guardrails","report"].some(name=>!jobs.jobs.some(x=>x.name===name)))throw new Error("DiagnosticMainCI");
-      emitFile("r1-trigger.json",Buffer.from(JSON.stringify({cause,current,jobs})+"\n"));
-    }
-    const {diagnoseMerge}=await import("./github-writer");
-    await diagnoseMerge(root,head,api,mode==="diagnose-repair");return;
-  }
-  const producer=process.env.FS_PRODUCER??"foundation";
-  const value=bundle(root,head,run,producer);
-  const api=new GitHubTransport(process.env.GH_TOKEN!);
-  if(mode==="admit") {
-    const {admittedCode}=await import("./github-writer");await admittedCode(root,head,run,api);
-    const ref=await api.json<{object:{sha:string}}>("/git/ref/heads/main");if(ref.object.sha!==head)throw new Error("InitialMainCheckpoint");
-    const ledger=await api.json<{total_count:number;workflow_runs:Run[]}>("/actions/runs?per_page=100");
-    const same=ledger.workflow_runs.filter(x=>x.head_sha===head&&x.event==="workflow_run"&&x.path===".github/workflows/acceptance-wp002.yml");
-    if(same.length!==1||same[0].id!==Number(run))throw new Error("OneBatchOnly");
-    writeFileSync(process.env.GITHUB_OUTPUT!,"code="+head+"\nbatch="+run+"\n",{flag:"a"});
-    emitFile("admission.json",Buffer.from(JSON.stringify({head,run,ledgerTotal:ledger.total_count,controller:same[0]})+"\n"));return;
-  }
-  if(mode==="prepare") {
-    const dest=join(dir,"handoff");mkdirSync(dest,{recursive:true});
-    for(const [name,content]of Object.entries(value.files))writeFileSync(join(dest,name),content);
-    writeFileSync(process.env.GITHUB_OUTPUT!,"artifact_name="+value.manifest.artifactName+"\nmanifest_hash="+digest(value.files["manifest.json"])+"\n",{flag:"a"});
-    emitFile("producer-manifest.json",Buffer.from(value.files["manifest.json"]));
-  } else if(mode==="receive") {
-    const {operations,...expected}=value.manifest;
-    const got=await api.artifact(Number(process.env.FS_ARTIFACT_ID),expected,digest(value.files["manifest.json"]),join(dir,"artifact-received"));
-    for(const [name,content]of Object.entries(value.files))if(got.files[name]!==content)throw new Error("ProducerReceiverMismatch");
-    writeFileSync(join(process.env.FS_EVIDENCE!,"artifact-prequalification.json"),JSON.stringify({result:"pass",artifactId:got.metadata.id,head,run,manifestHash:digest(value.files["manifest.json"]),payloadHashAgreement:true,originalZipRetainedInFrames:true})+"\n");
-  } else if(mode==="producer-dispatch") {
-    const input={batch:run,code:head,producer,artifact:Number(process.env.FS_ARTIFACT_ID),manifestHash:digest(value.files["manifest.json"]),operation:"initial-"+producer};
-    const id=await api.dispatch("commit-artifacts.yml",{request:JSON.stringify(input)});
-    writeFileSync(process.env.GITHUB_OUTPUT!,"writer_run="+id+"\nartifact="+input.artifact+"\nmanifest_hash="+input.manifestHash+"\n",{flag:"a"});
-  } else if(mode==="controller") {
-    const {admittedCode}=await import("./github-writer");await admittedCode(root,head,run,api);
-    const results:Array<{name:string;run:Run;receipt:unknown}>=[];let dispatches=2;
-    const complete=async(name:string,id:number,expected="success")=>{
-      const finished=await api.wait(id);if(finished.conclusion!==expected)throw new Error("UnexpectedConclusion:"+name+":"+finished.conclusion);
-      const jobs=await api.json<{jobs:Job[]}>("/actions/runs/"+id+"/jobs?per_page=100");const active=jobs.jobs.filter(x=>x.conclusion!=="skipped");if(active.length!==1||jobs.jobs.length>2)throw new Error("WriterJobCount");
-      const log=(await api.bytes("/actions/jobs/"+active[0].id+"/logs",16*1024*1024)).toString("utf8");
-      const line=log.split("\n").find(x=>x.includes("FS24B_RECEIPT\t{"));
-      const receipt=line?JSON.parse(line.slice(line.indexOf("FS24B_RECEIPT\t")+"FS24B_RECEIPT\t".length)):null;
-      if(expected!=="failure"&&!receipt)throw new Error("MissingWriteReceipt");
-      if(expected==="failure"&&(!log.includes("FS24B_WRITE_ERROR\tError: SchemaRejected")||receipt))throw new Error("WrongNegativeFailure");
-      results.push({name,run:finished,receipt});return receipt;
-    };
-    const input=(operation:string,side="left")=>({batch:run,code:head,producer:side,artifact:Number(process.env[side==="left"?"FS_LEFT_ARTIFACT":"FS_RIGHT_ARTIFACT"]),manifestHash:process.env[side==="left"?"FS_LEFT_HASH":"FS_RIGHT_HASH"]!,operation});
-    const dispatch=async(operation:string,side="left",expected="success")=>{
-      if(++dispatches>13)throw new Error("DispatchCap");
-      const id=await api.dispatch("commit-artifacts.yml",{request:JSON.stringify({...input(operation,side),cancelAfterPush:expected==="cancelled"})});return complete(operation,id,expected);
-    };
-    await Promise.all([complete("initial-left",Number(process.env.FS_LEFT_RUN)),complete("initial-right",Number(process.env.FS_RIGHT_RUN))]);
-    await dispatch("update-one");await dispatch("update-two");
-    const duplicate=await dispatch("initial-left");if(!duplicate.duplicate)throw new Error("DuplicateCreatedCommit");
-    await dispatch("pending");await dispatch("side-effect","left","cancelled");
-    const replay=await dispatch("side-effect");if(!replay.duplicate)throw new Error("ReplayCreatedCommit");
-    await dispatch("invalid-state","left","failure");
-    await Promise.all([dispatch("logs-left"),dispatch("logs-right","right")]);
-    const reindex=await api.dispatch("reindex.yml",{request:JSON.stringify({...input("reindex"),artifact:0,manifestHash:"none"})});dispatches++;
-    const indexReceipt=await complete("reindex",reindex);
-    const final=indexReceipt.commit as string;
-    const ci=await api.dispatch("ci.yml",{expected_head:final,code:head,batch:run});dispatches++;
-    if(dispatches!==13)throw new Error("DispatchAccounting");
-    const finished=await api.wait(ci);if(finished.conclusion!=="success")throw new Error("FinalCIFailed:"+ci);
-    const jobs=await api.json<{jobs:Job[]}>("/actions/runs/"+ci+"/jobs?per_page=100");
-    if(jobs.jobs.length!==4||jobs.jobs.some(x=>x.conclusion!=="success"))throw new Error("FinalCIJobs");
-    const ref=await api.json<{object:{sha:string}}>("/git/ref/heads/main");if(ref.object.sha!==final)throw new Error("FinalMainChanged");
-    // Read the final immutable state through GitHub blob objects, independently of writer memory.
-    execFileSync("git",["-C",root,"fetch","origin","main"],{stdio:["ignore","pipe","pipe"]});
-    const chain=git(root,"rev-list",head+".."+final).split("\n");if(chain.length!==9)throw new Error("ExpectedNineDataCommits");
-    const expectedLogs=[...bundle(root,head,run,"left").files["log.jsonl"].trimEnd().split("\n"),...bundle(root,head,run,"right").files["log.jsonl"].trimEnd().split("\n")];
-    const log=git(root,"show",final+":pipeline/runs.jsonl").split("\n");
-    const actual=log.filter(x=>{try{return String(JSON.parse(x).runId).startsWith("FS24-B:"+run+":");}catch{return false;}});
-    if(actual.length!==50||new Set(actual).size!==50||actual.some(x=>!expectedLogs.includes(x)))throw new Error("LogCoverage");
-    const left=bundle(root,head,run,"left").manifest.operations[0].episodeId;
-    const state=JSON.parse(git(root,"show",final+":episodes/"+left+"/state.json"));
-    if(!state.pendingSideEffects?.length||state.revision!==4)throw new Error("IncompleteStateLost");
-    const report={result:"pass",head,final,dispatches,dataCommits:chain.length,logs:actual.length,results,finalCI:finished,finalJobs:jobs.jobs,providerCalls:0,billedCostUsd:null};
-    emitFile("integration-result.json",Buffer.from(JSON.stringify(report,null,2)+"\n"));
-    writeFileSync(process.env.GITHUB_OUTPUT!,"final="+final+"\nci="+ci+"\n",{flag:"a"});
-  } else throw new Error("ModeNotEnabled");
+
+export function bundleC(root:string,head:string,run:string,producer:string):{manifest:Manifest;files:Record<string,string>} {
+  const original=bundle(root,head,run,producer);
+  const files=Object.fromEntries(Object.entries(original.files).map(([name,value])=>[name,value.replaceAll("FS24-B","FS24-C")]));
+  const manifest=JSON.parse(files["manifest.json"]) as Manifest;
+  for(const operation of manifest.operations)for(const entry of operation.entries){entry.bytes=Buffer.byteLength(files[entry.name]);entry.sha256=digest(files[entry.name]);}
+  files["manifest.json"]=JSON.stringify(manifest)+"\n";
+  return {manifest,files};
 }
-if(require.main===module)main().catch(error=>{console.error(String(error));process.exitCode=1;});
+const BASELINE_RUN_IDS = new Set([34734791059, 34745712444, 34749424709, 34749424828, 34759038401, 34759038403, 34790828977, 34790828987, 34795793642, 34795793655, 34798068618, 34798068682, 34808858643, 34808858709, 34863629511, 34863629601, 34864087242, 34864087333, 34865172614, 34865172653, 34870077092, 34870085137, 34870085388, 34870085788, 34870940791, 34870944912, 34870945056, 34870945083, 34909664874, 34909667551, 34909667555, 34909667630, 34910005926, 34912383147, 34912383152, 34912433593, 34912433645, 34912820884, 34912820933, 34912823869, 34912823888, 34912823895, 34912823984, 34914967307, 34914967331, 34914970395, 34914970402, 34914970410, 34914970412, 34915303539, 34915303620, 34915305780, 34915305795, 34915305817, 34915305857, 34915744253, 34915744275, 34915746751, 34915746761, 34915746782, 34915746797, 34916588767, 34916588850, 34916590974, 34916590992, 34916591007, 34916591042, 34917008266, 34917114566, 34935147662, 34935147664, 34935527327, 34935527465, 34935591875, 34935591900, 34936135089, 34936135252, 34936138841, 34936138853, 34936138877, 34936138932, 34949189116, 34949189178, 34949192768, 34949192808, 34949192835, 34949192872, 34949738566, 34949898351]);
+
+export function producerOverlap(jobs:Job[]):boolean {
+  const pair=["producer-left","producer-right"].map(name=>jobs.filter(x=>x.name===name));
+  if(pair.some(x=>x.length!==1||x[0].conclusion!=="success"))return false;
+  const intervals=pair.map(([x])=>[Date.parse(x.started_at??""),Date.parse(x.completed_at??"")]);
+  return intervals.every(x=>x.every(Number.isFinite)&&x[0]<x[1])&&Math.max(...intervals.map(x=>x[0]))<Math.min(...intervals.map(x=>x[1]));
+}
+export function assertFinalJobEvidence(job:Job,text:string,files:Record<string,Buffer>):void {
+  if(!text.includes("FS23_FINAL_REPORT_CLEANUP=pass;job="+job.name)||!job.steps?.some(x=>x.name==="Remove final report data"&&x.conclusion==="success"))throw new Error("FinalCICleanup");
+  for(const name of ["preflight.json","runtime.json","preservation.json","cleanup.json","job-summary.json","commands.json"])if(!files[name])throw new Error("FinalCIEvidenceMissing:"+name);
+  const commands=JSON.parse(files["commands.json"].toString());
+  if(JSON.parse(files["job-summary.json"].toString()).result!=="success"||!Array.isArray(commands)||!commands.length||commands.some((x:{status:number})=>x.status!==0))throw new Error("FinalCICommandEvidence");
+  if(JSON.parse(files["preflight.json"].toString()).result!=="pass"||JSON.parse(files["preservation.json"].toString()).result!=="pass"||JSON.parse(files["cleanup.json"].toString()).executionDataRemoved!==true||JSON.parse(files["runtime.json"].toString()).archiveChecksum!=="pass")throw new Error("FinalCIStaticEvidence");
+}
+async function mainC() {
+  const mode=process.argv[2],root=process.env.GITHUB_WORKSPACE!,head=process.env.FS_HEAD!,run=process.env.GITHUB_RUN_ID!,dir=process.env.TASK_ROOT!;
+  if(process.env.GITHUB_REPOSITORY!==REPOSITORY||process.env.GITHUB_RUN_ATTEMPT!=="1"||process.env.FS_GRANT!=="FS24-C")throw new Error("RuntimeIdentity");
+  const api=new GitHubTransport(process.env.GH_TOKEN!);
+  const {admittedSuccessor,successorReceipts,successorChain}=await import("./github-writer");
+  const mainRef=async()=> (await api.json<{object:{sha:string}}>("/git/ref/heads/main")).object.sha;
+  const jobsFor=(id:number)=>api.page<Job>("/actions/runs/"+id+"/jobs","jobs");
+  const fetchMain=()=>execFileSync("git",["-C",root,"fetch","origin","main"],{stdio:["ignore","pipe","pipe"]});
+  let ledgerSequence=0;
+  const ledger=async(reserveRuns=0,reserveJobs=0)=>{
+    const all=await api.page<Run>("/actions/runs","workflow_runs"),current=all.filter(x=>!BASELINE_RUN_IDS.has(x.id));
+    if(![...BASELINE_RUN_IDS].every(id=>all.some(x=>x.id===id)))throw new Error("BaselineLedgerMissing");
+    let active=0,jobCount=0,skipped=0;const records=[];
+    for(const r of current) {
+      if(r.run_attempt!==1)throw new Error("UnexpectedRunAttempt");
+      if(!["main","wp/002"].includes(r.head_branch))throw new Error("ExternalRunBranch");
+      {
+        fetchMain();
+        if(r.head_branch==="wp/002")git(root,"merge-base","--is-ancestor",r.head_sha,head);
+        else successorChain(root,head,r.head_sha,run);
+      }
+      const jobs=await jobsFor(r.id);records.push({run:r,jobs});
+      if(r.conclusion==="skipped"){skipped++;continue;}
+      active++;
+      const declared=r.path===".github/workflows/ci.yml"?4:r.path===".github/workflows/acceptance-wp002.yml"?(r.head_sha===head||r.head_sha!=="6d0c5abeb493699ef649f49860b370ab76c55869"?6:3):r.path===".github/workflows/commit-artifacts.yml"?2:r.path===".github/workflows/reindex.yml"?1:0;
+      if(!declared)throw new Error("UnexpectedActiveWorkflow");
+      jobCount+=r.status==="completed"?jobs.length:Math.max(jobs.length,declared);
+    }
+    emitFile("ledger-"+mode+"-"+(++ledgerSequence)+".json",Buffer.from(JSON.stringify({all,records,active,jobCount,skipped,reserveRuns,reserveJobs})+"\n"));
+    if(active+reserveRuns>34||jobCount+reserveJobs>120||skipped>12)throw new Error("GrantCapacity");
+    return current;
+  };
+  if(mode==="diagnose-candidate"){await successorReceipts(root,head,api,false);return;}
+  if(mode==="admit") {
+    const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH!,"utf8")) as {workflow_run:Run};const cause=event.workflow_run;
+    if(process.env.GITHUB_EVENT_NAME!=="workflow_run"||cause.event!=="push"||cause.head_branch!=="main"||cause.head_sha!==head||cause.conclusion!=="success"||cause.run_attempt!==1||cause.path!==".github/workflows/ci.yml")throw new Error("C-trigger");
+    const jobs=await jobsFor(cause.id);
+    if(jobs.length!==4||jobs.some(x=>x.conclusion!=="success")||["validate","typecheck","guardrails","report"].some(name=>!jobs.some(x=>x.name===name)))throw new Error("C-main-CI");
+    await admittedSuccessor(root,head,run,api);
+    if(await mainRef()!==head)throw new Error("InitialMainCheckpoint");
+    const records=await ledger(13,27);
+    if(records.filter(x=>x.event==="workflow_run"&&x.head_sha===head&&x.path===".github/workflows/acceptance-wp002.yml").length!==1)throw new Error("OneBatchOnly");
+    if(git(root,"ls-tree","-r","--name-only",head,"--","episodes").split("\n").some(x=>x.endsWith("/state.json")))throw new Error("UnexpectedExistingState");
+    emitFile("c-admission.json",Buffer.from(JSON.stringify({result:"pass",head,run,cause,jobs,activation:true})+"\n"));return;
+  }
+  const producer=process.env.FS_PRODUCER??"foundation",value=bundleC(root,head,run,producer);
+  if(mode==="prepare") {
+    const dest=join(dir,"handoff");mkdirSync(dest,{recursive:true});for(const [name,content]of Object.entries(value.files))writeFileSync(join(dest,name),content);
+    writeFileSync(process.env.GITHUB_OUTPUT!,"artifact_name="+value.manifest.artifactName+"\nmanifest_hash="+digest(value.files["manifest.json"])+"\n",{flag:"a"});
+    emitFile("producer-manifest.json",Buffer.from(value.files["manifest.json"]));return;
+  }
+  if(mode==="receive") {
+    const {operations,...expected}=value.manifest;
+    const received=await api.artifact(Number(process.env.FS_ARTIFACT_ID),expected,digest(value.files["manifest.json"]),join(dir,"received"));
+    for(const [name,content]of Object.entries(value.files))if(received.files[name]!==content)throw new Error("ProducerReceiverMismatch");
+    emitFile("prequalification.json",Buffer.from(JSON.stringify({result:"pass",run,head,producer,artifact:received.metadata,manifestHash:digest(value.files["manifest.json"])})+"\n"));return;
+  }
+  if(mode!=="controller")throw new Error("ModeNotEnabled");
+  await admittedSuccessor(root,head,run,api);
+  const producerJobs=await jobsFor(Number(run));
+  if(!producerOverlap(producerJobs)||await mainRef()!==head)throw new Error("ProducerParallelEvidence");
+  emitFile("producer-jobs.json",Buffer.from(JSON.stringify(producerJobs)+"\n"));
+  await ledger(13,27);
+  const results:Array<{name:string;run:Run;receipt:import("./github-writer").Receipt|null}>=[];let dispatches=0;
+  const makeInput=(operation:string,side="left",cancelAfterPush=false)=>{
+    const body={grant:"FS24-C",batch:run,code:head,producer:side,artifact:operation==="reindex"?0:Number(process.env[side==="left"?"FS_LEFT_ARTIFACT":"FS_RIGHT_ARTIFACT"]),manifestHash:operation==="reindex"?"none":process.env[side==="left"?"FS_LEFT_HASH":"FS_RIGHT_HASH"]!,operation,cancelAfterPush};
+    return {...body,requestId:digest(JSON.stringify(body))};
+  };
+  const complete=async(name:string,id:number,requestId:string,workflow:string,expected:string)=>{
+    const result=await api.wait(id);const {validateDispatchedRun}=await import("./github-transport");validateDispatchedRun(result,id,workflow,requestId);
+    if(result.conclusion!==expected)throw new Error("UnexpectedConclusion:"+name+":"+result.conclusion);
+    fetchMain();successorChain(root,head,result.head_sha,run);
+    const jobs=await jobsFor(id),active=jobs.filter(x=>x.conclusion!=="skipped");
+    if(active.length!==1||jobs.length!==(workflow==="reindex.yml"?1:2))throw new Error("WriterJobCount");
+    const raw=await api.bytes("/actions/jobs/"+active[0].id+"/logs",16*1024*1024);emitFile("writer-"+id+".log",raw);const log=raw.toString("utf8");
+    const lines=log.split("\n").filter(x=>x.includes("FS24B_RECEIPT\t{"));
+    const receipt=lines.length===1?JSON.parse(lines[0].slice(lines[0].indexOf("FS24B_RECEIPT\t")+"FS24B_RECEIPT\t".length)) as import("./github-writer").Receipt:null;
+    if(expected==="failure") {if(receipt||!log.includes("FS24B_WRITE_ERROR\tError: SchemaRejected"))throw new Error("WrongNegativeFailure");}
+    else {
+      if(!receipt||receipt.writeId!=="FS24-C:"+run+":"+name)throw new Error("MissingWriteReceipt");
+      const commit=await api.json<{sha:string;message:string;tree:{sha:string};parents:{sha:string}[]}>("/git/commits/"+receipt.commit);
+      if(commit.sha!==receipt.commit||commit.tree.sha!==receipt.tree||commit.parents.length!==1||commit.parents[0].sha!==receipt.parent)throw new Error("ReceiptParentTree");
+      if(commit.message.split("\n").filter(x=>x.startsWith("Write-Id: ")).join("\n")!=="Write-Id: "+receipt.writeId||!commit.message.split("\n").includes("FS24-C-Batch: "+run))throw new Error("ReceiptWriteIdentity");
+      const declared=/^Write-Paths: (.+)$/m.exec(commit.message);
+      if(!declared||JSON.stringify(Object.keys(receipt.paths).sort())!==JSON.stringify((JSON.parse(declared[1]) as string[]).sort()))throw new Error("ReceiptPaths");
+      for(const item of Object.values(receipt.paths)) {
+        const blob=await api.json<{content:string;size:number;encoding:string}>("/git/blobs/"+item.blob);const bytes=Buffer.from(blob.content.replace(/\s/g,""),"base64");
+        if(blob.encoding!=="base64"||bytes.length!==item.bytes||blob.size!==item.bytes||digest(bytes)!==item.sha256)throw new Error("ReceiptBlob");
+      }
+    }
+    results.push({name,run:result,receipt});return receipt;
+  };
+  const dispatch=async(operation:string,side="left",expected="success")=>{
+    await ledger();
+    if(++dispatches>13)throw new Error("DispatchCap");
+    const workflow=operation==="reindex"?"reindex.yml":"commit-artifacts.yml",input=makeInput(operation,side,expected==="cancelled");
+    const id=await api.dispatchC(workflow,{request:JSON.stringify(input)},input.requestId);
+    return complete(operation,id,input.requestId,workflow,expected);
+  };
+  await Promise.all([dispatch("initial-left"),dispatch("initial-right","right")]);await ledger(11,23);
+  await dispatch("update-one");await dispatch("update-two");
+  const duplicate=await dispatch("initial-left");if(!duplicate?.duplicate||duplicate.commit!==results[0].receipt?.commit&&duplicate.commit!==results[1].receipt?.commit)throw new Error("DuplicateCreatedCommit");
+  await dispatch("pending");const sideEffect=await dispatch("side-effect","left","cancelled");
+  const replay=await dispatch("side-effect");if(!replay?.duplicate||replay.commit!==sideEffect?.commit)throw new Error("ReplayCreatedCommit");
+  const beforeNegative=await mainRef();await dispatch("invalid-state","left","failure");if(await mainRef()!==beforeNegative)throw new Error("NegativeChangedMain");
+  await Promise.all([dispatch("logs-left"),dispatch("logs-right","right")]);
+  const indexReceipt=await dispatch("reindex");if(!indexReceipt)throw new Error("IndexReceipt");
+  const final=indexReceipt.commit;fetchMain();const chain=successorChain(root,head,final,run);if(chain.length!==9)throw new Error("ExpectedNineDataCommits");
+  const expectedLogs=["left","right"].flatMap(side=>bundleC(root,head,run,side).files["log.jsonl"].trimEnd().split("\n"));
+  const prefix=execFileSync("git",["-C",root,"show",head+":pipeline/runs.jsonl"],{encoding:"utf8"});
+  const actual=execFileSync("git",["-C",root,"show",final+":pipeline/runs.jsonl"],{encoding:"utf8"});
+  if(!actual.startsWith(prefix))throw new Error("LogPrefix");const added=actual.slice(prefix.length).trimEnd().split("\n");
+  if(added.length!==50||new Set(added).size!==50||added.some(x=>!expectedLogs.includes(x)))throw new Error("LogCoverage");
+  const ids=["left","right"].map(side=>bundleC(root,head,run,side).manifest.operations[0].episodeId);
+  const states=ids.map(id=>JSON.parse(git(root,"show",indexReceipt.parent+":episodes/"+id+"/state.json")));
+  const {inspectEpisode}=await import("./episode-state"),{schemaChecker}=await import("./repo-store"),{buildIndex}=await import("./reindex");
+  const check=schemaChecker(readdirSync(join(root,"engine/contracts")).filter(x=>x.endsWith(".schema.json")).map(x=>JSON.parse(readFileSync(join(root,"engine/contracts",x),"utf8"))));
+  if(inspectEpisode(states[0],check).complete||states[0].revision!==4||states[0].pendingSideEffects[0].writeId!=="FS24-C:"+run+":side-effect")throw new Error("IncompleteStateLost");
+  const index=JSON.parse(git(root,"show",final+":pipeline/state.json"));
+  if(JSON.stringify(index)!==JSON.stringify(buildIndex(states,indexReceipt.parent,index.rebuiltAt,check)))throw new Error("IndexProjection");
+  const finalBody={expected_head:final,code:head,batch:run};const requestId=digest(JSON.stringify(finalBody));
+  await ledger(1,4);
+  const ci=await api.dispatchC("ci.yml",{...finalBody,request_id:requestId},requestId);dispatches++;
+  const finished=await api.wait(ci),jobs=await jobsFor(ci);
+  if(finished.head_sha!==final||finished.conclusion!=="success"||jobs.length!==4||jobs.some(x=>x.conclusion!=="success")||["validate","typecheck","guardrails","report"].some(name=>!jobs.some(x=>x.name===name)))throw new Error("FinalCI");
+  const {validateDispatchedRun}=await import("./github-transport");validateDispatchedRun(finished,ci,"ci.yml",requestId);
+  for(const job of jobs) {
+    const raw=await api.bytes("/actions/jobs/"+job.id+"/logs",16*1024*1024);emitFile("final-ci-job-"+job.id+".log",raw);
+    const text=raw.toString("utf8");
+    const framed=text.split("\n").flatMap(line=>{const match=/FS23_(?:BEGIN|FILE|DATA|END|COMPLETE)\t/.exec(line);return match?[line.slice(match.index).replace(/\r$/,"")]:[];}).join("\n")+"\n";
+    const files=decode(framed,{grant:"FS23-WP001",run:String(ci),attempt:"1",head:final,job:job.name,event:"workflow_dispatch",base:head});
+    assertFinalJobEvidence(job,text,files);
+    if(job.name==="report") {
+      const report=files["ci-report.txt"]?.toString();
+      if(!report||!report.split("\n").includes("commit="+final)||!report.split("\n").includes("baseline="+head)||!report.split("\n").includes("technicalResult=pass"))throw new Error("FinalCIReport");
+      emitFile("final-ci-report.txt",files["ci-report.txt"]);
+    }
+  }
+  if(dispatches!==13||await mainRef()!==final)throw new Error("FinalCheckpoint");await ledger();
+  emitFile("integration-result.json",Buffer.from(JSON.stringify({result:"pass",head,final,dispatches,dataCommits:chain.length,results,producerJobs,finalCI:finished,finalJobs:jobs,providerCalls:0,billingActualUsd:null,ownerAcceptance:"pending",WP002:"todo"})+"\n"));
+}
+if(require.main===module)mainC().catch(error=>{emitFile("integration-error.json",Buffer.from(JSON.stringify({error:String(error)})+"\n"));console.error(String(error));process.exitCode=1;});

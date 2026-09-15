@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { inspect, Bootstrap } from "./index";
+import { inspect, Bootstrap, successorPolicy, FS24C } from "./index";
 import { at, git, parseScope, matches, safePath } from "./scope";
 import { render, frame, decode, Identity, Need, Verdict } from "../ci-report";
 import { scanContent, contentPath } from "./content";
@@ -156,6 +156,17 @@ try {
   for(const [name,mutate] of [["missing-complete",(s:string)=>s.replace(/FS23_COMPLETE[^\n]*\n/,"")],["wrong-hash",(s:string)=>s.replace(/(FS23_FILE\t[^\t]+\t\d+\t)[a-f0-9]{64}/,"$1"+"0".repeat(64))],["missing-chunk",(s:string)=>s.replace(/FS23_DATA[^\n]*\n/,"")],["duplicate-chunk",(s:string)=>s.replace(/(FS23_DATA[^\n]*\n)/,"$1$1")]] as [string,(s:string)=>string][])test("frame-"+name,()=>assert.throws(()=>decode(mutate(good),id)));
   for(const key of ["head","attempt","job","event","base"] as const)test("frame-identity-"+key,()=>assert.throws(()=>decode(good,{...id,[key]:"wrong"})));
   test("frame-unsafe-name",()=>assert.throws(()=>frame(id,{"../x":Buffer.from("x")})));
+  const actualRoot=process.env.GITHUB_WORKSPACE!,eventHead=process.env.FS24_FINAL_CODE||process.env.FS_HEAD!;
+  if(actualRoot&&eventHead&&spawnSync("git",["-C",actualRoot,"merge-base","--is-ancestor",FS24C.base,eventHead]).status===0) {
+    const parents=git(actualRoot,"rev-list","--parents","-n","1",eventHead).trim().split(" ");
+    const actualHead=parents.length===3&&parents[1]===FS24C.base?parents[2]:eventHead;
+    test("C-production-scanner-valid",()=>assert.equal(inspect({root:actualRoot,base:FS24C.base,head:actualHead,branch:"wp/002",title:"WP-002 successor",event:"push"}).result,"pass"));
+    test("C-policy-reject-base-only",()=>assert.throws(()=>successorPolicy(actualRoot,FS24C.base),/C-count/));
+    test("C-policy-reject-tree",()=>assert.throws(()=>successorPolicy(actualRoot,actualHead,{...FS24C,tree:"0".repeat(40)}),/C-base/));
+    test("C-policy-reject-freeze",()=>assert.throws(()=>successorPolicy(actualRoot,actualHead,{...FS24C,files:Object.fromEntries(Object.keys(FS24C.files).map(p=>[p,"0".repeat(40)])) as typeof FS24C.files}),/C-policy-freeze/));
+    test("C-policy-reject-scope",()=>assert.throws(()=>successorPolicy(actualRoot,actualHead,{...FS24C,paths:FS24C.paths.slice(0,2)}),/C-scope/));
+    test("C-production-scanner-reject-branch",()=>assert.equal(inspect({root:actualRoot,base:FS24C.base,head:actualHead,branch:"bad",title:"",event:"push"}).result,"fail"));
+  }
 } finally {
   rmSync(work,{recursive:true,force:true});
   test("temporary-fixture-cleanup",()=>assert.equal(existsSync(work),false));
