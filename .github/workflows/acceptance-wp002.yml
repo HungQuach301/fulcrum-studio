@@ -10,6 +10,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  actions: read
 
 concurrency:
   group: fs24-foundation-${{ github.ref }}-${{ github.event_name }}
@@ -163,6 +164,28 @@ jobs:
           (e/'commands.json').write_text(json.dumps(receipts,indent=2)+'\n')
           raise SystemExit(1 if failed else 0)
           PY
+      - name: Prepare pinned artifact payload
+        id: handoff
+        shell: bash
+        run: |
+          cd "$TASK_ROOT/mirror"
+          "$FS_NODE" "$FS_TSX" engine/io/wp002-integration.ts prepare
+      - name: Upload new FS24-B artifact
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ steps.handoff.outputs.artifact_name }}
+          path: ${{ env.TASK_ROOT }}/handoff/*
+          if-no-files-found: error
+          retention-days: 1
+      - name: Receive and verify original new artifact
+        id: reception
+        shell: bash
+        env:
+          FS_ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          cd "$TASK_ROOT/mirror"
+          "$FS_NODE" "$FS_TSX" engine/io/wp002-integration.ts receive
       - name: Verify source mirror and live main unchanged
         id: preservation
         if: ${{ always() }}
@@ -208,7 +231,7 @@ jobs:
           python3 - <<'PY'
           import os,pathlib,json,hashlib,base64,re
           p=pathlib.Path(os.environ['FS_EVIDENCE']);steps=json.loads(os.environ['FS_STEPS']);(p/'steps-at-emission.json').write_text(json.dumps(steps,indent=2)+'\n')
-          required=['preflight','runtime','setup','install','check','preservation','cleanup'];ok=all(steps.get(s,{}).get('outcome')=='success' for s in required)
+          required=['preflight','runtime','setup','install','check','handoff','upload','reception','preservation','cleanup'];ok=all(steps.get(s,{}).get('outcome')=='success' for s in required)
           errors=[]
           for f in sorted(p.glob('*.stderr.txt')):
            for line in f.read_text(errors='replace').splitlines():
