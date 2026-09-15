@@ -5,7 +5,7 @@ name: WP-002 Serialized Writer
       request:
         required: true
         type: string
-        description: Owner-approved FS24-B request
+        description: FS24-D canonical or verified recovery request
 permissions:
   contents: read
 concurrency:
@@ -17,7 +17,7 @@ env:
   FS24_INPUT: ${{ inputs.request }}
   FS24_OPERATION: ${{ fromJSON(inputs.request).operation }}
   GH_TOKEN: ${{ github.token }}
-  FS_GRANT: FS24-C
+  FS_GRANT: FS24-D
   FS_BRANCH: ${{ github.ref_name }}
   FS_EVENT: ${{ github.event_name }}
 jobs:
@@ -48,106 +48,7 @@ jobs:
       shell: bash
       run: |
         set -euo pipefail
-        python3 - <<'PYCODE'
-        import os,json,subprocess,pathlib,hashlib,re,urllib.request,urllib.error
-        root=pathlib.Path(os.environ['GITHUB_WORKSPACE']);evidence=pathlib.Path(os.environ['FS_EVIDENCE'])
-        def git(*args):return subprocess.check_output(['git','-C',str(root),*args]).decode()
-        c={'base': '6d0c5abeb493699ef649f49860b370ab76c55869', 'tree': '7fa21a329e5df9284a43142f6c38d32b72a5a351', 'historicalCandidate': 'c9dd48113b2a5a93dca6f92a151c8391bfb6af8d', 'files': {'engine/docs/02-decisions.md': 'd365edd010c1228cf3f51c7ace01d6facdc9cbcc', 'engine/ops/work-packages/WP-002-interfaces.md': '84483fd2b029881467ebc8fb04422b14344f9358'}, 'paths': ['engine/docs/02-decisions.md', 'engine/ops/work-packages/WP-002-interfaces.md', '.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/guardrails.test.ts', '.github/workflows/acceptance-wp002.yml', 'engine/io/github-transport.ts', 'engine/io/github-writer.ts', 'engine/io/wp002-integration.ts', 'engine/io/wp002-integration.test.ts', '.github/workflows/commit-artifacts.yml', '.github/workflows/reindex.yml']}
-
-        def verify_c(candidate):
-         assert git('rev-parse',c['base']+'^{tree}').strip()==c['tree'],'C-base-tree'
-         assert git('rev-list','--parents','-n','1',c['base']).split()==[c['base'],'83786225fdaff2fcbc82cd2b99212a905dd19ceb',c['historicalCandidate']],'C-history'
-         assert git('rev-list','--parents','-n','1','83786225fdaff2fcbc82cd2b99212a905dd19ceb').split()==['83786225fdaff2fcbc82cd2b99212a905dd19ceb','bd7f0eb5b225ed43d610af12b5febbe82a7dbec4','19bb30568885ef6cb2c7c4b3c8cb9053f9b1fe21'],'C-history-S'
-         chain=git('rev-list','--reverse',c['base']+'..'+candidate).splitlines();assert 2<=len(chain)<=4,'C-count'
-         previous=c['base']
-         for i,sha in enumerate(chain):
-          assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+previous,'C-parent'
-          msg=git('show','-s','--format=%B',sha)
-          for k,v in [('Grant','FS24-C'),('Phase','policy' if i==0 else 'implementation')]+([] if i==0 else [('Iteration',str(i))]):assert re.findall(r'^Fulcrum-'+k+': (.*)$',msg,re.M)==[v],'C-trailer'
-          changed=set(git('diff','--name-only',previous,sha).splitlines());assert changed==set(c['files']) if i==0 else changed<=set(c['paths'][2:]),'C-scope'
-          previous=sha
-         for path,pin in c['files'].items():
-          assert git('rev-parse',chain[0]+':'+path).strip()==pin and git('rev-parse',candidate+':'+path).strip()==pin,'C-policy-freeze'
-          assert git('show',chain[0]+':'+path).startswith(git('show',c['base']+':'+path)),'C-policy-prefix'
-         assert set(git('diff','--name-only',c['base'],candidate).splitlines())<=set(c['paths']),'C-scope'
-         for path in git('ls-tree','-r','--name-only',c['base']).splitlines():
-          if path not in c['paths']:assert git('ls-tree',c['base'],'--',path)==git('ls-tree',candidate,'--',path),'C-preservation'
-        def verify_merge(code):
-         parts=git('rev-list','--parents','-n','1',code).split();assert len(parts)==3 and parts[1]==c['base'],'C-merge'
-         assert git('rev-parse',code+'^{tree}')==git('rev-parse',parts[2]+'^{tree}'),'C-merge-tree';verify_c(parts[2])
-         msg=git('show','-s','--format=%B',code)
-         for k,v in [('Grant','FS24-C'),('Phase','integration-bootstrap')]:assert re.findall(r'^Fulcrum-'+k+': (.*)$',msg,re.M)==[v],'C-merge-trailer'
-         numbers=re.findall(r'^Fulcrum-Integration-PR: ([1-9][0-9]*)$',msg,re.M);assert len(numbers)==1 and int(numbers[0])>13,'C-PR'
-         return int(numbers[0]),parts[2]
-        def verify_data(code,current,batch,final=False):
-         assert re.fullmatch('[1-9][0-9]*',batch),'C-batch'
-         git('merge-base','--is-ancestor',code,current)
-         chain=git('rev-list','--reverse',code+'..'+current).splitlines();assert len(chain)==9 if final else len(chain)<=9,'C-data-count'
-         allowed={'pipeline/runs.jsonl','pipeline/state.json'}|{f'episodes/us-personal-finance/2026-09-fs24-{s}/{f}' for s in ['left','right'] for f in ['state.json','00-brief.json']}
-         previous=code;seen=set()
-         for sha in chain:
-          assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+previous,'C-data-parent';msg=git('show','-s','--format=%B',sha)
-          assert re.findall(r'^Fulcrum-Grant: (.*)$',msg,re.M)==['FS24-C'] and re.findall(r'^FS24-C-Batch: (.*)$',msg,re.M)==[batch],'C-data-grant'
-          ids=re.findall(r'^Write-Id: (.*)$',msg,re.M);assert len(ids)==1 and ids[0].startswith('FS24-C:'+batch+':') and ids[0] not in seen,'C-write-id';seen.add(ids[0])
-          changed=set(git('diff','--name-only',previous,sha).splitlines());assert changed and changed<=allowed,'C-data-path'
-          for path in changed:assert git('ls-tree',sha,'--',path).startswith('100644 '),'C-data-mode'
-          previous=sha
-         if final:assert git('diff','--name-only',current+'^1',current).splitlines()==['pipeline/state.json'],'C-final-index'
-
-        assert os.environ['GITHUB_REPOSITORY']=='HungQuach301/fulcrum-studio' and os.environ['GITHUB_RUN_ATTEMPT']=='1'
-        head=os.environ['FS_HEAD'];assert re.fullmatch('[a-f0-9]{40}',head) and git('rev-parse','HEAD').strip()==head
-        role=os.environ['FS_JOB'];event=os.environ['GITHUB_EVENT_NAME'];batch=os.environ.get('GITHUB_RUN_ID')
-        def get(path,label,version='2026-03-10'):
-         request=urllib.request.Request('https://api.github.com/repos/HungQuach301/fulcrum-studio'+path,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','X-GitHub-Api-Version':version})
-         try:response=urllib.request.urlopen(request)
-         except urllib.error.HTTPError as error:response=error
-         raw=response.read(1048577);meta={'path':path,'status':response.status,'requestedApiVersion':version,'selectedApiVersion':response.headers.get('x-github-api-version-selected'),'requestId':response.headers.get('x-github-request-id'),'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
-         (evidence/(label+'-raw.json')).write_bytes(raw);(evidence/(label+'-metadata.json')).write_text(json.dumps(meta)+'\n')
-         assert len(raw)<=1048576,'ResponseCap';assert response.status==200,('HTTP-no-retry',response.status)
-         return json.loads(raw.decode('utf-8'))
-        if role=='foundation':
-         assert event in ['push','pull_request'] and os.environ['FS_BRANCH']=='wp/002';verify_c(head)
-        else:verify_merge(head)
-        main=get('/git/ref/heads/main','main-ref.before')['object']['sha']
-        if role=='foundation':assert main==c['base']
-        elif role in ['admit','producer-left','producer-right']:assert main==head
-        elif role in ['writer','writer-cancel','reindex']:
-         assert event=='workflow_dispatch' and os.environ['GITHUB_REF']=='refs/heads/main'
-         request=json.loads(os.environ['FS24_INPUT']);assert request['grant']=='FS24-C' and request['code']==head
-         identity=request.pop('requestId');assert hashlib.sha256(json.dumps(request,separators=(',',':')).encode()).hexdigest()==identity,'C-request'
-         batch=request['batch'];git('fetch','origin','main');verify_data(head,main,batch)
-         assert request['cancelAfterPush']==(role=='writer-cancel') and (request['operation']=='reindex')==(role=='reindex')
-         current=get('/actions/runs/'+os.environ['GITHUB_RUN_ID'],'current-run')
-         assert current['display_title']=='FS24-C '+identity and current['event']=='workflow_dispatch' and current['head_branch']=='main' and current['run_attempt']==1
-         assert current['path']=='.github/workflows/'+('reindex.yml' if role=='reindex' else 'commit-artifacts.yml')
-         git('fetch','origin','main');verify_data(head,current['head_sha'],batch)
-        else:verify_data(head,main,batch)
-        if role!='foundation':
-         number,candidate=verify_merge(head)
-         expected=[(12,'83786225fdaff2fcbc82cd2b99212a905dd19ceb','19bb30568885ef6cb2c7c4b3c8cb9053f9b1fe21'),(13,c['base'],c['historicalCandidate']),(number,head,candidate)]
-         outcomes=[]
-         for number,merge,candidate in expected:
-          try:
-           pr=get('/pulls/'+str(number),'static-merge-'+str(number),'2022-11-28')
-           assert pr['number']==number and pr['merged'] is True and pr['merge_commit_sha']==merge and pr['head']['sha']==candidate
-           assert pr['head']['ref']=='wp/002' and pr['base']['ref']=='main' and pr['head']['repo']['full_name']==os.environ['GITHUB_REPOSITORY']==pr['base']['repo']['full_name']
-           outcomes.append({'number':number,'pass':True})
-          except Exception as error:outcomes.append({'number':number,'pass':False,'error':str(error)})
-         (evidence/'static-merge-outcomes.json').write_text(json.dumps(outcomes)+'\n');assert all(x['pass'] for x in outcomes)
-        base=c['base'] if role=='foundation' else head
-        with open(os.environ['GITHUB_ENV'],'a') as out:out.write('FS_BASE='+base+'\nFS_BATCH='+batch+'\n')
-        diff=git('diff','--name-only',c['base'],head).splitlines()
-        for path in diff:
-         for line in git('diff','--unified=0',c['base'],head,'--',path).splitlines():
-          if line.startswith('+') and not line.startswith('+++'):
-           assert not re.search(r'\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})\b',line),'secret-redacted'
-           assert ('PRIVATE'+' KEY') not in line,'private-key-redacted'
-           assert all(re.fullmatch('[a-fA-F0-9]+',x) for x in re.findall(r'[A-Za-z0-9+/]{80,}={0,2}',line)),'base64-redacted'
-        names=git('ls-files','-z').split('\0')[:-1];assert not git('status','--porcelain=v1','--untracked-files=all').strip()
-        snapshot={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in names}
-        (evidence/'source.before.json').write_text(json.dumps(snapshot,sort_keys=True)+'\n')
-        (evidence/'preflight.json').write_text(json.dumps({'result':'pass','role':role,'head':head,'eventSha':os.environ['GITHUB_SHA'],'event':event,'grant':'FS24-C','main':main})+'\n')
-        PYCODE
+        python3 "$GITHUB_WORKSPACE/scripts/wp002-preflight.py" runtime
     - name: Checksum-pinned runtime
       id: runtime
       shell: bash
@@ -163,7 +64,7 @@ jobs:
         printf 'FS_NODE=%s\nFS_NPM=%s\n' "$node_path" "$npm_cli" >> "$GITHUB_ENV"
         python3 - <<'PY'
         import os,json,pathlib
-        pathlib.Path(os.environ['FS_EVIDENCE'],'runtime.json').write_text(json.dumps({'node':'20.20.2','npm':'10.8.2','archiveSha256':'df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d','archiveChecksum':'pass','node20EolException':'FS24-C-only','actionNode24Patch':'unproven','runnerOS':os.environ.get('RUNNER_OS'),'runnerArch':os.environ.get('RUNNER_ARCH'),'imageVersion':os.environ.get('ImageVersion'),'billedCostUsd':None,'B1B2':'unverified'})+'\n')
+        pathlib.Path(os.environ['FS_EVIDENCE'],'runtime.json').write_text(json.dumps({'node':'20.20.2','npm':'10.8.2','archiveSha256':'df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d','archiveChecksum':'pass','node20EolException':'FS24-D-only','actionNode24Patch':'unproven','runnerOS':os.environ.get('RUNNER_OS'),'runnerArch':os.environ.get('RUNNER_ARCH'),'imageVersion':os.environ.get('ImageVersion'),'billedCostUsd':None,'B1B2':'unverified'})+'\n')
         PY
     - name: Set up action runtime tooling
       id: setup
@@ -216,22 +117,7 @@ jobs:
       shell: bash
       run: |
         set -euo pipefail
-        python3 - <<'PY'
-        import os,pathlib,json,hashlib,subprocess,urllib.request
-        e=pathlib.Path(os.environ['FS_EVIDENCE']);root=pathlib.Path(os.environ['GITHUB_WORKSPACE']);mirror=pathlib.Path(os.environ['TASK_ROOT'],'mirror')
-        before=json.loads((e/'source.before.json').read_text());after={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in before}
-        (e/'source.after.json').write_text(json.dumps(after,sort_keys=True)+'\n');assert before==after
-        if mirror.exists():assert all(hashlib.sha256((mirror/p).read_bytes()).hexdigest()==v for p,v in before.items())
-        assert subprocess.check_output(['git','rev-parse','HEAD']).decode().strip()==os.environ['FS_HEAD']
-        assert not subprocess.check_output(['git','status','--porcelain=v1','--untracked-files=all']).strip()
-        request=urllib.request.Request('https://api.github.com/repos/HungQuach301/fulcrum-studio/git/ref/heads/main',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
-        with urllib.request.urlopen(request) as response:raw=response.read()
-        (e/'main-ref.after.json').write_bytes(raw);after_main=json.loads(raw)['object']['sha'];before_main=json.loads((e/'main-ref.before-raw.json').read_text())['object']['sha']
-        if os.environ['FS_JOB'] in ['foundation','admit','producer-left','producer-right']:assert after_main==before_main
-        else:
-         subprocess.check_call(['git','fetch','origin','main']);subprocess.check_call(['git','merge-base','--is-ancestor',os.environ['FS_HEAD'],after_main])
-        (e/'preservation.json').write_text(json.dumps({'result':'pass','sourceUnchanged':True,'mirrorUnchanged':mirror.exists(),'mainUnchanged':after_main==before_main,'mainBefore':before_main,'mainAfter':after_main,'sourceFiles':len(before),'stateAndDependencyBytesUnchanged':True})+'\n')
-        PY
+        python3 "$GITHUB_WORKSPACE/scripts/wp002-preflight.py" preserve
     - name: Remove temporary execution data
       id: cleanup
       if: ${{ always() }}
@@ -276,7 +162,7 @@ jobs:
         summary={'head':os.environ['FS_HEAD'],'base':os.environ.get('FS_BASE',''),'job':os.environ['FS_JOB'],'result':'success' if ok else 'failure','errors':[redact(x) for x in errors[:20]],'finalJobStatus':'requires-API-readback'}
         (p/'job-summary.json').write_text(json.dumps(summary,ensure_ascii=False)+'\n')
         with open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write('summary='+json.dumps(summary,ensure_ascii=True)+'\n')
-        identity=['FS24-C',os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_RUN_ATTEMPT'],os.environ['FS_HEAD'],os.environ['FS_JOB'],os.environ['FS_EVENT'],os.environ.get('FS_BASE','')]
+        identity=['FS24-D',os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_RUN_ATTEMPT'],os.environ['FS_HEAD'],os.environ['FS_JOB'],os.environ['FS_EVENT'],os.environ.get('FS_BASE','')]
         print('FS24_BEGIN\t'+'\t'.join(identity))
         files=sorted(p.iterdir())
         for f in files:
@@ -299,6 +185,7 @@ jobs:
     permissions:
       contents: write
       actions: read
+      pull-requests: read
     if: ${{ !fromJSON(inputs.request).cancelAfterPush }}
   cancel-test:
     name: writer-cancel
@@ -327,106 +214,7 @@ jobs:
       shell: bash
       run: |
         set -euo pipefail
-        python3 - <<'PYCODE'
-        import os,json,subprocess,pathlib,hashlib,re,urllib.request,urllib.error
-        root=pathlib.Path(os.environ['GITHUB_WORKSPACE']);evidence=pathlib.Path(os.environ['FS_EVIDENCE'])
-        def git(*args):return subprocess.check_output(['git','-C',str(root),*args]).decode()
-        c={'base': '6d0c5abeb493699ef649f49860b370ab76c55869', 'tree': '7fa21a329e5df9284a43142f6c38d32b72a5a351', 'historicalCandidate': 'c9dd48113b2a5a93dca6f92a151c8391bfb6af8d', 'files': {'engine/docs/02-decisions.md': 'd365edd010c1228cf3f51c7ace01d6facdc9cbcc', 'engine/ops/work-packages/WP-002-interfaces.md': '84483fd2b029881467ebc8fb04422b14344f9358'}, 'paths': ['engine/docs/02-decisions.md', 'engine/ops/work-packages/WP-002-interfaces.md', '.github/workflows/ci.yml', 'scripts/guardrails/index.ts', 'scripts/guardrails/guardrails.test.ts', '.github/workflows/acceptance-wp002.yml', 'engine/io/github-transport.ts', 'engine/io/github-writer.ts', 'engine/io/wp002-integration.ts', 'engine/io/wp002-integration.test.ts', '.github/workflows/commit-artifacts.yml', '.github/workflows/reindex.yml']}
-
-        def verify_c(candidate):
-         assert git('rev-parse',c['base']+'^{tree}').strip()==c['tree'],'C-base-tree'
-         assert git('rev-list','--parents','-n','1',c['base']).split()==[c['base'],'83786225fdaff2fcbc82cd2b99212a905dd19ceb',c['historicalCandidate']],'C-history'
-         assert git('rev-list','--parents','-n','1','83786225fdaff2fcbc82cd2b99212a905dd19ceb').split()==['83786225fdaff2fcbc82cd2b99212a905dd19ceb','bd7f0eb5b225ed43d610af12b5febbe82a7dbec4','19bb30568885ef6cb2c7c4b3c8cb9053f9b1fe21'],'C-history-S'
-         chain=git('rev-list','--reverse',c['base']+'..'+candidate).splitlines();assert 2<=len(chain)<=4,'C-count'
-         previous=c['base']
-         for i,sha in enumerate(chain):
-          assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+previous,'C-parent'
-          msg=git('show','-s','--format=%B',sha)
-          for k,v in [('Grant','FS24-C'),('Phase','policy' if i==0 else 'implementation')]+([] if i==0 else [('Iteration',str(i))]):assert re.findall(r'^Fulcrum-'+k+': (.*)$',msg,re.M)==[v],'C-trailer'
-          changed=set(git('diff','--name-only',previous,sha).splitlines());assert changed==set(c['files']) if i==0 else changed<=set(c['paths'][2:]),'C-scope'
-          previous=sha
-         for path,pin in c['files'].items():
-          assert git('rev-parse',chain[0]+':'+path).strip()==pin and git('rev-parse',candidate+':'+path).strip()==pin,'C-policy-freeze'
-          assert git('show',chain[0]+':'+path).startswith(git('show',c['base']+':'+path)),'C-policy-prefix'
-         assert set(git('diff','--name-only',c['base'],candidate).splitlines())<=set(c['paths']),'C-scope'
-         for path in git('ls-tree','-r','--name-only',c['base']).splitlines():
-          if path not in c['paths']:assert git('ls-tree',c['base'],'--',path)==git('ls-tree',candidate,'--',path),'C-preservation'
-        def verify_merge(code):
-         parts=git('rev-list','--parents','-n','1',code).split();assert len(parts)==3 and parts[1]==c['base'],'C-merge'
-         assert git('rev-parse',code+'^{tree}')==git('rev-parse',parts[2]+'^{tree}'),'C-merge-tree';verify_c(parts[2])
-         msg=git('show','-s','--format=%B',code)
-         for k,v in [('Grant','FS24-C'),('Phase','integration-bootstrap')]:assert re.findall(r'^Fulcrum-'+k+': (.*)$',msg,re.M)==[v],'C-merge-trailer'
-         numbers=re.findall(r'^Fulcrum-Integration-PR: ([1-9][0-9]*)$',msg,re.M);assert len(numbers)==1 and int(numbers[0])>13,'C-PR'
-         return int(numbers[0]),parts[2]
-        def verify_data(code,current,batch,final=False):
-         assert re.fullmatch('[1-9][0-9]*',batch),'C-batch'
-         git('merge-base','--is-ancestor',code,current)
-         chain=git('rev-list','--reverse',code+'..'+current).splitlines();assert len(chain)==9 if final else len(chain)<=9,'C-data-count'
-         allowed={'pipeline/runs.jsonl','pipeline/state.json'}|{f'episodes/us-personal-finance/2026-09-fs24-{s}/{f}' for s in ['left','right'] for f in ['state.json','00-brief.json']}
-         previous=code;seen=set()
-         for sha in chain:
-          assert git('rev-list','--parents','-n','1',sha).strip()==sha+' '+previous,'C-data-parent';msg=git('show','-s','--format=%B',sha)
-          assert re.findall(r'^Fulcrum-Grant: (.*)$',msg,re.M)==['FS24-C'] and re.findall(r'^FS24-C-Batch: (.*)$',msg,re.M)==[batch],'C-data-grant'
-          ids=re.findall(r'^Write-Id: (.*)$',msg,re.M);assert len(ids)==1 and ids[0].startswith('FS24-C:'+batch+':') and ids[0] not in seen,'C-write-id';seen.add(ids[0])
-          changed=set(git('diff','--name-only',previous,sha).splitlines());assert changed and changed<=allowed,'C-data-path'
-          for path in changed:assert git('ls-tree',sha,'--',path).startswith('100644 '),'C-data-mode'
-          previous=sha
-         if final:assert git('diff','--name-only',current+'^1',current).splitlines()==['pipeline/state.json'],'C-final-index'
-
-        assert os.environ['GITHUB_REPOSITORY']=='HungQuach301/fulcrum-studio' and os.environ['GITHUB_RUN_ATTEMPT']=='1'
-        head=os.environ['FS_HEAD'];assert re.fullmatch('[a-f0-9]{40}',head) and git('rev-parse','HEAD').strip()==head
-        role=os.environ['FS_JOB'];event=os.environ['GITHUB_EVENT_NAME'];batch=os.environ.get('GITHUB_RUN_ID')
-        def get(path,label,version='2026-03-10'):
-         request=urllib.request.Request('https://api.github.com/repos/HungQuach301/fulcrum-studio'+path,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','X-GitHub-Api-Version':version})
-         try:response=urllib.request.urlopen(request)
-         except urllib.error.HTTPError as error:response=error
-         raw=response.read(1048577);meta={'path':path,'status':response.status,'requestedApiVersion':version,'selectedApiVersion':response.headers.get('x-github-api-version-selected'),'requestId':response.headers.get('x-github-request-id'),'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
-         (evidence/(label+'-raw.json')).write_bytes(raw);(evidence/(label+'-metadata.json')).write_text(json.dumps(meta)+'\n')
-         assert len(raw)<=1048576,'ResponseCap';assert response.status==200,('HTTP-no-retry',response.status)
-         return json.loads(raw.decode('utf-8'))
-        if role=='foundation':
-         assert event in ['push','pull_request'] and os.environ['FS_BRANCH']=='wp/002';verify_c(head)
-        else:verify_merge(head)
-        main=get('/git/ref/heads/main','main-ref.before')['object']['sha']
-        if role=='foundation':assert main==c['base']
-        elif role in ['admit','producer-left','producer-right']:assert main==head
-        elif role in ['writer','writer-cancel','reindex']:
-         assert event=='workflow_dispatch' and os.environ['GITHUB_REF']=='refs/heads/main'
-         request=json.loads(os.environ['FS24_INPUT']);assert request['grant']=='FS24-C' and request['code']==head
-         identity=request.pop('requestId');assert hashlib.sha256(json.dumps(request,separators=(',',':')).encode()).hexdigest()==identity,'C-request'
-         batch=request['batch'];git('fetch','origin','main');verify_data(head,main,batch)
-         assert request['cancelAfterPush']==(role=='writer-cancel') and (request['operation']=='reindex')==(role=='reindex')
-         current=get('/actions/runs/'+os.environ['GITHUB_RUN_ID'],'current-run')
-         assert current['display_title']=='FS24-C '+identity and current['event']=='workflow_dispatch' and current['head_branch']=='main' and current['run_attempt']==1
-         assert current['path']=='.github/workflows/'+('reindex.yml' if role=='reindex' else 'commit-artifacts.yml')
-         git('fetch','origin','main');verify_data(head,current['head_sha'],batch)
-        else:verify_data(head,main,batch)
-        if role!='foundation':
-         number,candidate=verify_merge(head)
-         expected=[(12,'83786225fdaff2fcbc82cd2b99212a905dd19ceb','19bb30568885ef6cb2c7c4b3c8cb9053f9b1fe21'),(13,c['base'],c['historicalCandidate']),(number,head,candidate)]
-         outcomes=[]
-         for number,merge,candidate in expected:
-          try:
-           pr=get('/pulls/'+str(number),'static-merge-'+str(number),'2022-11-28')
-           assert pr['number']==number and pr['merged'] is True and pr['merge_commit_sha']==merge and pr['head']['sha']==candidate
-           assert pr['head']['ref']=='wp/002' and pr['base']['ref']=='main' and pr['head']['repo']['full_name']==os.environ['GITHUB_REPOSITORY']==pr['base']['repo']['full_name']
-           outcomes.append({'number':number,'pass':True})
-          except Exception as error:outcomes.append({'number':number,'pass':False,'error':str(error)})
-         (evidence/'static-merge-outcomes.json').write_text(json.dumps(outcomes)+'\n');assert all(x['pass'] for x in outcomes)
-        base=c['base'] if role=='foundation' else head
-        with open(os.environ['GITHUB_ENV'],'a') as out:out.write('FS_BASE='+base+'\nFS_BATCH='+batch+'\n')
-        diff=git('diff','--name-only',c['base'],head).splitlines()
-        for path in diff:
-         for line in git('diff','--unified=0',c['base'],head,'--',path).splitlines():
-          if line.startswith('+') and not line.startswith('+++'):
-           assert not re.search(r'\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})\b',line),'secret-redacted'
-           assert ('PRIVATE'+' KEY') not in line,'private-key-redacted'
-           assert all(re.fullmatch('[a-fA-F0-9]+',x) for x in re.findall(r'[A-Za-z0-9+/]{80,}={0,2}',line)),'base64-redacted'
-        names=git('ls-files','-z').split('\0')[:-1];assert not git('status','--porcelain=v1','--untracked-files=all').strip()
-        snapshot={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in names}
-        (evidence/'source.before.json').write_text(json.dumps(snapshot,sort_keys=True)+'\n')
-        (evidence/'preflight.json').write_text(json.dumps({'result':'pass','role':role,'head':head,'eventSha':os.environ['GITHUB_SHA'],'event':event,'grant':'FS24-C','main':main})+'\n')
-        PYCODE
+        python3 "$GITHUB_WORKSPACE/scripts/wp002-preflight.py" runtime
     - name: Checksum-pinned runtime
       id: runtime
       shell: bash
@@ -442,7 +230,7 @@ jobs:
         printf 'FS_NODE=%s\nFS_NPM=%s\n' "$node_path" "$npm_cli" >> "$GITHUB_ENV"
         python3 - <<'PY'
         import os,json,pathlib
-        pathlib.Path(os.environ['FS_EVIDENCE'],'runtime.json').write_text(json.dumps({'node':'20.20.2','npm':'10.8.2','archiveSha256':'df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d','archiveChecksum':'pass','node20EolException':'FS24-C-only','actionNode24Patch':'unproven','runnerOS':os.environ.get('RUNNER_OS'),'runnerArch':os.environ.get('RUNNER_ARCH'),'imageVersion':os.environ.get('ImageVersion'),'billedCostUsd':None,'B1B2':'unverified'})+'\n')
+        pathlib.Path(os.environ['FS_EVIDENCE'],'runtime.json').write_text(json.dumps({'node':'20.20.2','npm':'10.8.2','archiveSha256':'df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d','archiveChecksum':'pass','node20EolException':'FS24-D-only','actionNode24Patch':'unproven','runnerOS':os.environ.get('RUNNER_OS'),'runnerArch':os.environ.get('RUNNER_ARCH'),'imageVersion':os.environ.get('ImageVersion'),'billedCostUsd':None,'B1B2':'unverified'})+'\n')
         PY
     - name: Set up action runtime tooling
       id: setup
@@ -495,22 +283,7 @@ jobs:
       shell: bash
       run: |
         set -euo pipefail
-        python3 - <<'PY'
-        import os,pathlib,json,hashlib,subprocess,urllib.request
-        e=pathlib.Path(os.environ['FS_EVIDENCE']);root=pathlib.Path(os.environ['GITHUB_WORKSPACE']);mirror=pathlib.Path(os.environ['TASK_ROOT'],'mirror')
-        before=json.loads((e/'source.before.json').read_text());after={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in before}
-        (e/'source.after.json').write_text(json.dumps(after,sort_keys=True)+'\n');assert before==after
-        if mirror.exists():assert all(hashlib.sha256((mirror/p).read_bytes()).hexdigest()==v for p,v in before.items())
-        assert subprocess.check_output(['git','rev-parse','HEAD']).decode().strip()==os.environ['FS_HEAD']
-        assert not subprocess.check_output(['git','status','--porcelain=v1','--untracked-files=all']).strip()
-        request=urllib.request.Request('https://api.github.com/repos/HungQuach301/fulcrum-studio/git/ref/heads/main',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
-        with urllib.request.urlopen(request) as response:raw=response.read()
-        (e/'main-ref.after.json').write_bytes(raw);after_main=json.loads(raw)['object']['sha'];before_main=json.loads((e/'main-ref.before-raw.json').read_text())['object']['sha']
-        if os.environ['FS_JOB'] in ['foundation','admit','producer-left','producer-right']:assert after_main==before_main
-        else:
-         subprocess.check_call(['git','fetch','origin','main']);subprocess.check_call(['git','merge-base','--is-ancestor',os.environ['FS_HEAD'],after_main])
-        (e/'preservation.json').write_text(json.dumps({'result':'pass','sourceUnchanged':True,'mirrorUnchanged':mirror.exists(),'mainUnchanged':after_main==before_main,'mainBefore':before_main,'mainAfter':after_main,'sourceFiles':len(before),'stateAndDependencyBytesUnchanged':True})+'\n')
-        PY
+        python3 "$GITHUB_WORKSPACE/scripts/wp002-preflight.py" preserve
     - name: Remove temporary execution data
       id: cleanup
       if: ${{ always() }}
@@ -555,7 +328,7 @@ jobs:
         summary={'head':os.environ['FS_HEAD'],'base':os.environ.get('FS_BASE',''),'job':os.environ['FS_JOB'],'result':'success' if ok else 'failure','errors':[redact(x) for x in errors[:20]],'finalJobStatus':'requires-API-readback'}
         (p/'job-summary.json').write_text(json.dumps(summary,ensure_ascii=False)+'\n')
         with open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write('summary='+json.dumps(summary,ensure_ascii=True)+'\n')
-        identity=['FS24-C',os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_RUN_ATTEMPT'],os.environ['FS_HEAD'],os.environ['FS_JOB'],os.environ['FS_EVENT'],os.environ.get('FS_BASE','')]
+        identity=['FS24-D',os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_RUN_ATTEMPT'],os.environ['FS_HEAD'],os.environ['FS_JOB'],os.environ['FS_EVENT'],os.environ.get('FS_BASE','')]
         print('FS24_BEGIN\t'+'\t'.join(identity))
         files=sorted(p.iterdir())
         for f in files:
@@ -578,5 +351,6 @@ jobs:
     permissions:
       contents: write
       actions: write
+      pull-requests: read
     if: ${{ fromJSON(inputs.request).cancelAfterPush }}
-run-name: FS24-C ${{ fromJSON(inputs.request).requestId }}
+run-name: FS24-D ${{ fromJSON(inputs.request).requestId }}
