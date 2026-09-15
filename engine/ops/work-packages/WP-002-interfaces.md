@@ -116,3 +116,34 @@ Effective only when the owner approves the pinned R1 package. Keep sections 1–
 - `engine/io/wp002-integration.ts`
 
 Policy paths are the first two entries, append-only and frozen after P1. The remaining seven are implementation/fix scope. No runtime data paths, writer/reindex workflow edits, dependency/contracts/settings/provider changes or backlog edits are authorized by R1. The nine-file repair cannot activate A1–A9: commit-artifacts.yml and reindex.yml still bind PR12/S. A subsequent explicit two-entrypoint delta and new integration grant must address that dependency; no alternate writer is permitted.
+
+
+### 10. FS24-C — proposed successor scope (D-26)
+
+Only after owner approval of the pinned offline package, D-26 authorizes one policy Q with sole parent 6d0c5abeb493699ef649f49860b370ab76c55869, followed by at most three linear implementation commits. Freeze both policy blobs after Q. Preserve sections 1–9 and every A1–A9 case. WP002 stays todo. A new PR is required; never call Ready/merge PR12 or PR13 again.
+
+Exact policy/code paths:
+
+- `engine/docs/02-decisions.md`
+- `engine/ops/work-packages/WP-002-interfaces.md`
+- `.github/workflows/ci.yml`
+- `scripts/guardrails/index.ts`
+- `scripts/guardrails/guardrails.test.ts`
+- `.github/workflows/acceptance-wp002.yml`
+- `engine/io/github-transport.ts`
+- `engine/io/github-writer.ts`
+- `engine/io/wp002-integration.ts`
+- `engine/io/wp002-integration.test.ts`
+- `.github/workflows/commit-artifacts.yml`
+- `.github/workflows/reindex.yml`
+
+Runtime paths, only after the new merge and admission:
+
+- `episodes/us-personal-finance/2026-09-fs24-left/00-brief.json`
+- `episodes/us-personal-finance/2026-09-fs24-left/state.json`
+- `episodes/us-personal-finance/2026-09-fs24-right/00-brief.json`
+- `episodes/us-personal-finance/2026-09-fs24-right/state.json`
+- `pipeline/runs.jsonl` — append 50 synthetic records
+- `pipeline/state.json` — only reindex
+
+Both fixture mappings remain bd7f0eb5b225ed43d610af12b5febbe82a7dbec4. Caps: 34 active workflows / 120 job records in active workflows / 12 skipped workflow records; one batch, 13 dispatches, one self-cancel after push, nine data commits, eight new artifacts and seventeen role-bound ZIP receives. Proposed reserve20USD and runtime/reduced guarantees require new approval. No project execution at Codex, provider/settings/credential/dependency changes, rollback, rerun, retry403, historic artifact recovery, deadlines or silence STOP. See D-26 for all gates and exceptions.
