@@ -46,7 +46,9 @@ test("D-auth-redact-both-token-and-basic-header",()=>{
 });
 test("D-auth-Python-REST-redirect-no-follow-with-raw",()=>{
   const source=String.raw`
-import importlib.util,sys,os,tempfile,pathlib,io,json,urllib.request,urllib.response
+import importlib.util,sys,os,tempfile,pathlib,io,json,urllib.request,urllib.response,subprocess
+root=str(pathlib.Path(sys.argv[1]).parent.parent)
+before=subprocess.check_output(['git','-C',root,'status','--porcelain=v1','--untracked-files=all'])
 spec=importlib.util.spec_from_file_location('preflight',sys.argv[1]);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 os.environ['GH_TOKEN']='fixture-auth-sentinel'
 original=urllib.request.build_opener
@@ -69,9 +71,10 @@ for status in [301,302,303,307,308]:
   metadata=json.loads((path/'redirect-metadata.json').read_text());assert metadata['status']==status
   assert 'example.invalid' not in json.dumps(metadata)
 urllib.request.build_opener=original
+assert subprocess.check_output(['git','-C',root,'status','--porcelain=v1','--untracked-files=all'])==before
 print('redirects rejected without a second request; raw retained')
 `;
-  const output=execFileSync("python3",["-c",source,join(process.env.GITHUB_WORKSPACE!,"scripts/wp002-preflight.py")],{encoding:"utf8"});
+  const output=execFileSync("python3",["-B","-c",source,join(process.env.GITHUB_WORKSPACE!,"scripts/wp002-preflight.py")],{encoding:"utf8"});
   assert.match(output,/redirects rejected without a second request; raw retained/);
 });
 const report={result:rows.every(row=>row.result==="pass")?"pass":"fail",tests:rows.length,rows,realFetch:false};
