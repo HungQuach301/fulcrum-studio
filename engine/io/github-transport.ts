@@ -23,7 +23,9 @@ export class GitHubTransport {
     const response = await fetch("https://api.github.com/repos/" + REPOSITORY + path, { method, redirect: "manual", headers: {
       Authorization: "Bearer " + this.token, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2026-03-10", "Content-Type": "application/json"
     }, body: body === undefined ? undefined : JSON.stringify(body) });
-    if(observe) await observe(response.clone());
+    // The receipt observer owns the body. A cloned tee can leave iterator cancellation
+    // pending on its unread sibling when a capped response is rejected.
+    if(observe) await observe(response);
     // No automatic HTTP retry, including 403 and ambiguous POST responses.
     if (!response.ok && response.status !== 302) throw new Error("GitHubHTTP:" + response.status + ":" + method + ":" + path.split("?")[0]);
     return response;

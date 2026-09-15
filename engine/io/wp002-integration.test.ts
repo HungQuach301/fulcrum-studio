@@ -10,7 +10,10 @@ import { schemaChecker } from "./repo-store";
 
 async function main(){
  const rows:Array<{name:string;result:string;error?:string}>=[];
- const test=async(name:string,f:()=>unknown)=>{try{await f();rows.push({name,result:"pass"});}catch(e){rows.push({name,result:"fail",error:String(e)});}};
+ let complete=false,current="initialization";
+ // Lifecycle evidence, not a timeout: an unresolved promise must not look like pass.
+ process.once("beforeExit",()=>{if(!complete){const report={result:"fail",tests:rows.length,rows,incomplete:current,networkFixturesOnly:true};if(process.env.FS_EVIDENCE)writeFileSync(join(process.env.FS_EVIDENCE,"integration-tests.json"),JSON.stringify(report,null,2)+"\n");process.stderr.write("IncompleteIntegrationSuite:"+current+"\n");process.exitCode=1;}});
+ const test=async(name:string,f:()=>unknown)=>{current=name;try{await f();rows.push({name,result:"pass"});}catch(e){rows.push({name,result:"fail",error:String(e)});}};
  const root=process.env.GITHUB_WORKSPACE!,head=process.env.FS_HEAD!;
  const b=bundle(root,head,"123","left"),c=schemaChecker(readdirSync("engine/contracts").filter(x=>x.endsWith(".schema.json")).map(x=>JSON.parse(readFileSync(join("engine/contracts",x),"utf8"))));
  const initial=b.manifest.operations[0],entries=initial.entries.map(x=>({...x,content:b.files[x.name]}));
@@ -93,6 +96,6 @@ async function main(){
  }finally{globalThis.fetch=original;}
  const report={result:rows.every(x=>x.result==="pass")?"pass":"fail",tests:rows.length,rows,networkFixturesOnly:true};
  if(process.env.FS_EVIDENCE)writeFileSync(join(process.env.FS_EVIDENCE,"integration-tests.json"),JSON.stringify(report,null,2)+"\n");
- console.log(JSON.stringify(report,null,2));process.exitCode=report.result==="pass"?0:1;
+ console.log(JSON.stringify(report,null,2));process.exitCode=report.result==="pass"?0:1;complete=true;
 }
 main().catch(e=>{console.error(String(e));process.exitCode=1;});

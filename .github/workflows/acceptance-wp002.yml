@@ -153,6 +153,11 @@ jobs:
          for stream in ['stdout','stderr']:
           data=(e/(name+'.'+stream+'.txt')).read_bytes();row[stream+'Bytes']=len(data);row[stream+'Sha256']=hashlib.sha256(data).hexdigest()
          receipts.append(row);failed|=r.returncode!=0
+         if name=='integration-tests':
+          report=e/'integration-tests.json'
+          value=json.loads(report.read_text()) if report.exists() else {}
+          row['evidenceValid']=value.get('result')=='pass' and value.get('tests',0)>=47 and len(value.get('rows',[]))==value.get('tests') and all(x.get('result')=='pass' for x in value.get('rows',[])) and 'incomplete' not in value
+          failed|=not row['evidenceValid']
         (e/'commands.json').write_text(json.dumps(receipts,indent=2)+'\n')
         raise SystemExit(1 if failed else 0)
         PY
