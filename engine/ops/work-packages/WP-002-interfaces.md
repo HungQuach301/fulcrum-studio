@@ -147,3 +147,39 @@ Runtime paths, only after the new merge and admission:
 - `pipeline/state.json` — only reindex
 
 Both fixture mappings remain bd7f0eb5b225ed43d610af12b5febbe82a7dbec4. Caps: 34 active workflows / 120 job records in active workflows / 12 skipped workflow records; one batch, 13 dispatches, one self-cancel after push, nine data commits, eight new artifacts and seventeen role-bound ZIP receives. Proposed reserve20USD and runtime/reduced guarantees require new approval. No project execution at Codex, provider/settings/credential/dependency changes, rollback, rerun, retry403, historic artifact recovery, deadlines or silence STOP. See D-26 for all gates and exceptions.
+
+
+### 11. FS24-D — owner-approved complete repair and acceptance scope (D-27)
+
+Owner approved the pinned FS24-D report sections 3–11; D-27 incorporates the normative specification. Preserve sections 1–10 and A1–A9. One P appends four policy paths and freezes; up to five candidate publication rounds, at most three technical PRs and one owner-conditioned one-line backlog closure PR. No code commit count limit separate from event/resource accounting.
+
+Allowed policy/code paths (change only those needed):
+
+- `engine/docs/02-decisions.md`
+- `engine/ops/work-packages/WP-002-interfaces.md`
+- `AGENTS.md`
+- `engine/ops/guardrails.md`
+- `.github/workflows/ci.yml`
+- `.github/workflows/acceptance-wp002.yml`
+- `.github/workflows/commit-artifacts.yml`
+- `.github/workflows/reindex.yml`
+- `scripts/guardrails/index.ts`
+- `scripts/guardrails/guardrails.test.ts`
+- `engine/io/github-transport.ts`
+- `engine/io/github-writer.ts`
+- `engine/io/wp002-integration.ts`
+- `engine/io/wp002-integration.test.ts`
+- `scripts/wp002-preflight.py`
+- `engine/io/github-git.ts`
+- `engine/io/github-git.test.ts`
+- `engine/io/repo-store.ts`
+- `engine/io/repo-store.test.ts`
+- `engine/io/episode-state.ts`
+- `engine/io/run-log.ts`
+- `engine/io/reindex.ts`
+- `scripts/guardrails/scope.ts`
+- `scripts/ci-report.ts`
+
+Runtime only after admitted activation: the same four synthetic episode brief/state paths for 2026-09-fs24-left/right plus pipeline/runs.jsonl (append exactly50) and pipeline/state.json (only reindex); both source mappings remain bd7f0eb5b225ed43d610af12b5febbe82a7dbec4. Nine data commits across all code epochs. One logical batch, at most three controller runs, 24 dispatches, one self-cancel,16 artifact objects/31 role-bound ZIP receives with seven-day retention. Cap72 active/288 job records in active/36 skipped workflow records, reserve60USD with D-27 reduced guarantees. Historical counters/pins do not reset.
+
+The only additional path is one WP-002 backlog line after owner reads and accepts the final checkpoint per D-27 section10; no closure write is authorized before that condition. Unchanged contracts/dependencies/settings/credentials/providers, no rollback/rerun/retry403/old batch replay/deadline/silence STOP. Same-grant fixes and recovery within D-27 do not need repeated owner permission; external checkpoint drift or actual scope/risk/budget extension must be reported.

@@ -1176,3 +1176,317 @@ Giữci-reportR nguyênvăn kểcả `error=fatal: Not a valid commit name 00000
 **Quyết định đề nghị một lần:** duyệt §4–§8 (12code/policy paths +6runtime paths;Q+≤3I;PR mới/Readymergecóđiều kiện;34/120/12;13 dispatch/1 self-cancel/9 data/8 artifact/17 receives;reserve 20 USD vàngoại lệđã khai). Mọi khả năng này vẫnpending; không thể diễn giải yêu cầu lập kế hoạch hiện tại thành approval. Nếu muốn reviewdiff trước cấpCI, câu giao việc giới hạn có sẵn ở§9.
 
 
+
+
+## D-27 · FS24-D — owner-approved repair, recovery and acceptance
+
+Owner approved sections 3–11 of libfile_f69ee0a6a02c8191bb54856854eaf642 (2738442 bytes, SHA256 f8ec7151277baf71cc501c2def82b7cbb9f684eb56278892fccf140e48df4f7f). Proposal wording inside the incorporated specification records its origin; this owner grant authorizes the specified package. Preserve all historical decisions/pins/evidence and response B missing. P has sole parent T=78a4b28b4134fb09b4a003b90099c13460a8112d, treeT=ac9be3c9f327ba15cf6c0a9871d05d444a58c290. Four policy blobs freeze after P. WP002 stays todo until owner acceptance under section 10. No provider or Ready/merge again PR12/13/14.
+
+## 3. Blocker, bằng chứng và sửa theo nhóm nguyên nhân
+
+| ID / phân loại | Bằng chứng nguồn T hoặc kết quả C | Sửa và tiêu chí đóng |
+|---|---|---|
+| F-C01 — lỗi đã xảy ra | `engine/io/wp002-integration.ts:73` fetchMain không truyền auth env; ledger gọi dòng83, admit dòng106. Checkout persist-credentials:false. Admit job104410523298 stderr: `fatal: could not read Username for 'https://github.com': No such device or address`. | Truyền token sẵn có qua cấu hình Git chỉ sống trong process, giới hạn đúng URL repo; kiểm Git fetch đọc-only thật trong Actions trước merge. Không đổi credential hoặc persist-credentials. |
+| F-C02 — cùng mẫu lỗi tiềm ẩn | `commit-artifacts.yml:118/123/397/402`, `reindex.yml:117/122`: fetch trong Python preflight không có auth tạm thời. Common block acceptance còn branch writer/reindex không dùng tại entrypoint đó. | Rà mọi remote Git invocation trong phạm vi; đưa preflight dùng chung vào một nguồn, phân biệt active/dead routes; xóa branch trùng không dùng nếu được chứng minh không đổi hành vi. Hồi quy mọi entrypoint, không chỉ admit. |
+| F-C03 — lỗ hổng coverage | `wp002-integration.ts:98` diagnose-candidate trả về trước ledger/fetch. 83 integration và 95 guardrails đã pass không chứng minh private Git fetch. | Candidate phải đi qua cùng reader/preflight/ledger thật, dùng token read-only; test auth env, I/O, provenance, completeness. Có row riêng chứng minh đường Git đã thực sự chạy. |
+| F-C04 — policy/lifecycle | D-26 chỉ R→Q→≤3I→T, một batch và cấm fix sau merge; unused I2/I3 không dùng được sau T. `successorChain` chỉ chấp nhận chuỗi data đơn sau một code SHA. | D-27 + WP002§11 đề nghị cho D; mô hình các phiên bản code đã merge, controller resume và typed lineage tại §§5–7. Không sửa historical constants thành pins mới. |
+| F-D05 — khoảng trống thu bằng chứng, đã thấy hậu quả | Ledger GET trong admit có trước exception nhưng file ledger chỉ emit sau vòng duyệt (`wp002-integration.ts:76–94`); raw ledger đúng lúc lỗi không có. | Capture từng response/page với metadata trước parse/provenance/fetch. Emit tiến độ từng bước; finally chỉ tổng hợp phần có thật. Không dựng lại response cũ. |
+| F-D06 — kiểm completeness chưa đồng đều, nguy cơ tĩnh | Foundation `acceptance-wp002.yml:190–204` có kiểm cấu trúc riêng cho integration và ngưỡng≥50; repo-store/registry chủ yếu dựa exit. | Manifest test IDs bắt buộc cho cả ba suite và guardrails; row unique, đủ bộ cũ+mới, không incomplete/skipped âm thầm. Đối chiếu stdout/stderr/exit và API final state. Không khẳng định bộ test cũ thực tế bị thiếu. |
+| F-D07 — nguy cơ tiếp tục batch sai | Controller bắt đầu lại sequence cố định; identity/code/artifact gắn một run, nguồn ledger89, mọi main descendant kỳ vọng data commit. | Batch logic tách khỏi controller run và code epoch; operation journal suy ra từ raw/receipts/history hợp lệ, không từ chat. CAS và idempotency không cho commit thứ hai của cùng operation. |
+| F-D08 — closure chưa có | DoD§8 cần owner đọc báo cáo/checkpoint, §9 cần backlog done; mọi grant trước giữ todo. | Giữ todo tới báo cáo kỹ thuật đầy đủ. Chuẩn bị PR chỉ một dòng sau owner xác nhận, kiểm lại exact head/main và CI. Đây là gate nghiệm thu có ý nghĩa, không phải xin quyền sửa nhỏ. |
+
+Raw `integration-error.json` C:194 byte/SHA `59a1932dbcfb08ebf4d7c6f78980979406173ba4a8d56ff7fe6e1ccf327520ea`. Ba receipt TS PR12/13/14 đều pass trước Git error. Do đó không có căn cứ quy lỗi này cho REST403 hoặc thiếu quyền token. Emit evidence step exit1 là truyền kết luận failure sau frame hoàn chỉnh; không gọi đó là mất toàn bộ log.
+
+### 3.1 Ba dòng thay ràng buộc theo D-14 — gom trong một quyết định
+
+- **Ràng buộc:** D-26/WP002§10 đóng 12 path, Q+≤3I, một PR/batch và “không fix sau merge”; AGENTS/guardrails còn thủ tục dừng/chờ áp dụng cả khi sửa nhỏ trong gói; DoD§8–9 tách kỹ thuật và owner acceptance.
+- **Bị chặn:** sửa một fetch không sửa các entrypoint tương tự; failure sau merge hoặc artifact hết hạn kết thúc gói dù tác vụ có thể tiếp tục an toàn; workflow/provenance hiện tại từ chối code sửa và batch dở dang. Không thể đạt A1–A9 chỉ bằng review hoặc mock.
+- **Thay tối thiểu có căn cứ:** append D-27/WP002§11 cùng nguyên tắc vào AGENTS/guardrails, cho phạm vi và quyền §§4–11, giữ gate dữ liệu/identity/CI/owner; thay commit-count bằng đợt kiểm, một PR bằng chuỗi PR sửa được cấp trước, và một controller bằng batch logic có resume. Chấp nhận bootstrap trước E2E, tài nguyên bổ sung và độ phức tạp lineage/recovery được khai; không mở provider hoặc sửa lịch sử.
+
+## 4. Phạm vi và pins mới phải tạo trước ghi
+
+### 4.1 Allowlist policy/code: 24 path
+
+Đây là ranh giới theo trách nhiệm, không yêu cầu chạm đủ file. Trong phạm vi đã duyệt, phát hiện lỗi có cùng nguyên nhân và cần sửa đường gọi/hồi quy bên dưới thì tự sửa; không xin nới từng file đã nằm trong bảng. Không đổi public contract hoặc kiến trúc dự án.
+
+| # | Path | Phần được sửa |
+|---:|---|---|
+|1|`engine/docs/02-decisions.md`|Append D-27 và toàn grant, giữ prefix T.|
+|2|`engine/ops/work-packages/WP-002-interfaces.md`|Append§11 scope/acceptance/recovery/closure, giữ mọi A1–A9 và lịch sử.|
+|3|`AGENTS.md`|Append nguyên tắc đã duyệt và ranh giới tự chủ; không đổi bảng thẩm quyền.|
+|4|`engine/ops/guardrails.md`|Append cách áp dụng D-27: blocker chỉ chặn phần phụ thuộc, giữ correctness/security.|
+|5|`.github/workflows/ci.yml`|Admission D/candidate/main/final/closure, đúng bốn job, evidence đầy đủ.|
+|6|`.github/workflows/acceptance-wp002.yml`|Candidate I/O thật; hậu merge đọc-only; activation/resume explicit; sáu job records.|
+|7|`.github/workflows/commit-artifacts.yml`|Preflight chung, writer/one self-cancel, resume identity, evidence trước tác dụng phụ.|
+|8|`.github/workflows/reindex.yml`|Preflight chung, only-index writer, input/readback/recovery.|
+|9|`scripts/guardrails/index.ts`|D policy/typed lineage/freeze/scope/closure; giữ B/R1/C validators.|
+|10|`scripts/guardrails/guardrails.test.ts`|Ca cũ + ca âm D qua scanner thật, không whitelist test để qua scan.|
+|11|`engine/io/github-transport.ts`|Raw trước parse, page journal, dispatch/receipt/identity, artifact generations.|
+|12|`engine/io/github-writer.ts`|Auth dùng chung, typed history, stable operation identity, recover no-duplicate.|
+|13|`engine/io/wp002-integration.ts`|Admission/producer/controller/checkpoint-resume/final validation theo grant.|
+|14|`engine/io/wp002-integration.test.ts`|Regression toàn luồng, recovery và evidence manifest.|
+|15|`scripts/wp002-preflight.py` (mới)|Một preflight stdlib trước npm; nhận role, xác minh policy/event/source/raw/Git, không tự cấp quyền.|
+|16|`engine/io/github-git.ts` (mới)|Auth command-scoped và wrapper Git đọc/ghi theo role, không lưu token.|
+|17|`engine/io/github-git.test.ts` (mới)|Auth isolation/redaction/no-persist và cùng đường fetch trong Actions.|
+|18|`engine/io/repo-store.ts`|Chỉ sửa lỗi interface validate/idempotency/serialization/revision cùng phạm vi WP002 nếu có bằng chứng.|
+|19|`engine/io/repo-store.test.ts`|Regressions cho store/episode/run-log/reindex; giữ toàn bộ ca cũ.|
+|20|`engine/io/episode-state.ts`|Chỉ sửa identity/revision/pending/read inspection cần cho A2/A5; không đổi schema.|
+|21|`engine/io/run-log.ts`|Chỉ sửa validation/append semantics nếu test chứng minh cần; giữ prefix/costUsd.|
+|22|`engine/io/reindex.ts`|Chỉ sửa projection/sourceCommit/pending/full-state coverage nếu cần; không đổi writer authority.|
+|23|`scripts/guardrails/scope.ts`|Context event/closure/recovery, không giả nhãn dispatch thành push hoặc tự lấy scope ở head.|
+|24|`scripts/ci-report.ts`|Chỉ nếu cần để kiểm đầy đủ evidence D; giữ giải mã lịch sử và literal raw; không đổi success để che failure.|
+
+Path thứ25 có điều kiện: `engine/ops/backlog.md`, chỉ dòng WP-002 từ todo sang done sau §10. Không sửa backlog trong policy/code/recovery kỹ thuật. Không dùng ngoại lệ một dòng backlog để vượt chỉ dẫn giữ todo hiện tại.
+
+Giữ nguyên byte/mode mọi file ngoài allowlist trong từng code commit/merge so với base thực đã xác minh; không đòi file được phép cũng phải đổi. Đóng băng contracts, `scripts/validate.ts`, package/lock, PROJECT, DoD, cấu hình Channel/Genre và providers. Registry/interface provider được đọc/kiểm bằng fake hiện có, **real provider calls=0**. Không thêm dependency; không sửa setting/credential/PAT/OIDC/branch protection. Các helper mới chỉ dùng runtime/library sẵn có.
+
+### 4.2 Policy commit và tránh pin tự tham chiếu
+
+P sole parent T, chỉ append bốn path1–4. D-27 mang nguồn T/treeT, prefix/blob T và grant/scope/counters; không ghi SHA P chưa tồn tại vào bytes P. Sau khi tạo P, đọc lại parent/tree/four policy blobs và lưu pin thực vào manifest implementation/preflight. Freeze toàn bộ bốn policy blobs sau P, kể cả qua PR sửa sau merge và PR closure. Sai logic checker thì sửa implementation trong scope; không tự sửa policy đã freeze để nới quyền.
+
+AGENTS cũ và guardrails cũ giữ nguyên prefix. D-27 nêu rõ phạm vi thay thế thủ tục cũ; không có bảng thẩm quyền thứ hai. Gói này không cấp quyền cập nhật cấu hình Project Instructions ngoài repo. Nếu bản sao ngoài repo chưa được đồng bộ, báo đúng trạng thái, chỉ dẫn owner trong phiên vẫn là thẩm quyền cao nhất.
+
+### 4.3 Sáu path runtime, giữ nguồn N
+
+1. `episodes/us-personal-finance/2026-09-fs24-left/00-brief.json`
+2. `episodes/us-personal-finance/2026-09-fs24-left/state.json`
+3. `episodes/us-personal-finance/2026-09-fs24-right/00-brief.json`
+4. `episodes/us-personal-finance/2026-09-fs24-right/state.json`
+5. `pipeline/runs.jsonl` — append đúng 50 dòng mới, prefix T nguyên byte.
+6. `pipeline/state.json` — chỉ reindex, projection từ full state set tại parent của index commit.
+
+Hai episode mapping đều N. Đọc tuple versions/limits/layout/pillar từ N, không latest hoặc tự tạo hằng số pack. Payload và writeId dùng namespace **FS24-D** mới; không đổi B/R1/C. Synthetic/human-approvedBy trong fixture không là Gate1 nội dung, không provider/publish. Chín commit: initial2 + updates2 + pending1 + side-effect1 + logs2 + index1. Duplicate/replay/invalid=0 commit. Fixtures và pending cuối được giữ, không cleanup main.
+
+## 5. Trình tự thực hiện và gates
+
+### G0 — Chuẩn bị trong gói sau khi được duyệt
+
+Đọc checkpoint/ledger mới; kiểm source P/T pins và luật đang có. Tạo diff mới từ T, manifest path/mode/byte/SHA/Git blob, bảng test IDs và mô hình sự kiện trước push. Review auth/read-only/secret/prefix/freeze/YAML/shell/Python bằng phân tích dữ liệu; không chạy project ở Codex. Tái dùng dữ liệu chuẩn bị C có pin đúng, không chạy lại script chuẩn bị cũ. Commit P trước code; nếu CI cũ reject P, giữ failure như bootstrap history và tính counters, không gọi P pass.
+
+### G1 — Triển khai và mở PR
+
+Triển khai toàn nhóm lỗi trong một candidate hợp lý, mở PR Draft mới ngay sau đợt implementation đầu. Nhánh `wp/002`, fast-forward từ I1 qua T tới P/code, không force/rebase/squash lịch sử. Mỗi đợt công bố candidate có expected parent/head, diff và ledger; commit nội bộ nhiều hay ít không là gate riêng nhưng mỗi push/synchronize phải được tính. Không tạo commit rỗng để kích CI.
+
+Một vòng sửa bắt đầu bằng failure/evidence mới và kết thúc ở candidate mới có đầy đủ kiểm; tối đa bốn vòng ngoài triển khai đầu. Không chạy lại cùng mutation chỉ vì chưa hiểu failure. Có thể dùng các vòng trước hoặc sau merge; tối đa hai vòng có merge sửa sau merge ban đầu. Không nhất thiết tiêu hết vòng/cap.
+
+### G2 — Kiểm trước merge trên đúng candidate cuối
+
+- CI push và PR đủ validate/typecheck/guardrails/report success. Foundation/report đủ store/registry/integration/auth tests, test IDs unique/đầy đủ và logs/exit/frame. Bảo toàn các ca nguồn T: 26 store, 5 registry, 83 integration, 95 guardrails; manifest ID thực là tiêu chuẩn, con số không thay nội dung. Các ca mới có tên, mục tiêu và kết quả riêng, không bịa số đã chạy.
+- **Prequalification Git thật:** process Python và TypeScript thực sự fetch đúng private repo/main bằng token read-only trong Actions, persist-credentials:false. So SHA FETCH_HEAD với GET và expected main; trước/sau config không lưu auth, diff/mirror/source không đổi. Dùng wrapper giống các entrypoint production; kiểm nhánh role writer/reindex theo chế độ dry-read tuyệt đối không commit/push/dispatch. Thiếu quyền write không phải lý do thử write trước merge.
+- REST receipt lịch sử/ledger bằng đường thật, toàn page capture trước parse; ledger>100/duplicate/missingpage/foreign provenance bằng regressions có fixtures. Không đọc B raw thiếu bằng cách gọi lại batch.
+- Artifact candidate mới đi qua chính receive path sẽ dùng sau merge, metadata/ZIP/member validation thật. Với closure-only candidate ở §10, code/artifact transport không đổi thì không tạo artifact mới; vẫn chạy validation và suites đọc-only.
+- Regression mô phỏng failure trước/sau từng ranh giới: fetch, page capture, POST receipt, push, readback, cancel, ZIP, report, cleanup; chứng minh không có POST lặp mù và không âm thầm bỏ row. Dùng repo Git tạm trong Actions cho CAS/revision/partial history; không phải bằng chứng ghi main thật.
+- Ca âm policy prefix/freeze/unknown path, stale main/head, PR sai repo/base/head/number, data ngoài six paths, main merge lạ, duplicate operation khác payload, code epoch lạ, pending mất, index self-reference, missing raw/frame/cleanup. Không dùng arbitrary failure làm SchemaRejected.
+
+### G3 — Ready/merge có điều kiện
+
+Tự review PR và báo cáo năm mục, không cần xin lại quyền nếu gói đã duyệt. Trước từng Ready và merge: đọc main/base/head/tree/policy blobs/ledger/jobs, kiểm gate G2 exact head và budget đuôi. Historical bootstrap failures được bảo lưu có danh tính; mọi failure/incomplete chưa giải quyết của candidate cuối chặn merge.
+
+Chỉ PR mới thuộc D, Ready tối đa một POST và merge tối đa một POST mỗi PR; merge_method=merge, expected_head SHA thực. Thiếu ack: GET đối chiếu state, không lặp mutation. PR12/13/14 không gọi lại Ready/merge. Base race từ nguồn ngoài gói phải báo; không coi main unprotected là an toàn tuyệt đối.
+
+Đặt `B_e` là main base của PR kỹ thuật e, `C_e` candidate đã kiểm, `M_e` merge thực: ordered parents **[B_e,C_e]**, tree M_e=tree C_e và đúng trailer grant/phase/PR thực. e=0: B_0=T. e>0: B_e là main hiện tại đã chứng minh chỉ gồm lịch sử của D. C_e phải descendant B_e, không transplant code lên base thiếu dữ liệu. Không bịa SHA/PR tương lai.
+
+### G4 — Hậu merge đọc-only trước activation
+
+Main CI bốn job tại M_e phải pass. Listener của CI main chỉ chẩn đoán đọc-only: receipt lịch sử PR12–14 và các PR D, policy/lineage, Git fetch/ledger/permissions/evidence, source preservation. **Merge không tự mở producers/writer.** Listener từ final-dispatch/closure không được kích activation vòng lặp.
+
+Sau khi main CI + hậu kiểm đầy đủ, agent được tự gọi một `workflow_dispatch` activation/resume đúng grant đã duyệt; không hỏi owner lại. Run đầu tạo batch logic mới; run tiếp dùng batch ID cũ và recovery manifest. Cách này tách validation merge khỏi tác dụng phụ mà không tạo thêm bước duyệt.
+
+### G5 — Admission, producers và thực thi A1–A9
+
+Trước activation đầu: six data paths đúng baseline T, không episode state mới ngoài nguồn; toàn97 ledger gốc giữ nguyên; không controller khác đang thực thi; cap đủ toàn đuôi và closure. Code/source/event/attempt1/request digest đúng; candidate/main/hậu kiểm pass. Resume dùng quy tắc §7, không áp điều kiện “chưa có state” lên batch đã ghi một phần.
+
+Hai producers độc lập thật, ghi job intervals và cùng frozen payload origin; chỉ nhận song song khi intervals overlap. Writer push vẫn qua `repo-write`, cancel-in-progress:false, queue:max theo pin source hiện hành. Reindex giữ workflow concurrency reindex/cancel:true, job write cùng queue repo-write/cancel:false. Chỉ một controller D đang hoạt động; không cancel run khác để giải hàng đợi. Không lấy sự chậm làm failure.
+
+Các writer initial xuất phát từ cùng source/payload base; latest Git parent lấy sau serialization. A2 dùng receipt barrier revision2→3, không suy thứ tự FIFO từ dispatch. Trước mỗi action có tác dụng phụ, admission kiểm lại main/type history/remaining operation/counters. CAS tối đa năm lần chỉ khi ref conflict thật; không retry authentication/403/network/unknown outcome.
+
+### G6 — Validation cuối và hồ sơ kỹ thuật
+
+Sau index commit F_data, explicit finalCI trên main chính xác F_current với code epoch hiện hành và payload origin riêng. Khi không có sửa sau data thì F_current=F_data. Giữ full source validation với mappings N, bốn jobs, raw ci-report, full frames, API state/steps/cleanup. Nếu sửa code sau index, không giả F_current^1 là nguồn index; index vẫn có sourceCommit=F_data^1 và cần kiểm states không đổi qua các code merges.
+
+Chỉ technical pass khi mọi A1–A9, full data history, exact code/source/policy/runtime, zero real provider, evidence/preservation/cleanup theo ngoại lệ được duyệt đều đủ. Khác biệt code epoch được xử lý tại §7.3; CI xanh không tự hợp thức hóa acceptance cũ bị vô hiệu. Xuất report năm mục và closure manifest; ownerAcceptance=pending, WP002todo cho tới §10.
+
+## 6. Hợp đồng I/O, bằng chứng và nghiệm thu A1–A9
+
+### 6.1 Auth, raw receipt và phân quyền
+
+Git read sử dụng GH_TOKEN sẵn có ở job với contents:read; Git write chỉ ở writer/reindex, contents:write. Controller có actions:write để dispatch nhưng contents:read; A4 job có actions:write riêng cho tự cancel. Producers chỉ có quyền cần cho upload artifact, không contents:write. Không persist credentials, không token trong argv/URL/log, không in toàn env. Pin origin đúng HTTPS repo và chặn chuyển auth sang host/repo khác. Command env là dữ liệu nhạy cảm, evidence chỉ ghi tên biến/cấu hình đã che và kiểm no-persist. Cả stderr/exception cũng phải được redaction; test dùng sentinel giả, không đưa secret thật vào fixture.
+
+Git hỗ trợ cấu hình runtime bằng `GIT_CONFIG_COUNT/KEY_n/VALUE_n` và khóa `http.<url>.*`; đây là cơ sở cho auth chỉ sống trong process, vẫn phải kiểm trên runtime thật. [Git config](https://git-scm.com/docs/git-config#Documentation/git-config.txt-GITCONFIGCOUNT).
+
+GET receipt riêng `/pulls/<positive number>` giữ **2022-11-28**; các REST khác giữ **2026-03-10**. Raw body + metadata request/version/status/requestId/byte/hash phải được capture trước JSON parse và semantic checks. PR receipt labels lịch sử/repair/C/D độc lập, không đè cùng filename. Mọi page ledger/jobs cũng journal ngay khi nhận, không đợi duyệt xong provenance mới emit. Response body chứa secret/signed URL nếu có không được log; metadata chỉ allowlist an toàn, tách riêng raw control body không nhạy cảm và audit redaction.
+
+POST dispatch ghi request digest trước gửi, ghi raw receipt trước parse, bind run ID/URLs/event/head/attempt/request title đúng; API docs là tham chiếu hợp đồng, response thật mới là chứng cứ. Cancel202 chỉ là ack; cần GET terminal cancelled. [GitHub workflows API](https://docs.github.com/en/rest/actions/workflows?apiVersion=2026-03-10#create-a-workflow-dispatch-event), [cancel API](https://docs.github.com/en/rest/actions/workflow-runs?apiVersion=2026-03-10#cancel-a-workflow-run).
+
+Không retry403 hoặc gọi lại POST có outcome chưa biết. GET đối soát là request mới có nhãn riêng, không được ghi thành raw đúng lúc lỗi. Các token quyền thực tế rộng hơn role logical phải được khai, không tuyên bố platform path-scope khi chỉ có code guard.
+
+### 6.2 Evidence manifest
+
+Mỗi run/job có repository, grant, batch, controller run, attempt, code SHA/tree, payload origin SHA, source N, base/event SHA, role, request ID/digest, timestamps. Mỗi command có argv đã lọc secret, cwd, stdout/stderr byte/SHA, exit. Mỗi test có ID/kết quả; manifest bắt buộc quyết định completeness, không ngưỡng count tối thiểu.
+
+Thu raw receipts, run/job/API step outcomes, original ZIP received bytes, CRC/members/hash, transaction inputs, commit/tree/blob/ref remote readback, source.before/after, preservation/mirror, cleanup markers. Frame COMPLETE phải có số file/sequence/hash đầy đủ; thiếu frame không pass. Emit theo tiến độ và trước cancel; cuối job reconcile với API. Report own final state cần đọc log/metadata sau finalizer, không tự chứng nhận trước khi cleanup chạy.
+
+Các schema/invalid fixtures ở scratch Actions không phải dữ liệu main. 50 log synthetic costUsd0 phản ánh không gọi provider trong fixture; không đại diện chi phí Actions. Hạ tầng/cancellation/failure ghi raw evidence riêng, không chèn costUsd0 giả vào log chỉ để đóng DoD. WP002 không thêm stage sản xuất; nếu implementation phát sinh stage thật cần cost logging ngoài thiết kế này thì đó là thay scope, không tự coi waived.
+
+### 6.3 Ma trận nghiệm thu
+
+| Ca | Thao tác và điều kiện pass | Bằng chứng không được thay thế |
+|---|---|---|
+|A1|Hai producers overlap, initial-left/right cùng payload base, hai atomic commits brief+state khác tập, latest giữ cả hai.|Hai producer jobs/intervals/manifests; hai writer runs; serialization/parents và remote blobs thật.|
+|A2|Update-one hoàn tất revision2 rồi update-two thấy revision2 và ghi3.|Read version/base và receipt barrier; không chỉ final revision3.|
+|A3|Lần gọi lại initial-left cùng stable writeId/payload trả success duplicate=true, commit cũ, delta0.|Hai run IDs khác, receipt/hash/commit history; collision khác payload phải reject.|
+|A4|Side-effect push/readback/receipt emit → một self-cancel → terminal cancelled → dispatch replay cùng writeId trả commit cũ, delta0.|Raw cancel/202 và API cancelled; không dùng timeout hoặc mock thay cancellation thật.|
+|A5|Pending revision4; brief side-effect đã ghi, invalid-state bị từ chối; đọc lại thấy pendingWriteId và incomplete.|State/brief bytes và inspectEpisode từ data thật; không báo done khi pending.|
+|A6|Hai state giả từ cùng hai producers/jobs A1 tồn tại và schema-valid, không mất dữ liệu.|Dùng lại bằng chứng A1 có chỉ mục rõ; không tạo thêm run giả để đủ số.|
+|A7|Hai log requests25+25, đúng set50 runId unique, prefix bất biến, hai log commits.|Raw log trước/sau, input digests, remote history; không suy từ count50 đơn thuần.|
+|A8|Chỉ reindex ghi index từ full states ở index parent; schema/domain/sort/pending/sourceCommit đúng.|Full state inventory tại parent, projection độc lập, only-index delta/remote blob.|
+|A9|Invalid-state failure đúng SchemaRejected trước push, mainbefore=after, zero commit.|Structured schema error + raw run/log; Git403/auth/infra failure không phải pass ca âm.|
+
+Final CI xanh trên đúng F_current, mọi source/code/policy/data gate và report/cleanup đầy đủ là yêu cầu thêm, không được dùng thay A1–A9. Regression registry chỉ chứng minh interface bằng fake; không nghiệm thu provider production.
+
+## 7. Sửa trước/sau merge và tiếp tục an toàn
+
+### 7.1 Tách identity để không chạy lại cả batch
+
+Gói đề nghị giữ **một batch logic** với batchId từ activation đầu; các run tiếp theo là controller mới, attempt1, có `resumeOf` và `recoveryOrdinal`, không dùng API rerun. Cần phân biệt:
+
+- payload origin: SHA/tree/time nguồn tạo payload đã freeze; mapping N không đổi;
+- executing code epoch: merge M_e hiện hành đã qua candidate/main/hậu kiểm;
+- operation/writeId: ổn định toàn batch; requestId lần thử mới có ordinal, payload digest bất biến;
+- artifact generation: ID/run/code producer vật lý, liên kết nội dung operation đã freeze.
+
+Typed history từ T cho phép đúng ba loại: code merge của PR D đã được gate, data single-parent của nine-operation ledger, và closure merge chỉ backlog. Mọi edge có expected parent/tree/scope/trailers/receipt. Không dùng `rev-list` count tổng để coi code merge là data commit; kiểm riêng first-parent spine và ancestry candidate mỗi merge. Code merges phải bảo toàn mọi data blob/mode so với base; data commits chỉ six paths và unique writeId; policy P bất biến ở mọi descendant.
+
+Logic resume phải nằm trong repo và được kiểm trước activation đầu, không để chat quyết định từng lệnh. Journal gồm raw action intent/result và commit evidence; controller có thể suy trạng thái từ các chứng cứ đã xác minh. Không tạo database ngoài hoặc thêm file state runtime ngoài sáu path. Recovery manifest có hash được truyền qua workflow input, chứa tham chiếu đã kiểm, không được tự cấp scope/budget.
+
+### 7.2 Bảng xử lý failure
+
+| Tình huống | Hành động đã đề nghị gộp | Điều kiện không được vượt |
+|---|---|---|
+|Candidate fail|Thu hết kết quả, sửa root cause trong scope, công bố candidate mới, kiểm đủ G2.|Không rerun cùng run, không giảm manifest test/gate.|
+|Main CI/hậu kiểm fail, chưa dữ liệu|Sửa qua PR D tiếp theo, CI/Ready/merge/hậu kiểm mới trong budget; activation vẫn chưa mở.|Không cố kích batch trên code lỗi.|
+|Admission/producer fail trước data|Giữ evidence, sửa nếu cần; controller mới liên kết batch cũ; producers có thể tạo generation mới trong quota.|Không gọi batch34977975525 hoặc batch B; không coi producer không overlap là pass.|
+|Writer fail và đã chứng minh chưa commit|Sửa code nếu cần; dispatch mới cho chính operation còn thiếu, cùng payload/writeId, request ordinal mới.|Lần cũ phải terminal và side effect đã đối soát chắc chắn; tối đa sáu dispatch phục hồi chung.|
+|Push đã thành công, sau đó lỗi readback/report|GET commit/ref/blob và raw gốc để xác định state; đánh dấu operation đã ghi, không ghi lại.|GET muộn không thay raw bị mất. Nếu acceptance cần raw đã mất, giữ ca đó chưa đạt.|
+|POST ack không rõ / run chưa terminal|Thu request/raw/ID đã có; đọc trạng thái để đối soát, bảo lưu pending.|Không POST thứ hai hoặc timeout/silence STOP. Không suy “không tìm thấy ngay” thành “chưa thực hiện”.|
+|HTTP403/auth rejection|Giữ raw/meta và phần độc lập; phân biệt lỗi code chưa truyền auth với actual403.|Không retry403/đổi token/settings. Nếu cần quyền mới, báo đúng endpoint/role/quyền thiếu.|
+|Artifact mới hết retention|Có thể tạo generation mới trong D từ nội dung operation đã lưu đủ/hash đúng, nhận lại theo role mới, lưu metadata mới.|Không phục dựng ZIP cũ, không giả upstream ZIP hash không đổi; không thay payload để lách collision. Nếu thiếu bytes gốc thì giữ blocked.|
+|FinalCI/report/cleanup validation fail|Thu đủ bằng chứng; nếu code cần sửa, PR sửa; finalCI mới attempt1 trong ba suất finalCI, khi có thay đổi/bằng chứng liên quan.|Không rerun API hoặc khai cleanup pass khi không có evidence. Cancel A4 giữ ngoại lệ riêng.|
+|Chạm cap hoặc xuất hiện main từ nguồn ngoài|Không phát thêm side effect; thu/đối soát run đang có; báo delta tối thiểu và phần độc lập đã làm.|Không cancel để vừa cap, không đổi baseline/counter cũ, không tự lấy reserve mới.|
+
+Không dùng force-cancel, rollback, reset fixtures, amend/xóa failures hoặc sửa dữ liệu đã commit để “làm lại sạch”. Dữ liệu đã sai hoặc semantics cần thay ngoài nine-operation payload là blocker có ý nghĩa: lưu exact offending blob/operation và đề nghị forward correction có scope riêng; không cấp mặc định trong gói này.
+
+### 7.3 Hiệu lực acceptance khi code thay đổi sau data
+
+Mỗi ca A có code epoch đã thực thi và tập file/hàm/hợp đồng mà bằng chứng phụ thuộc. PR sửa phải lập bảng ảnh hưởng và chạy regression/read-only validation trên candidate cuối. Bằng chứng thật chỉ tái dùng nếu hành vi đã kiểm không đổi, bytes dữ liệu/payload nguồn giữ nguyên, provenance đầy đủ và kiểm hiện hành xác nhận. Nếu thay đổi làm ca A cũ không còn chứng minh code cuối, ca đó bị vô hiệu; **không lấy replay trong repo tạm hoặc CI xanh thay side effect thật**.
+
+Có thể tiếp tục ca chưa chạy bằng code mới với cùng payload origin và journal hợp lệ; phải ghi rõ batch qua nhiều code epochs, không gọi là single-SHA E2E. Nếu gate bắt buộc phải lặp lại tác dụng phụ nhưng quota nine data/one cancel hoặc tính đồng thời không cho phép, hoàn tất phần độc lập và trình đúng delta cần thiết. Đây là giới hạn bảo toàn dữ liệu/bằng chứng, không phải hạn chế “hết ba commit”. Gói không hứa khắc phục tự động trường hợp mất bằng chứng không thể tái tạo.
+
+### 7.4 Artifact generations và duplicate
+
+Giữ receiver nguyên ZIP→metadata→CRC/member/hash/schema; không execute payload, không token theo signed redirect. Mỗi ZIP receive là một vai trò cụ thể của run mới; trong cùng job CAS cache bytes đã nhận, không network-download lại. Duplicate/replay đã có commit phải trả từ receipt/history mà không receive ZIP mới.
+
+Nếu tạo generation mới, manifest transport mới có code/run/artifact identity mới nhưng **operation payload digest cũ phải khớp**. Duplicate collision kiểm digest nội dung ổn định và chain chứng nhận generation, không chỉ chấp nhận bất kỳ artifact ID khác. Cả bộ generation và nguồn bytes cũ còn trong bằng chứng. Tăng retention chỉ áp objects D mới, không sửa hoặc tải lại artifact B/R1/C.
+
+## 8. Quyền thực thi và counters đề nghị
+
+### 8.1 Sự kiện và cách đếm
+
+Giữ CI bốn job; acceptance sáu job records theo mode (foundation, admit, producer-left, producer-right, controller, report). Candidate chạy foundation/report, các job khác skipped; hậu merge chỉ read-only; activation/resume mới cho producer/controller cần thiết. Writer hai job records (một thường, một cancel có điều kiện), reindex một. Tất cả skipped job nội bộ vẫn tính trong job records của active workflow.
+
+| Hạng mục tối đa trong mô hình | Active workflows | Job records |
+|---|---:|---:|
+|P push: legacy CI + acceptance|2|10|
+|5 đợt candidate kỹ thuật, mỗi đợt push + PR opened/synchronize, mỗi event CI+acceptance|20|100|
+|3 merge kỹ thuật, mỗi merge main CI4 + hậu kiểm listener6|6|30|
+|3 controller runs explicit: activation đầu +2 resume|3|18|
+|11 writer chuẩn +1 reindex|12|23|
+|1 finalCI chuẩn +2 finalCI bổ sung có căn cứ|3|12|
+|6 writer/reindex dispatch phục hồi, tính worst-case2 job/run|6|12|
+|Closure PR: candidate push/PR4 runs20 jobs + main CI/listener2 runs10 jobs|6|30|
+|**Tổng mô hình**|**58**|**235**|
+|**Cap đề nghị**|**72**|**288**|
+|Dư địa sai khác graph/sự kiện nền tảng|14|53|
+
+Cap skipped workflow records **36**, bucket riêng. Với năm candidate bundles qua tối đa ba PR kỹ thuật, legacy FS22 có thể tạo 4–8 skipped records ở synchronize; ba finalCI có thể tạo ba listener-skipped records. Đây là dự kiến 7–11, không phải danh sách record đã có. Closure opened và ready/edit/filter events có thể khác; dùng actual, không dựng records cho vừa mô hình. Nếu GitHub tạo active record ngoài mô hình nhưng có provenance D hợp lệ thì tính vào buffer; buffer không cấp quyền side effect ngoài danh mục.
+
+Mỗi active workflow = một run record mới không có conclusion skipped, gồm queued/in_progress/success/failure/cancelled; mỗi run attempt phải1. Job bucket bao gồm executed và internally skipped. Toàn skipped workflow record không cộng active/jobs-active; lưu jobs riêng của nó. Trước terminal: đặt chỗ số job max(declared graph, observed records), sau terminal dùng API records thực, không giảm vì job failure. Paginate runs/jobs đầy đủ, kiểm duplicate/missingpage/total/provenance, lưu từng page trước xử lý.
+
+Baseline D là **97** run IDs và properties đã pin tại §2; R1/C giữ sổ riêng. Ledger tổng sau D bằng97 + mọi records mới thực tế, không lấy58 thay actual. Mỗi POST/push trước hành động phải xét counters hiện tại + in-flight reservations + phần đuôi bắt buộc. Unknown queued jobs không coi bằng0. Trước merge kỹ thuật đầu, đuôi cơ bản ít nhất **16 active/43 jobs** (mainCI+hậu kiểm+controller+13 downstream); giữ thêm **6/30** cho closure, thành **22/73**, cùng reserve skipped theo graph. Trước activation cơ bản giữ **14/33** cho controller+13 downstream và closure **6/30**. Resume tính phần còn thiếu cụ thể từ journal, không đặt lại đủ13 rồi lặp tất cả.
+
+Không đếm Ready/merge là run nhưng mọi workflow chúng gây ra đều vào ledger. Không gọi lại Ready/merge nếu ack thiếu. Không cấp quyền thay graph tùy tiện: thay cần thiết trong scope phải cập nhật mô hình trước push và vẫn nằm caps; vượt cap thì trình delta, không thực thi trước.
+
+### 8.2 Danh mục side effects đóng
+
+| Quyền | Tổng tối đa mới của D / giải thích |
+|---|---|
+|Controller dispatch|3 =1 activation +2 resume; cùng batch logic, từng run mới attempt1.|
+|Canonical downstream dispatch|13 =11 writer +1 reindex +1 finalCI.|
+|Recovery writer/reindex|6 chung, chỉ operation thiếu hoặc duplicate-readback hợp lệ; không phát sinh operation dữ liệu mới.|
+|Extra finalCI|2 sau sửa/validation mới có căn cứ.|
+|**Tổng dispatch**|**24** =3+13+6+2. Đếm cả request đã gửi nhưng outcome chưa rõ, không chỉ run thành công.|
+|Self-cancel|1 đúng A4; không force/general cancel.|
+|Data commits|9 tổng, không reset qua code epoch hoặc resume. CAS tentative objects chưa push không là data commit main nhưng lưu attempts.|
+|Artifacts mới|16 =10 candidate kỹ thuật (5×2) +6 producer objects (3 controllers×2, chỉ tạo khi cần). Closure0.|
+|ZIP receives|31 =10 candidate +6 producer self-readback +9 canonical writer nonduplicate (gồm invalid) +6 recovery tối đa. Reindex/duplicate/replay0.|
+|PR/Ready/merge|≤3 technical PR +1 closure PR; Ready1/merge1 cho mỗi PR có gate. Số PR lấy từ API thực.|
+|Rerun API / retry403 / force-cancel / rollback|0 /0 /0 /0.|
+|Provider / publish / settings / credentials / dependency changes|0 cho mọi loại.|
+|Historic artifact/ZIP recovery|0. Không B/R1/C replay; không Ready/merge PR12/13/14.|
+
+Không giới hạn số GET hợp lệ hay số trang làm một blocker thủ tục. Tuân thủ API access/rate/error thực tế; không lặp403. Payload/ZIP size caps bảo vệ tài nguyên và parser, không được nới để đọc artifact ngoài vai trò. Retention7 ngày là thời gian giữ artifact, **không** là deadline task hay STOP khi im lặng; bytes bằng chứng phải được lưu bền vững ngay khi thu.
+
+## 9. Ngân sách, runtime và giới hạn được thay
+
+### 9.1 Dự phòng và điều tiết
+
+Đề nghị **60 USD mới cho toàn D gồm sửa trước/sau merge, activation, thu và closure**. Đây là mức reserve do kế hoạch chọn cho nhiều vòng xử lý và số job mô hình235; không quy đổi58run/235job thành USD vì chưa có bảng billing/tài khoản thực được xác minh. Không khẳng định actual≤60 USD. B1/B2/quota/credit/billed minutes và actualUSD hiện unknown; không cần mở dự án khác hoặc yêu cầu gửi hỗ trợ để đoán.
+
+Không có hard USD STOP trong stage theo D-13; không hạ quality hoặc bỏ kiểm. Orchestrator không mở thêm vòng tùy chọn khi không đủ cap/nguồn lực cho đuôi bắt buộc. Khi có billing evidence thật, ghi riêng actual/estimated/version; nếu cho thấy cần vượt reserve để mở thêm công việc ngoài phần đang chạy, trình một delta tổng phần còn lại, không xin từng job. Không cancel tác vụ đang chạy vì tiền/đếm cap. Chấp nhận khả năng vượt reserve do billing chưa có hard bound; không thay settings để tạo bảo đảm giả.
+
+### 9.2 Runtime pins và bảo đảm giảm cần phê duyệt trong gói D
+
+Giữ Ubuntu24.04, Node20.20.2, npm10.8.2; Node archive SHA `df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d`; checkout `34e114876b0b11c390a56381ad16ebd13914f8d5`; setup-node `49933ea5288caeca8642d1e84afbd3f7d6820020`; upload `ea165f8d65b6e75b540449e92b4886f43607fa02`. Package/lock giữ treeT, `npm ci --ignore-scripts` chỉ Actions. Ghi Git/Python/runner thực và kiểm khả năng trước dùng, không nâng dependency để giải lỗi.
+
+Đề nghị owner duyệt ngoại lệ D: Node20 EOL/actionNode24 patch unproven; B1/B2/billing unknown; main chưa được bảo vệ và có base race; token repo-wide không path-scoped; bootstrap merge trước full E2E; giữ fixture/log/index synthetic trên main; một cancel có thể cắt cleanup; reserve không là hard spend ceiling. Bù bằng exact pins/checksum/source/policy/scope, read-only prequalification, serialized CAS, raw/remote readback và đầy đủ báo cáo. Không gọi đây là bảo đảm tương đương branch protection hoặc token path-scope.
+
+### 9.3 Rà bỏ giới hạn chỉ tạo thủ tục
+
+| Giới hạn cũ | Thay trong D | Phần vẫn giữ và lý do |
+|---|---|---|
+|Đúng12 file dù lỗi có nhiều đường gọi|Allowlist trách nhiệm24 path +closure one-line có điều kiện; chỉ chạm cần thiết.|Không chạm contracts/providers/config ngoài scope; ngăn mở rộng sản phẩm.|
+|≤3 implementation commits|≤5 đợt candidate kỹ thuật với ngân sách CI rõ; commit không là đơn vị chất lượng.|Exact head/policy/history, mỗi push có ledger, không unbounded CI.|
+|Một PR, cấm mọi fix sau merge|1 PR đầu +2 recovery PR cấp trước; thêm closure PR có gate owner.|Mỗi PR được review/CI và merge1 lần, không lặp mutation cũ.|
+|Một controller run, failure là hết quyền|Một batch logic +2 resume có journal; tối đa6 recovery dispatch.|Không lặp unknown side effects, không thêm data operation.|
+|Artifact hết một ngày là bế tắc|Retention7 ngày cho D +generation mới từ bytes đã có/chứng nhận.|Không dựng ZIP/raw thiếu, hash/identity vẫn bắt buộc.|
+|Dừng toàn task khi một phần blocked|Hoàn tất phần độc lập đã duyệt, chỉ ngừng phần phụ thuộc.|Báo delta nguồn ngoài gói/quyền/chi phí thật sự thiếu.|
+|Xin quyền theo từng bước|Owner duyệt gói; agent tự điều phối tới kết quả hoặc blocker thực.|Owner đọc/đồng ý nghiệm thu cuối vẫn là DoD§8.|
+|Deadline/ngưỡng im lặng|Không đặt.|Rate/access/correctness/cap admission thực không phải deadline.|
+
+## 10. Khép WP002 và gate owner không thể giả định
+
+Phân biệt sáu trạng thái: code có diff → code merge → CI xanh → A1–A9 đạt → nghiệm thu kỹ thuật đầy đủ → owner nghiệm thu/backlog done. Gói triển khai không thay cho bước owner đọc kết quả thật.
+
+Để giữ chỉ dẫn **WP002todo**, policy và mọi triển khai kỹ thuật không đổi backlog. Khi technical pass, agent chuẩn bị báo cáo năm mục và **diff một dòng backlog** từ checkpoint F_current; chưa ghi dòng done. Báo cáo đối chiếu DoD1–12: CI cuối, acceptance/negative, scope/secret/content/contracts, log/cost semantics, idempotency, owner pending và backlog pending; WP002 không phải WP hình ảnh nên mục13 không áp dụng, không gọi miễn kiểm thị giác của WP khác.
+
+Sau khi owner đọc và xác nhận nghiệm thu đúng checkpoint, quyền có điều kiện đã nằm trong gói này cho phép agent tự tạo closure commit/PR mới chỉ một dòng backlog. Không xin thêm quyền cho push/CI/Ready/merge closure đã được duyệt. Nếu main đổi bởi nguồn ngoài gói, báo delta; không đổi checkpoint owner đã xác nhận một cách âm thầm.
+
+Closure candidate có CI và suites read-only trên đúng head; không thêm artifact hoặc activation. Tự Ready/merge một lần khi gate đủ, readback parents/tree và bảo toàn toàn code/data/policy, main CI4 + listener read-only. Nghiệm thu A không phải chạy lại chỉ vì đổi backlog nếu mọi bytes/hợp đồng liên quan giữ nguyên và provenance còn đủ. Nếu closure fail vì code lỗi, không gắn done hoặc bỏ gate; xử lý trong remaining quyền kỹ thuật nếu còn, nếu không lưu exact delta.
+
+Chỉ sau các bước này mới báo WP002 done. Không khởi động WP004/003/009 hay sản xuất trong gói D. Nếu owner chưa nghiệm thu, kết thúc ở trạng thái technical-ready/owner-pending/todo; đó là bước quyết định có ý nghĩa, không phải blocker triển khai kéo dài vô cớ.
+
+## 11. Điều kiện trình lại và phương án tối thiểu
+
+| Blocker còn có thể gặp | Phần được tự hoàn tất | Delta tối thiểu phải trình |
+|---|---|---|
+|Pin mismatch khi lấy hồ sơ|Giữ file riêng, ghi byte/hash thực; tự lấy đúng version theo ID, không dùng nội dung lệch.|Chỉ khi không truy xuất được version đúng: nêu ID/version/capability thiếu và phương án truy xuất; không yêu cầu upload lại.|
+|Checkpoint ngoài D hoặc ledger foreign|Thu raw metadata, so commit/tree/path/runIDs, bảo toàn evidence.|Review tích hợp delta cụ thể trước đổi base; không force hoặc giả own change.|
+|403/access|Đối chiếu role/endpoint và code auth không dùng secret mới; các kiểm độc lập.|Quyền endpoint thực thiếu nếu cần; không retry403/request support/credential change.|
+|Mất raw/ZIP hoặc ambiguous write|GET state hiện tại có nhãn thời điểm mới, giữ evidence còn có.|Nêu chính xác ca A bị thiếu; không dựng chứng cứ. Nếu cần operation mới/chi phí ngoài gói, đề nghị một lần cho toàn phần còn lại.|
+|Bug làm thay payload/schema/contracts hoặc data đã sai|Sửa/read-only tests trong scope nếu có, giữ offending bytes.|Forward-correction/new acceptance cụ thể, không rollback; schema/provider ngoài gói chưa được phép.|
+|Đã dùng đủ5 candidate/3 technical PR/24dispatch/cap tài nguyên|Thu đủ actual và checkpoint, chuẩn bị diff/review phần còn lại trong quyền đọc.|Một delta tổng về nguyên nhân, việc còn lại và nguồn lực; không xin lẻ từng commit/job.|
+|Concurrency thực không chứng minh overlap|Thu intervals/capacity evidence; kiểm độc lập còn lại.|Lần producer mới trong3controller nếu còn; nếu cần tăng quota/settings thì không tự làm, giữ A1/A6 chưa đạt.|
+|Runtime pin không chạy được hoặc actual cost không đủ|Thu checksum/runtime/error/billing thật, giữ scope không chạy được riêng.|Pin/runtime hoặc reserve delta có căn cứ; không tự đổi dependency/settings.|
+
+Không phải mọi blocker đều giải bằng thêm tiền/quyền. Đặc biệt chứng cứ mất không thể được thay bằng một câu phê duyệt. Không có auto-review rejection trong lượt lập kế hoạch này.
+
