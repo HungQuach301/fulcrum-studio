@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { inspect, Bootstrap, successorPolicy, FS24C, FS24D, closureLineage } from "./index";
 import { at, git, parseScope, matches, safePath } from "./scope";
-import { render, frame, decode, Identity, Need, Verdict } from "../ci-report";
+import { assertEvidenceBundleRef, render, frame, decode, Identity, Need, Verdict } from "../ci-report";
 import { scanContent, contentPath } from "./content";
 import { secretLine } from "./secrets";
 
@@ -168,7 +168,18 @@ try {
     test("C-production-scanner-reject-branch",()=>assert.equal(inspect({root:actualRoot,base:FS24C.base,head:actualHead,branch:"bad",title:"",event:"push"}).result,"fail"));
   }
   const currentHead=process.env.FS_HEAD!,currentLineage=closureLineage(actualRoot,currentHead);
-  test("D-current-lineage",()=>{assert.ok(currentLineage.unmerged.length||currentLineage.epochs.length);assert.equal(currentLineage.paths.length,24);});
+  const historicalDLineage=currentLineage.evidenceRepair?closureLineage(actualRoot,"c4a4445e619175c015469cd33ebd427ecdd687a1"):currentLineage;
+  test("D-current-lineage",()=>{assert.ok(historicalDLineage.unmerged.length||historicalDLineage.epochs.length);assert.equal(historicalDLineage.paths.length,24);});
+  test("E-current-lineage-preserves-D",()=>{
+    if(!currentLineage.evidenceRepair)return;
+    assert.equal(currentLineage.evidenceRepair.paths.length,15);
+    assert.equal(currentLineage.paths.length,28);
+    assert.deepEqual([...currentLineage.paths].sort(),[...new Set([...historicalDLineage.paths,...currentLineage.evidenceRepair.paths])].sort());
+    assert.equal(currentLineage.code,historicalDLineage.code);
+    assert.deepEqual(currentLineage.epochs,historicalDLineage.epochs);
+    assert.deepEqual(currentLineage.data,historicalDLineage.data);
+    assert.deepEqual(currentLineage.dataPaths,historicalDLineage.dataPaths);
+  });
   const dRoot=join(work,"d-history");
   const cloned=spawnSync("git",["clone","--shared","--no-checkout",actualRoot,dRoot],{encoding:"utf8"});assert.equal(cloned.status,0,cloned.stderr);
   const dEnv={...process.env,GIT_AUTHOR_NAME:"fixture",GIT_AUTHOR_EMAIL:"fixture@example.invalid",GIT_COMMITTER_NAME:"fixture",GIT_COMMITTER_EMAIL:"fixture@example.invalid",GIT_INDEX_FILE:join(work,"d-index")};
@@ -204,6 +215,10 @@ try {
   test("D-recovery-reject-extra-scope",()=>{const path="engine/io/repo-store.ts",head=dCommit(recoveryBase,path,at(dRoot,recoveryBase,path)+"\n// fixture\n",recoveryMessage(6));assert.throws(()=>closureLineage(dRoot,head),/D-recovery-scope/);});
   test("D-recovery-reject-policy-change",()=>{const head=dCommit(recoveryBase,"AGENTS.md",at(dRoot,recoveryBase,"AGENTS.md")+"\nfixture\n",recoveryMessage(6));assert.throws(()=>closureLineage(dRoot,head),/D-policy-freeze/);});
   test("D-recovery-reject-data-change",()=>{const head=dCommit(recoveryBase,statePath,at(dRoot,recoveryBase,statePath)+"\n",recoveryMessage(6));assert.throws(()=>closureLineage(dRoot,head),/D-code-scope/);});
+  const eSource={repository:"HungQuach301/fulcrum-studio",run:"1",attempt:"1",head:"a".repeat(40),job:"report",event:"push"};
+  test("E-reference-identity",()=>assertEvidenceBundleRef({source:eSource,bundle:{bytes:17,sha256:"b".repeat(64)}},eSource));
+  test("E-reference-wrong-head",()=>assert.throws(()=>assertEvidenceBundleRef({source:{...eSource,head:"c".repeat(40)},bundle:{bytes:17,sha256:"b".repeat(64)}},eSource),/E-BundleReference/));
+  test("E-reference-overflow",()=>assert.throws(()=>assertEvidenceBundleRef({source:eSource,bundle:{bytes:64*1024*1024+1,sha256:"b".repeat(64)}},eSource),/E-BundleReference/));
 } finally {
   rmSync(work,{recursive:true,force:true});
   test("temporary-fixture-cleanup",()=>assert.equal(existsSync(work),false));

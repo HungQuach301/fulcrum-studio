@@ -1,3 +1,4 @@
+import { receiveEvidenceBundle } from "./github-transport";
 import { gunzipSync } from "node:zlib";
 import { closureLineage, FS24D, DLineage } from "../../scripts/guardrails/index";
 import { fetchMainReadOnly, redactGit } from "./github-git";
@@ -72,6 +73,7 @@ export function producerOverlap(jobs:Job[]):boolean {
   return intervals.every(x=>x.every(Number.isFinite)&&x[0]<x[1])&&Math.max(...intervals.map(x=>x[0]))<Math.min(...intervals.map(x=>x[1]));
 }
 export function assertFinalJobEvidence(job:Job,text:string,files:Record<string,Buffer>):void {
+  if(text.includes("FS24E_REF\t")&&!job.steps?.some(x=>x.name==="Preserve original evidence bundle"&&x.conclusion==="success"))throw new Error("E-FinalArtifactUpload");
   if(!text.includes("FS23_FINAL_REPORT_CLEANUP=pass;job="+job.name)||!job.steps?.some(x=>x.name==="Remove final report data"&&x.conclusion==="success"))throw new Error("FinalCICleanup");
   for(const name of ["preflight.json","runtime.json","preservation.json","cleanup.json","job-summary.json","commands.json"])if(!files[name])throw new Error("FinalCIEvidenceMissing:"+name);
   const commands=JSON.parse(files["commands.json"].toString());
@@ -177,7 +179,7 @@ async function inspectDAttempt(root:string,api:GitHubTransport,intent:DIntent):P
   const jobs=await api.page<Job>("/actions/runs/"+run.id+"/jobs","jobs"),executed=jobs.filter(x=>x.conclusion!=="skipped");
   if(jobs.length!==(intent.workflow==="reindex.yml"?1:2)||executed.length!==1)throw new Error("D-WriterJobCount");
   const job=executed[0],raw=await api.bytes("/actions/jobs/"+job.id+"/logs",64*1024*1024);emitFile("writer-"+run.id+".log",raw);
-  const frames=decodeDFrames(raw.toString(),{run:String(run.id),head:input.code,job:job.name},run.conclusion==="cancelled");
+  const frames=(await receiveEvidenceBundle(api,raw.toString(),{run:String(run.id),head:input.code,job:job.name,runHead:run.head_sha}))?.observations??decodeDFrames(raw.toString(),{run:String(run.id),head:input.code,job:job.name},run.conclusion==="cancelled");
   const receipts=frames.filter(x=>x.name==="write-receipt.json");if(receipts.length>1)throw new Error("D-MultipleWriteReceipts");
   const result=receipts.length?JSON.parse(receipts[0].bytes.toString()):null,receipt=result?.result??null;
   if(result&&JSON.stringify(result.input)!==JSON.stringify(input))throw new Error("D-ReceiptInput");
@@ -204,6 +206,9 @@ async function inspectDAttempt(root:string,api:GitHubTransport,intent:DIntent):P
   const safeNoCommit=run.conclusion==="failure"&&!receipt&&error&&JSON.stringify(error.input)===JSON.stringify(input)&&!/403|Authorization|forbidden|authentication|permission denied/i.test(error.error)&&(!pushIntents.length||error.error==="Error: CASExhausted"&&pushIntents.length===pushResults.length&&rejectedPushes.every(x=>x.status!==0&&/non-fast-forward|fetch first|failed to update ref/i.test(x.stderr)&&!/403|forbidden|authentication|permission denied/i.test(x.stderr)));
   return {input,run,receipt,frames,expected,safeNoCommit:Boolean(safeNoCommit)};
 }
+export function assertEvidenceRepairMode(mode:string,control:boolean):void {
+  if(control||!["diagnose-candidate","admit"].includes(mode))throw new Error("E-ProductionNotAuthorized");
+}
 async function mainD() {
   const mode=process.argv[2],root=process.env.GITHUB_WORKSPACE!,head=process.env.FS_HEAD!,run=process.env.GITHUB_RUN_ID!,dir=process.env.TASK_ROOT!;
   if(process.env.GITHUB_REPOSITORY!==REPOSITORY||process.env.GITHUB_RUN_ATTEMPT!=="1"||process.env.FS_GRANT!=="FS24-D")throw new Error("D-RuntimeIdentity");
@@ -214,6 +219,19 @@ async function mainD() {
   if(control){validateDControl(control);emitFile("d-control-input.json",Buffer.from(JSON.stringify(control)+"\n"));}
   const batch=control?.batch==="new"?run:control?.batch??run,origin=control?.origin??head;
   const jobsFor=(id:number)=>api.page<Job>("/actions/runs/"+id+"/jobs","jobs");
+  if(lineage.evidenceRepair) {
+    assertEvidenceRepairMode(mode,Boolean(control));
+    await writer.receiptsD(root,head,api); // Preserve all historical merge receipt checks.
+    const main=await mainRef();
+    if(fetchMain()!==main||main!==(lineage.unmerged.length?lineage.candidateBase:head))throw new Error("E-MainBinding");
+    if(mode==="admit") {
+      const cause=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH!,"utf8")).workflow_run as Run;
+      if(process.env.GITHUB_EVENT_NAME!=="workflow_run"||cause.event!=="push"||cause.head_sha!==head||cause.path!==".github/workflows/ci.yml"||cause.head_branch!=="main"||cause.run_attempt!==1||cause.conclusion!=="success")throw new Error("E-ReadOnlyCause");
+      assertDFourJobs(await jobsFor(cause.id));
+    } else if(!lineage.unmerged.length)throw new Error("E-CandidateRequired");
+    emitFile("e-readonly-admission.json",Buffer.from(JSON.stringify({head,main,mode,activation:false,history:"preserved",accounting:"requires-independent-ledger-reconciliation",ownerAcceptance:"pending",WP002:"todo"})+"\n"));
+    return;
+  }
   if(mode==="diagnose-candidate") {
     if(!lineage.unmerged.length)throw new Error("D-CandidateRequired");await writer.receiptsD(root,head,api);
     const main=await mainRef();if(fetchMain()!==main||main!==lineage.candidateBase)throw new Error("D-CandidateMain");
@@ -244,7 +262,7 @@ async function mainD() {
     if(cis.length!==1||listeners.length!==1)throw new Error("D-PostMergeGates");assertDFourJobs(cis[0].jobs);
     const admit=listeners[0].jobs.find(x=>x.name==="admit"&&x.conclusion==="success");if(!admit)throw new Error("D-PostMergeAdmitJob");
     const raw=await api.bytes("/actions/jobs/"+admit.id+"/logs",64*1024*1024);emitFile("d-readonly-listener.log",raw);
-    const proof=JSON.parse(oneDFrame(decodeDFrames(raw.toString(),{run:String(listeners[0].run.id),head,job:"admit"}),"d-postmerge.json").toString());
+    const proof=JSON.parse(oneDFrame(((await receiveEvidenceBundle(api,raw.toString(),{run:String(listeners[0].run.id),head,job:"admit"}))?.observations??decodeDFrames(raw.toString(),{run:String(listeners[0].run.id),head,job:"admit"})),"d-postmerge.json").toString());
     if(proof.result!=="pass"||proof.head!==head||proof.activation!==false)throw new Error("D-PostMergeProof");
     if(control.recoveryOrdinal===0&&closureLineage(root,main).data.length)throw new Error("D-ExistingData");
     if(control.recoveryOrdinal>0)await journalD(root,api,records,control,run);
@@ -310,7 +328,7 @@ async function mainD() {
   for(const job of jobs) {
     const raw=await api.bytes("/actions/jobs/"+job.id+"/logs",64*1024*1024);emitFile("final-ci-job-"+job.id+".log",raw);const text=raw.toString();
     const framed=text.split("\n").flatMap(line=>{const match=/FS23_(?:BEGIN|FILE|DATA|END|COMPLETE)\t/.exec(line);return match?[line.slice(match.index).replace(/\r$/,"")]:[];}).join("\n")+"\n";
-    const files=decode(framed,{grant:"FS23-WP001",run:String(ci),attempt:"1",head:final,job:job.name,event:"workflow_dispatch",base:head});assertFinalJobEvidence(job,text,files);
+    const files=(await receiveEvidenceBundle(api,text,{run:String(ci),head:final,job:job.name}))?.files??decode(framed,{grant:"FS23-WP001",run:String(ci),attempt:"1",head:final,job:job.name,event:"workflow_dispatch",base:head});assertFinalJobEvidence(job,text,files);
     if(job.name==="report"){const report=files["ci-report.txt"]?.toString();if(!report||!["commit="+final,"baseline="+head,"technicalResult=pass"].every(x=>report.split("\n").includes(x)))throw new Error("D-FinalCIReport");emitFile("final-ci-report.txt",files["ci-report.txt"]);}
   }
   if(await mainRef()!==final)throw new Error("D-FinalCheckpoint");await ledger(6,30);
@@ -337,7 +355,7 @@ async function journalD(root:string,api:GitHubTransport,records:DRunRecord[],con
     if(record.run.status!=="completed")throw new Error("D-PriorControllerActive");const epoch=closureLineage(root,record.run.head_sha).code;
     for(const job of record.jobs.filter(x=>x.conclusion!=="skipped"&&["admit","controller"].includes(x.name))) {
       const raw=await api.bytes("/actions/jobs/"+job.id+"/logs",64*1024*1024);emitFile("prior-controller-"+record.run.id+"-"+job.id+".log",raw);proofs.push({run:record.run.id,job:job.id,sha256:digest(raw)});
-      const frames=decodeDFrames(raw.toString(),{run:String(record.run.id),head:epoch,job:job.name},record.run.conclusion==="cancelled");
+      const frames=(await receiveEvidenceBundle(api,raw.toString(),{run:String(record.run.id),head:epoch,job:job.name,runHead:record.run.head_sha}))?.observations??decodeDFrames(raw.toString(),{run:String(record.run.id),head:epoch,job:job.name},record.run.conclusion==="cancelled");
       const previous=JSON.parse(oneDFrame(frames,"d-control-input.json").toString()) as DControl;validateDControl(previous);
       if(previous.origin!==control.origin||previous.batch!=="new"&&previous.batch!==control.batch||previous.requestId!==record.run.display_title?.slice(7))throw new Error("D-PriorControlIdentity");
       if(job.name==="controller")intents.push(...recoverDIntents(frames));
