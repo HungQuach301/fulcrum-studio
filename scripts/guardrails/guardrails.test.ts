@@ -180,6 +180,20 @@ try {
     assert.deepEqual(currentLineage.data,historicalDLineage.data);
     assert.deepEqual(currentLineage.dataPaths,historicalDLineage.dataPaths);
   });
+  test("E-scanner-resolves-original-WP-after-companion",()=>{
+    if(!currentLineage.evidenceRepair)return;
+    const base=currentLineage.unmerged.length?currentLineage.candidateBase:currentHead;
+    const report=inspect({root:actualRoot,base,head:currentHead,branch:currentLineage.unmerged.length?"wp/002":"main",title:"WP-002 evidence repair",event:"push"});
+    assert.equal(report.result,"pass",JSON.stringify(report.errors));
+    if(currentLineage.unmerged.length)assert.equal(report.wpPath,"engine/ops/work-packages/WP-002-interfaces.md");
+  });
+  test("E-original-activation-empty-tree-scan",()=>{
+    if(!currentLineage.evidenceRepair)return;
+    const activation="f08231650ce3f7fb26194c64ae3a9fa3ea18cdb0",base="8deb1164c1de4f041a34ba6c8fa2a211c4c78943";
+    const report=inspect({root:actualRoot,base,head:activation,branch:"wp/002",title:"",event:"push"});
+    assert.equal(report.result,"pass",JSON.stringify(report.errors));assert.deepEqual(report.checkedPaths,[]);
+    assert.equal(inspect({root:actualRoot,base,head:activation,branch:"wp/003",title:"",event:"push"}).result,"fail");
+  });
   const dRoot=join(work,"d-history");
   const cloned=spawnSync("git",["clone","--shared","--no-checkout",actualRoot,dRoot],{encoding:"utf8"});assert.equal(cloned.status,0,cloned.stderr);
   const dEnv={...process.env,GIT_AUTHOR_NAME:"fixture",GIT_AUTHOR_EMAIL:"fixture@example.invalid",GIT_COMMITTER_NAME:"fixture",GIT_COMMITTER_EMAIL:"fixture@example.invalid",GIT_INDEX_FILE:join(work,"d-index")};
