@@ -188,6 +188,22 @@ try {
   const firstData=dCommit(initialPair,statePath,'{"revision":2}\n',dataMessage("update-one",[statePath]));
   test("D-data-duplicate-operation",()=>{const duplicate=dCommit(firstData,statePath,'{"revision":3}\n',dataMessage("update-one",[statePath]));assert.throws(()=>closureLineage(dRoot,duplicate),/D-duplicate-operation/);});
   test("D-data-reject-index-before-eight",()=>{const premature=dCommit(merge,"pipeline/state.json",JSON.stringify({sourceCommit:merge})+"\n",dataMessage("reindex",["pipeline/state.json"]));assert.throws(()=>closureLineage(dRoot,premature),/D-index-order/);});
+  const recoveryBase="b1af7ecff4a16605918b21522027f9a6358b2f9c",recoveryPath="engine/io/github-transport.ts";
+  const recoveryMessage=(round:number)=>"Fixture recovery\n\nFulcrum-Grant: FS24-D\nFulcrum-Phase: implementation\nFulcrum-Candidate-Round: "+round+"\nOwner-Approval-Receipt: b5e6faaf95ff26b2a24adfbba618595ba3e117cd0aa6b07ade92f43159beca28\nFS24-D-Recovery-Report: 59c0e928a9ff0ec508b0b24c3b8a7ba46356b514c560585c2c61e93556cdf6fa\nRecovery-Checkpoint: "+recoveryBase+"\nFS24-D-Batch: 35037496723\nPayload-Origin: b50f56c636f415be64b4b2b1f14e8093a3b67fe0\n";
+  const recoveryCommit=(parent:string,message:string)=>dCommit(parent,recoveryPath,at(dRoot,parent,recoveryPath)+"\n// recovery fixture\n",message);
+  const sixth=recoveryCommit(recoveryBase,recoveryMessage(6)),seventh=recoveryCommit(sixth,recoveryMessage(7));
+  test("D-recovery-six-and-seven-preserve-data",()=>{for(const head of [sixth,seventh]){const value=closureLineage(dRoot,head);assert.deepEqual(value.data.map(x=>x.commit),["7e4fec11b9906e3fcffebd229e11d8538e7e54a4",recoveryBase]);assert.equal(value.candidateBase,recoveryBase);assert.equal(value.origin,"b50f56c636f415be64b4b2b1f14e8093a3b67fe0");}});
+  test("D-recovery-reject-eight",()=>assert.throws(()=>closureLineage(dRoot,recoveryCommit(seventh,recoveryMessage(8))),/D-recovery-round/));
+  test("D-recovery-reject-round-reset",()=>assert.throws(()=>closureLineage(dRoot,recoveryCommit(recoveryBase,recoveryMessage(1))),/D-candidate-round/));
+  test("D-recovery-reject-round-repeat",()=>assert.throws(()=>closureLineage(dRoot,recoveryCommit(sixth,recoveryMessage(6))),/D-recovery-round/));
+  test("D-recovery-reject-skipped-six",()=>assert.throws(()=>closureLineage(dRoot,recoveryCommit(recoveryBase,recoveryMessage(7))),/D-recovery-round/));
+  test("D-recovery-reject-missing-approval",()=>assert.throws(()=>closureLineage(dRoot,recoveryCommit(recoveryBase,recoveryMessage(6).replace(/Owner-Approval-Receipt: [^\n]+\n/,""))),/Trailer:Owner-Approval-Receipt/));
+  test("D-recovery-reject-wrong-approval",()=>assert.throws(()=>closureLineage(dRoot,recoveryCommit(recoveryBase,recoveryMessage(6).replace("b5e6faaf95ff26b2a24adfbba618595ba3e117cd0aa6b07ade92f43159beca28","0".repeat(64)))),/D-recovery-approval/));
+  test("D-recovery-reject-wrong-binding",()=>assert.throws(()=>closureLineage(dRoot,recoveryCommit(recoveryBase,recoveryMessage(6).replace("FS24-D-Batch: 35037496723","FS24-D-Batch: 1"))),/D-recovery-binding/));
+  test("D-recovery-reject-before-checkpoint",()=>assert.throws(()=>closureLineage(dRoot,recoveryCommit(candidate,recoveryMessage(6))),/D-recovery-checkpoint/));
+  test("D-recovery-reject-extra-scope",()=>{const path="engine/io/repo-store.ts",head=dCommit(recoveryBase,path,at(dRoot,recoveryBase,path)+"\n// fixture\n",recoveryMessage(6));assert.throws(()=>closureLineage(dRoot,head),/D-recovery-scope/);});
+  test("D-recovery-reject-policy-change",()=>{const head=dCommit(recoveryBase,"AGENTS.md",at(dRoot,recoveryBase,"AGENTS.md")+"\nfixture\n",recoveryMessage(6));assert.throws(()=>closureLineage(dRoot,head),/D-policy-freeze/);});
+  test("D-recovery-reject-data-change",()=>{const head=dCommit(recoveryBase,statePath,at(dRoot,recoveryBase,statePath)+"\n",recoveryMessage(6));assert.throws(()=>closureLineage(dRoot,head),/D-code-scope/);});
 } finally {
   rmSync(work,{recursive:true,force:true});
   test("temporary-fixture-cleanup",()=>assert.equal(existsSync(work),false));

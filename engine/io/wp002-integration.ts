@@ -141,6 +141,13 @@ export async function ledgerD(root:string,api:GitHubTransport,label:string,reser
 
 interface DAttempt {input:import("./github-writer").DBatchInput;run:Run;receipt:import("./github-writer").Receipt|null;frames:DFrame[];expected:boolean;safeNoCommit:boolean;}
 interface DIntent {requestId:string;input:import("./github-writer").DBatchInput|null;workflow:string;runId:number;frames:DFrame[];}
+export async function settleDGroup<T>(group:"initial"|"logs",tasks:Array<()=>Promise<T>>):Promise<T[]> {
+  const outcomes=await Promise.allSettled(tasks.map(task=>Promise.resolve().then(task)));
+  emitFile("d-group-"+group+"-outcomes.json",Buffer.from(JSON.stringify(outcomes.map((value,index)=>({index,status:value.status,...(value.status==="rejected"?{error:redactGit(String(value.reason))}:{})})))+"\n"));
+  const failure=outcomes.find((value):value is PromiseRejectedResult=>value.status==="rejected");
+  if(failure)throw failure.reason;
+  return outcomes.map(value=>(value as PromiseFulfilledResult<T>).value);
+}
 export function recoverDIntents(frames:DFrame[]):DIntent[] {
   return frames.filter(x=>/^dispatch-[a-f0-9]{64}-intent.json$/.test(x.name)).map(frame=>{
     const requestId=frame.name.slice(9,-12),intent=JSON.parse(frame.bytes.toString());
@@ -280,24 +287,24 @@ async function mainD() {
     const body={grant:"FS24-D" as const,batch,code:head,producer:side as "left"|"right",artifact:operation==="reindex"?0:Number(process.env[side==="left"?"FS_LEFT_ARTIFACT":"FS_RIGHT_ARTIFACT"]),manifestHash:operation==="reindex"?"none":digest(generated.files["manifest.json"]),operation,cancelAfterPush:step==="side-effect",origin,controllerRun:run,controlId:control.requestId,producerRun:run,producerCode:head,payloadDigest:operationDigest(generated,operation),ordinal:choice==="recover"?Math.max(...attempts.filter(x=>x.input.step===step).map(x=>x.input.ordinal))+1:0,step};
     const input={...body,requestId:digest(JSON.stringify(body))},workflow=operation==="reindex"?"reindex.yml":"commit-artifacts.yml";
     if(++dispatched>24)throw new Error("D-DispatchCap");writer.validateDInput(input,operation==="reindex");
-    const id=await api.dispatchD(workflow,{request:JSON.stringify(input)},input.requestId);await api.wait(id);fetchMainReadOnly(root);
+    const id=await api.dispatchD(workflow,{request:JSON.stringify(input)},input.requestId,runHead=>{fetchMainReadOnly(root);if(closureLineage(root,runHead).code!==input.code)throw new Error("D-WriterCodeEpoch");});await api.wait(id);fetchMainReadOnly(root);
     const result=await inspectDAttempt(root,api,{requestId:input.requestId,input,workflow,runId:id,frames:[]});attempts.push(result);
     emitFile("d-step-"+step+"-"+input.ordinal+".json",Buffer.from(JSON.stringify({input,run:result.run,receipt:result.receipt,expected:result.expected})+"\n"));
     if(!result.expected)throw new Error("D-UnexpectedConclusion:"+step+":"+result.run.conclusion);return result;
   };
-  await Promise.all([dispatch("initial-left"),dispatch("initial-right")]);await ledger(17,53);
+  await settleDGroup("initial",[()=>dispatch("initial-left"),()=>dispatch("initial-right")]);await ledger(17,53);
   const launch=async(step:string)=>{const remaining=D_STEPS.filter(x=>!attempts.some(a=>a.input.step===x&&a.expected));await ledger(remaining.length+7,remaining.reduce((sum,x)=>sum+(x==="reindex"?1:2),0)+34);return dispatch(step);};
   await launch("update-one");const update=await launch("update-two");
   const beforeUpdate=JSON.parse(oneDFrame(update.frames,"read-before-update-two.json").toString());
   if(Object.values(beforeUpdate.values).some(x=>JSON.parse(String(x)).revision!==2))throw new Error("D-RevisionBarrier");
   await launch("duplicate-initial");await launch("pending");await launch("side-effect");await launch("replay-side-effect");
   const negativeBefore=await mainRef();await launch("invalid-state");if(await mainRef()!==negativeBefore)throw new Error("D-NegativeChangedMain");
-  await ledger(10,39);await Promise.all([dispatch("logs-left"),dispatch("logs-right")]);await launch("reindex");
+  await ledger(10,39);await settleDGroup("logs",[()=>dispatch("logs-left"),()=>dispatch("logs-right")]);await launch("reindex");
   fetchMainReadOnly(root);const final=await mainRef();writer.dataChainD(root,head,final,batch,origin);const data=verifyDFinal(root,head,final,batch,origin);
   const oldFinal=journal.intents.filter(x=>x.workflow==="ci.yml");
   const finalBody={expected_head:final,code:head,batch,origin,ordinal:String(oldFinal.length)},requestId=digest(JSON.stringify(finalBody));
   await ledger(7,34);if(oldFinal.length>=3)throw new Error("D-FinalCICap");
-  if(++dispatched>24)throw new Error("D-DispatchCap");const ci=await api.dispatchD("ci.yml",{...finalBody,request_id:requestId},requestId),finished=await api.wait(ci),jobs=await jobsFor(ci);
+  if(++dispatched>24)throw new Error("D-DispatchCap");const ci=await api.dispatchD("ci.yml",{...finalBody,request_id:requestId},requestId,runHead=>{if(runHead!==final)throw new Error("D-FinalCIHead");}),finished=await api.wait(ci),jobs=await jobsFor(ci);
   const {validateDRun}=await import("./github-transport");validateDRun(finished,ci,"ci.yml",requestId);
   if(finished.head_sha!==final||finished.conclusion!=="success")throw new Error("D-FinalCI");assertDFourJobs(jobs);
   for(const job of jobs) {

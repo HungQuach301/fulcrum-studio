@@ -104,14 +104,33 @@ export class GitHubTransport {
     const response=await this.control("/actions/runs/"+run+"/cancel","POST",undefined,"cancel-"+run);
     if(response.status!==202)throw new Error("CancelStatusDoNotRetry");
   }
-  async dispatchD(workflow:string,inputs:Record<string,string>,requestId:string):Promise<number> {
+  protected async pauseDObservation():Promise<void> {
+    await new Promise(resolve=>setTimeout(resolve,10000));
+  }
+  async dispatchD(workflow:string,inputs:Record<string,string>,requestId:string,checkHead:(head:string)=>void):Promise<number> {
     if(!["commit-artifacts.yml","reindex.yml","ci.yml"].includes(workflow)||!/^[a-f0-9]{64}$/.test(requestId)||process.env.FS_JOB!=="controller")throw new Error("D-DispatchScope");
     const response=await this.control("/actions/workflows/"+workflow+"/dispatches","POST",{ref:"main",inputs},"dispatch-"+requestId);
     if(response.status!==200)throw new Error("DispatchStatusDoNotRetry");
     const body=JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(response.raw)) as {workflow_run_id:number;run_url:string;html_url:string};
     if(!Number.isSafeInteger(body.workflow_run_id)||body.workflow_run_id<1||body.run_url!=="https://api.github.com/repos/"+REPOSITORY+"/actions/runs/"+body.workflow_run_id||body.html_url!=="https://github.com/"+REPOSITORY+"/actions/runs/"+body.workflow_run_id)throw new Error("DispatchReceiptMissingDoNotRetry");
-    const run=await this.json<Run>("/actions/runs/"+body.workflow_run_id);validateDRun(run,body.workflow_run_id,workflow,requestId);
-    emitFile("dispatch-"+requestId+"-bound.json",Buffer.from(JSON.stringify(run)+"\n"));return body.workflow_run_id;
+    // The ack fixes the only run we may observe. A queued run can still carry its
+    // workflow name before GitHub evaluates run-name (runs 35037890030/35037891456).
+    const placeholder:Record<string,string>={"commit-artifacts.yml":"WP-002 Serialized Writer","reindex.yml":"WP-002 Reindex","ci.yml":"Fulcrum CI"};
+    let observation=0;const checkedHeads=new Set<string>();
+    for(;;) {
+      const run=await this.json<Run>("/actions/runs/"+body.workflow_run_id);
+      validateDRunIdentity(run,body.workflow_run_id,workflow);
+      if(!/^[a-f0-9]{40}$/.test(run.head_sha))throw new Error("D-DispatchHead");
+      if(!checkedHeads.has(run.head_sha)){checkHead(run.head_sha);checkedHeads.add(run.head_sha);}
+      if(run.display_title==="FS24-D "+requestId) {
+        validateDRun(run,body.workflow_run_id,workflow,requestId);
+        emitFile("dispatch-"+requestId+"-bound.json",Buffer.from(JSON.stringify(run)+"\n"));return body.workflow_run_id;
+      }
+      if(run.display_title!==placeholder[workflow]||run.conclusion!==null||!["queued","waiting","pending","requested","in_progress"].includes(run.status))throw new Error("D-DispatchRunBinding");
+      emitFile("dispatch-"+requestId+"-observing-"+(++observation)+".json",Buffer.from(JSON.stringify({id:run.id,head:run.head_sha,status:run.status,display_title:run.display_title,requestId})+"\n"));
+      // Observation of one acknowledged run is not a retry of its POST or an HTTP error.
+      await this.pauseDObservation();
+    }
   }
   async cancelD(run:string):Promise<void> {
     if(run!==process.env.GITHUB_RUN_ID||process.env.FS_JOB!=="writer-cancel"||process.env.FS24_OPERATION!=="side-effect"||process.env.FS_GRANT!=="FS24-D")throw new Error("CancelScope");
@@ -225,6 +244,10 @@ export function validateDispatchedRun(run:Run,id:number,workflow:string,requestI
   if(run.id!==id||run.run_attempt!==1||run.event!=="workflow_dispatch"||run.head_branch!=="main"||run.path!==".github/workflows/"+workflow||run.display_title!=="FS24-C "+requestId||run.repository?.full_name!==REPOSITORY||run.head_repository?.full_name!==REPOSITORY)throw new Error("DispatchRunBinding");
 }
 
+function validateDRunIdentity(run:Run,id:number,workflow:string):void {
+  if(run.id!==id||run.run_attempt!==1||run.event!=="workflow_dispatch"||run.head_branch!=="main"||run.path!==".github/workflows/"+workflow||run.repository?.full_name!==REPOSITORY||run.head_repository?.full_name!==REPOSITORY)throw new Error("D-DispatchRunBinding");
+}
 export function validateDRun(run:Run,id:number,workflow:string,requestId:string):void {
-  if(run.id!==id||run.run_attempt!==1||run.event!=="workflow_dispatch"||run.head_branch!=="main"||run.path!==".github/workflows/"+workflow||run.display_title!=="FS24-D "+requestId||run.repository?.full_name!==REPOSITORY||run.head_repository?.full_name!==REPOSITORY)throw new Error("D-DispatchRunBinding");
+  validateDRunIdentity(run,id,workflow);
+  if(run.display_title!=="FS24-D "+requestId)throw new Error("D-DispatchRunBinding");
 }
