@@ -1,6 +1,22 @@
 {
-  "note": "CHỈ MỤC DẪN XUẤT. Không stage nào ghi trực tiếp. Chỉ workflow reindex.yml xây lại từ các /episodes/{channel}/{id}/state.json. Xem D-01 và D-07.",
-  "rebuiltAt": "2026-09-14T01:24:30.332Z",
-  "sourceCommit": "f7e959f95de470e2d6bef461e17b42c3218ec74f",
-  "episodes": []
+  "rebuiltAt": "2026-09-16T01:40:17.513Z",
+  "sourceCommit": "2f3dc737ce4772d1ce92f71f1261c457e13614e2",
+  "episodes": [
+    {
+      "episodeId": "us-personal-finance/2026-09-fs24-left",
+      "channel": "us-personal-finance",
+      "currentStage": "integration-fixture",
+      "stageStatus": "pending",
+      "updatedAt": "2026-09-15T16:03:10.000Z",
+      "spendUsd": 0
+    },
+    {
+      "episodeId": "us-personal-finance/2026-09-fs24-right",
+      "channel": "us-personal-finance",
+      "currentStage": "integration-fixture",
+      "stageStatus": "pending",
+      "updatedAt": "2026-09-15T16:03:10.000Z",
+      "spendUsd": 0
+    }
+  ]
 }
