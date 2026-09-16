@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { inspect, Bootstrap, successorPolicy, FS24C, FS24D, closureLineage } from "./index";
 import { at, git, parseScope, matches, safePath } from "./scope";
-import { render, frame, decode, Identity, Need, Verdict } from "../ci-report";
+import { assertEvidenceBundleRef, render, frame, decode, Identity, Need, Verdict } from "../ci-report";
 import { scanContent, contentPath } from "./content";
 import { secretLine } from "./secrets";
 
@@ -204,6 +204,10 @@ try {
   test("D-recovery-reject-extra-scope",()=>{const path="engine/io/repo-store.ts",head=dCommit(recoveryBase,path,at(dRoot,recoveryBase,path)+"\n// fixture\n",recoveryMessage(6));assert.throws(()=>closureLineage(dRoot,head),/D-recovery-scope/);});
   test("D-recovery-reject-policy-change",()=>{const head=dCommit(recoveryBase,"AGENTS.md",at(dRoot,recoveryBase,"AGENTS.md")+"\nfixture\n",recoveryMessage(6));assert.throws(()=>closureLineage(dRoot,head),/D-policy-freeze/);});
   test("D-recovery-reject-data-change",()=>{const head=dCommit(recoveryBase,statePath,at(dRoot,recoveryBase,statePath)+"\n",recoveryMessage(6));assert.throws(()=>closureLineage(dRoot,head),/D-code-scope/);});
+  const eSource={repository:"HungQuach301/fulcrum-studio",run:"1",attempt:"1",head:"a".repeat(40),job:"report",event:"push"};
+  test("E-reference-identity",()=>assertEvidenceBundleRef({source:eSource,bundle:{bytes:17,sha256:"b".repeat(64)}},eSource));
+  test("E-reference-wrong-head",()=>assert.throws(()=>assertEvidenceBundleRef({source:{...eSource,head:"c".repeat(40)},bundle:{bytes:17,sha256:"b".repeat(64)}},eSource),/E-BundleReference/));
+  test("E-reference-overflow",()=>assert.throws(()=>assertEvidenceBundleRef({source:eSource,bundle:{bytes:64*1024*1024+1,sha256:"b".repeat(64)}},eSource),/E-BundleReference/));
 } finally {
   rmSync(work,{recursive:true,force:true});
   test("temporary-fixture-cleanup",()=>assert.equal(existsSync(work),false));

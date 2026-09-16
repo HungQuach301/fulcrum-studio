@@ -1,0 +1,141 @@
+name: FS24 Evidence Transfer
+run-name: FS24E ${{ github.event.workflow_run.id || github.sha }}
+on:
+  push:
+    branches: [wp/002]
+  workflow_run:
+    workflows: [Fulcrum CI, WP-002 Foundation Acceptance, WP-002 Serialized Writer, WP-002 Reindex]
+    types: [completed]
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+concurrency:
+  group: fs24e-${{ github.event.workflow_run.id || github.sha }}
+  cancel-in-progress: false
+env:
+  FS_HEAD: ${{ github.event.workflow_run.head_sha || github.sha }}
+  GH_TOKEN: ${{ github.token }}
+  FS_GRANT: FS24-D
+jobs:
+  prepare:
+    if: ${{ github.repository == 'HungQuach301/fulcrum-studio' && github.run_attempt == 1 }}
+    runs-on: ubuntu-24.04
+    env:
+      FS_JOB: prepare
+    outputs:
+      matrix: ${{ steps.collect.outputs.matrix }}
+      index_hash: ${{ steps.collect.outputs.index_hash }}
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ env.FS_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Allocate isolated transfer files
+        id: init
+        shell: bash
+        run: |
+          set -euo pipefail
+          task_dir="$(mktemp -d "$RUNNER_TEMP/fs24e.XXXXXX")"
+          printf 'FS_TRANSFER_ROOT=%s\n' "$task_dir" >> "$GITHUB_ENV"
+      - name: Verify codec negative cases
+        id: codec
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          python3 engine/io/evidence-transfer.test.py > "$FS_TRANSFER_ROOT/codec.stdout.txt" 2> "$FS_TRANSFER_ROOT/codec.stderr.txt"
+          codec_status=$?
+          set -e
+          if [ "$codec_status" -ne 0 ]; then
+            python3 - <<'PYCODEC'
+          import os,pathlib
+          for name in ['codec.stdout.txt','codec.stderr.txt']:
+              data=pathlib.Path(os.environ['FS_TRANSFER_ROOT'],name).read_bytes()
+              print(name+':diagnostic-prefix-only:'+data[:8192].decode('utf-8',errors='replace'))
+          PYCODEC
+          fi
+          exit "$codec_status"
+      - name: Collect under exact lineage and source gates
+        id: collect
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 engine/io/evidence-transfer.py collect --directory "$FS_TRANSFER_ROOT/raw" --file "$FS_TRANSFER_ROOT/bundle.zip"
+      - name: Upload immutable carrier
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: fs24e-transfer-${{ github.run_id }}
+          path: ${{ env.FS_TRANSFER_ROOT }}/parts/*
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+      - name: Preserve failed preparation bytes
+        if: ${{ failure() && steps.init.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: fs24e-failure-${{ github.run_id }}-prepare
+          path: ${{ env.FS_TRANSFER_ROOT }}
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+  emit:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    env:
+      FS_JOB: emit-${{ matrix.part }}
+      FS_CARRIER_ID: ${{ needs.prepare.outputs.artifact_id }}
+      FS_CARRIER_DIGEST: ${{ needs.prepare.outputs.artifact_digest }}
+      FS_INDEX_HASH: ${{ needs.prepare.outputs.index_hash }}
+      FS_PART: ${{ matrix.part }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ env.FS_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Receive own carrier and emit exactly one part
+        id: emit
+        shell: bash
+        run: |
+          set -euo pipefail
+          work_dir="$(mktemp -d "$RUNNER_TEMP/fs24e-emit.XXXXXX")"
+          printf 'FS_EMIT_ROOT=%s\n' "$work_dir" >> "$GITHUB_ENV"
+          python3 engine/io/evidence-transfer.py download-carrier --directory "$work_dir/receive"
+          python3 engine/io/evidence-transfer.py extract-carrier --directory "$work_dir/parts" --file "$work_dir/receive/carrier.zip" --index-hash "$FS_INDEX_HASH"
+          python3 engine/io/evidence-transfer.py emit --directory "$work_dir/parts" --part "$FS_PART"
+      - name: Preserve failed carrier receipt
+        if: ${{ failure() && env.FS_EMIT_ROOT != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: fs24e-failure-${{ github.run_id }}-emit-${{ matrix.part }}
+          path: ${{ env.FS_EMIT_ROOT }}/receive
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+  report:
+    if: ${{ always() }}
+    needs: [prepare, emit]
+    runs-on: ubuntu-24.04
+    env:
+      PREPARE_RESULT: ${{ needs.prepare.result }}
+      EMIT_RESULT: ${{ needs.emit.result }}
+      INDEX_HASH: ${{ needs.prepare.outputs.index_hash }}
+    steps:
+      - name: Report producer outcome without asserting external receipt
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          ok=os.environ['PREPARE_RESULT']=='success' and os.environ['EMIT_RESULT']=='success'
+          print(json.dumps({'producerResult':'success' if ok else 'failure','indexSha256':os.environ['INDEX_HASH'],'agentReceive':'unproven','Q0':'BLOCKED_HTTP_403','responseB':'missing','WP002':'todo','billingActualUsd':None}))
+          raise SystemExit(0 if ok else 1)
+          PY

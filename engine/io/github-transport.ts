@@ -1,5 +1,5 @@
 import { gzipSync } from "node:zlib";
-import { createHash } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
@@ -220,8 +220,23 @@ export function validateManifest(manifest: Manifest, files: Record<string,string
   }
   if(Object.keys(files).some(x=>!declared.has(x))||declared.size!==Object.keys(files).length) throw new Error("UndeclaredMember");
 }
+const evidenceProcess=randomUUID();
+let evidenceSequence=0;
 export function emitFile(name: string, bytes: Buffer): void {
   if(!/^[A-Za-z0-9_.-]+$/.test(name)) throw new Error("EvidenceName");
+  // Preserve every observation, including repeated logical names, without nesting base64.
+  if(process.env.FS_EVIDENCE_MODE==="bundle-v1") {
+    if(!process.env.FS_EVIDENCE)throw new Error("EvidenceDirectoryRequired");
+    const observation=randomUUID();
+    const stored="observation-"+observation+".bin";
+    writeFileSync(join(process.env.FS_EVIDENCE,stored),bytes,{flag:"wx"});
+    writeFileSync(join(process.env.FS_EVIDENCE,"observation-"+observation+".json"),JSON.stringify({
+      version:"FS24E/1",observer:evidenceProcess,sequence:++evidenceSequence,observedAt:new Date().toISOString(),name,stored,bytes:bytes.length,sha256:digest(bytes),
+      run:process.env.GITHUB_RUN_ID,attempt:process.env.GITHUB_RUN_ATTEMPT,
+      head:process.env.FS_HEAD,job:process.env.FS_JOB
+    })+"\n",{flag:"wx"});
+    return;
+  }
   const id={grant:process.env.FS_GRANT??"FS24-B",run:process.env.GITHUB_RUN_ID,attempt:process.env.GITHUB_RUN_ATTEMPT,head:process.env.FS_HEAD,job:process.env.FS_JOB};
   console.log("FS24B_FILE\t"+JSON.stringify({...id,name,bytes:bytes.length,sha256:digest(bytes)}));
   const value=bytes.toString("base64");for(let i=0;i<value.length;i+=2048)console.log("FS24B_DATA\t"+(i/2048+1)+"\t"+value.slice(i,i+2048));
@@ -250,4 +265,44 @@ function validateDRunIdentity(run:Run,id:number,workflow:string):void {
 export function validateDRun(run:Run,id:number,workflow:string,requestId:string):void {
   validateDRunIdentity(run,id,workflow);
   if(run.display_title!=="FS24-D "+requestId)throw new Error("D-DispatchRunBinding");
+}
+
+export interface ReceivedEvidenceBundle { files:Record<string,Buffer>; observations:Array<{name:string;bytes:Buffer;sha256:string}>; }
+export async function receiveEvidenceBundle(api:GitHubTransport, log:string, expected:{run:string;head:string;job:string;runHead?:string}):Promise<ReceivedEvidenceBundle|null> {
+  const lines=log.split("\n").map(x=>x.replace(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+Z\s+/,""));
+  const references=lines.filter(x=>x.startsWith("FS24E_REF\t"));
+  if(!references.length)return null;
+  if(references.length!==1||!/^\d+$/.test(expected.run)||!/^[a-f0-9]{40}$/.test(expected.head)||!/^[a-z][a-z0-9-]+$/.test(expected.job))throw new Error("E-BundleReferenceCount");
+  const ref=JSON.parse(references[0].slice("FS24E_REF\t".length)) as import("../../scripts/ci-report").EvidenceBundleRef;
+  const run=await api.json<Run>("/actions/runs/"+expected.run);
+  if(run.id!==Number(expected.run)||run.run_attempt!==1||run.head_sha!==(expected.runHead??expected.head)||run.repository?.full_name!==REPOSITORY||run.head_repository?.full_name!==REPOSITORY)throw new Error("E-BundleRunBinding");
+  const {assertEvidenceBundleRef}=await import("../../scripts/ci-report");
+  assertEvidenceBundleRef(ref,{repository:REPOSITORY,run:expected.run,head:expected.head,job:expected.job,attempt:"1",event:run.event});
+  const artifacts=await api.page<ArtifactMeta>("/actions/runs/"+expected.run+"/artifacts","artifacts");
+  const selected=artifacts.filter(x=>x.name==="fs24e-"+expected.run+"-1-"+expected.job);
+  if(selected.length!==1||selected[0].expired||selected[0].workflow_run.id!==Number(expected.run)||selected[0].workflow_run.head_sha!==run.head_sha||!/^sha256:[a-f0-9]{64}$/.test(selected[0].digest??""))throw new Error("E-BundleArtifact");
+  const artifact=selected[0],raw=await api.bytes("/actions/artifacts/"+artifact.id+"/zip",65*1024*1024);
+  if("sha256:"+digest(raw)!==artifact.digest)throw new Error("E-ArtifactDigest");
+  const directory=join(process.env.TASK_ROOT!,"e-receive-"+expected.run+"-"+expected.job);
+  mkdirSync(directory);writeFileSync(join(directory,"original-artifact.zip"),raw,{flag:"wx"});
+  writeFileSync(join(directory,"source.json"),JSON.stringify(ref.source),{flag:"wx"});
+  const helper=join(process.env.GITHUB_WORKSPACE!,"engine/io/evidence-transfer.py");
+  const read=spawnSync("python3",[helper,"unpack-artifact","--directory",join(directory,"members"),"--file",join(directory,"original-artifact.zip"),"--binding",join(directory,"source.json"),"--index-hash",ref.bundle.sha256],{encoding:"utf8",maxBuffer:1024*1024});
+  if(read.status!==0)throw new Error("E-BundleDecode");
+  const manifest=JSON.parse(readFileSync(join(directory,"members","bundle-manifest.json"),"utf8")) as {members:Array<{name:string;bytes:number;sha256:string}>};
+  const files:Record<string,Buffer>={},observations:Array<{name:string;bytes:Buffer;sha256:string;observer:string;sequence:number}>=[];
+  for(const row of manifest.members) {
+    const bytes=readFileSync(join(directory,"members",row.name));
+    if(bytes.length!==row.bytes||digest(bytes)!==row.sha256)throw new Error("E-ConsumerByteHash");files[row.name]=bytes;
+  }
+  for(const [name,bytes] of Object.entries(files))if(/^observation-[a-f0-9-]+\.json$/.test(name)) {
+    const meta=JSON.parse(bytes.toString()) as {version:string;name:string;stored:string;run:string;attempt:string;head:string;job:string;bytes:number;sha256:string;observer:string;sequence:number};
+    const value=files[meta.stored];
+    if(meta.version!=="FS24E/1"||!value||meta.run!==expected.run||meta.attempt!=="1"||meta.head!==expected.head||meta.job!==expected.job||value.length!==meta.bytes||digest(value)!==meta.sha256||!Number.isSafeInteger(meta.sequence)||meta.sequence<1)throw new Error("E-ObservationBinding");
+    observations.push({name:meta.name,bytes:value,sha256:meta.sha256,observer:meta.observer,sequence:meta.sequence});
+  }
+  const observers=new Map<string,number>();
+  observations.sort((a,b)=>a.observer.localeCompare(b.observer)||a.sequence-b.sequence);
+  for(const row of observations){const n=(observers.get(row.observer)??0)+1;if(row.sequence!==n)throw new Error("E-ObservationSequence");observers.set(row.observer,n);}
+  return {files,observations};
 }

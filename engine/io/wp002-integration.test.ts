@@ -1,12 +1,14 @@
+const evidenceModeBeforeTests=process.env.FS_EVIDENCE_MODE;
+process.env.FS_EVIDENCE_MODE="legacy";
 import { gzipSync } from "node:zlib";
 import { assertDataParent, assertReceiptCollision, assertRemoteBlob } from "./github-writer";
-import { assertFinalJobEvidence, bundleD, validateDControl, decodeDFrames, countDRuns, chooseDStep, dRawReceipt, recoverDIntents, settleDGroup } from "./wp002-integration";
+import { assertEvidenceRepairMode, assertFinalJobEvidence, bundleD, validateDControl, decodeDFrames, countDRuns, chooseDStep, dRawReceipt, recoverDIntents, settleDGroup } from "./wp002-integration";
 import assert from "node:assert/strict";
 import { spawnSync, execFileSync } from "node:child_process";
 import { readFileSync,readdirSync,writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { applyEntries, validateBatchInput, inspectMergeReceipt, repairIdentity, collectMergeReceipts, diagnoseMerge, validateSuccessorInput } from "./github-writer";
-import { GitHubTransport,digest,validateManifest,validateDispatchedRun,validateDRun,Run } from "./github-transport";
+import { emitFile,GitHubTransport,digest,validateManifest,validateDispatchedRun,validateDRun,Run } from "./github-transport";
 import { FS24R1, repairPolicy, FS24C, successorPolicy } from "../../scripts/guardrails/index";
 import { bundle, bundleC, producerOverlap } from "./wp002-integration";
 import { schemaChecker } from "./repo-store";
@@ -239,8 +241,27 @@ async function main(){
   await test("D-group-synchronous-failure-settles-sibling",async()=>{let sibling=false;await assert.rejects(settleDGroup("logs",[()=>{throw new Error("fixture-sync");},async()=>{sibling=true;return 1;}]),/fixture-sync/);assert.equal(sibling,true);});
   await test("D-group-success-retains-order",async()=>assert.deepEqual(await settleDGroup("initial",[async()=>1,async()=>2]),[1,2]));
  } finally {globalThis.fetch=dFetch;console.log=dLog;if(dGrant===undefined)delete process.env.FS_GRANT;else process.env.FS_GRANT=dGrant;if(dJob===undefined)delete process.env.FS_JOB;else process.env.FS_JOB=dJob;}
+ await test("E-file-observations-preserve-repeated-name",()=>{
+   const fs=require("node:fs") as typeof import("node:fs"),os=require("node:os") as typeof import("node:os");
+   const dir=fs.mkdtempSync(join(os.tmpdir(),"fs24e-test-")),savedMode=process.env.FS_EVIDENCE_MODE,savedDir=process.env.FS_EVIDENCE,savedLog=console.log;
+   let prints=0;
+   try {
+     process.env.FS_EVIDENCE_MODE="bundle-v1";process.env.FS_EVIDENCE=dir;console.log=()=>{prints++;};
+     emitFile("repeated.log",Buffer.from([0,255,13,10]));emitFile("repeated.log",Buffer.from([1,2]));
+     const names=fs.readdirSync(dir),meta=names.filter(x=>x.endsWith(".json")).map(x=>JSON.parse(fs.readFileSync(join(dir,x),"utf8")));
+     assert.equal(prints,0);assert.equal(names.length,4);assert.equal(meta.length,2);
+     assert.equal(new Set(meta.map(x=>x.stored)).size,2);
+     for(const row of meta){assert.equal(row.name,"repeated.log");const bytes=fs.readFileSync(join(dir,row.stored));assert.equal(bytes.length,row.bytes);assert.equal(digest(bytes),row.sha256);}
+   } finally {
+     console.log=savedLog;if(savedMode===undefined)delete process.env.FS_EVIDENCE_MODE;else process.env.FS_EVIDENCE_MODE=savedMode;
+     if(savedDir===undefined)delete process.env.FS_EVIDENCE;else process.env.FS_EVIDENCE=savedDir;fs.rmSync(dir,{recursive:true,force:true});
+   }
+ });
+ await test("E-production-control-blocked",()=>assert.throws(()=>assertEvidenceRepairMode("admit",true),/E-ProductionNotAuthorized/));
+ await test("E-controller-blocked",()=>assert.throws(()=>assertEvidenceRepairMode("controller",false),/E-ProductionNotAuthorized/));
+ await test("E-readonly-mode",()=>{assertEvidenceRepairMode("diagnose-candidate",false);assertEvidenceRepairMode("admit",false);});
  const report={result:rows.every(x=>x.result==="pass")?"pass":"fail",tests:rows.length,rows,networkFixturesOnly:true};
  if(process.env.FS_EVIDENCE)writeFileSync(join(process.env.FS_EVIDENCE,"integration-tests.json"),JSON.stringify(report,null,2)+"\n");
  console.log(JSON.stringify(report,null,2));process.exitCode=report.result==="pass"?0:1;complete=true;
 }
-main().catch(e=>{console.error(String(e));process.exitCode=1;});
+main().catch(e=>{console.error(String(e));process.exitCode=1;}).finally(()=>{if(evidenceModeBeforeTests===undefined)delete process.env.FS_EVIDENCE_MODE;else process.env.FS_EVIDENCE_MODE=evidenceModeBeforeTests;});

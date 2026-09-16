@@ -73,3 +73,13 @@ if (require.main === module) {
   writeFileSync((process.env.FS_EVIDENCE ?? ".") + "/needs.json", JSON.stringify(needs, null, 2) + "\n");
   process.stdout.write(value.text); process.exitCode = value.pass ? 0 : 1;
 }
+
+
+export interface EvidenceBundleRef {
+  source: {repository:string;run:string;attempt:string;head:string;job:string;event:string};
+  bundle: {bytes:number;sha256:string};
+}
+export function assertEvidenceBundleRef(value:EvidenceBundleRef, expected:EvidenceBundleRef["source"]):void {
+  if(!value||!value.source||!value.bundle||Object.keys(expected).some(key=>value.source[key as keyof typeof expected]!==expected[key as keyof typeof expected])||value.source.repository!=="HungQuach301/fulcrum-studio"||value.source.attempt!=="1"||!Number.isSafeInteger(value.bundle.bytes)||value.bundle.bytes<=0||value.bundle.bytes>64*1024*1024||!(/^[a-f0-9]{64}$/).test(value.bundle.sha256))throw new Error("E-BundleReference");
+  // A valid reference is metadata only; bytes/CRC/member/API finalizers must be checked separately.
+}

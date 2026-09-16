@@ -93,7 +93,7 @@ export function successorPolicy(root:string,head:string,p:typeof FS24C=FS24C):st
 
 
 export const FS24D = {base:"78a4b28b4134fb09b4a003b90099c13460a8112d", tree:"ac9be3c9f327ba15cf6c0a9871d05d444a58c290", policy:"2cde1d18a989ac085a47b7ada0565b29b42577b6"};
-export interface DLineage { head:string; code:string; candidateBase:string; batch:string|null; origin:string|null; closure:boolean; closureBase?:string; unmerged:string[]; paths:string[]; dataPaths:string[]; epochs:Array<{code:string;base:string;candidate:string;pr:number}>; data:Array<{commit:string;parent:string;operation:string;code:string}>; }
+export interface DLineage { evidenceRepair?: {rounds:string[];merges:Array<{head:string;base:string;candidate:string;pr:number}>;approval:string;paths:string[]}; head:string; code:string; candidateBase:string; batch:string|null; origin:string|null; closure:boolean; closureBase?:string; unmerged:string[]; paths:string[]; dataPaths:string[]; epochs:Array<{code:string;base:string;candidate:string;pr:number}>; data:Array<{commit:string;parent:string;operation:string;code:string}>; }
 const dLineageCache = new Map<string,DLineage>();
 export function closureLineage(root:string,head:string):DLineage {
   if(!/^[a-f0-9]{40}$/.test(head))throw new Error("D-head-format");
@@ -139,7 +139,7 @@ export function inspect(o: Options): ScanReport {
     if(messageHead.split("\n").includes("Fulcrum-Grant: FS24-D")) {
       const lineage=closureLineage(o.root,o.head);
       if(!["wp/002","main"].includes(o.branch))throw new Error("D-branch");
-      if(lineage.unmerged.length ? o.base!==lineage.candidateBase : ![FS24D.base,lineage.code,...lineage.epochs.map(x=>x.base),...(lineage.closureBase?[lineage.closureBase]:[])].includes(o.base))throw new Error("D-scan-base");
+      if(lineage.unmerged.length ? o.base!==lineage.candidateBase : ![FS24D.base,lineage.code,...lineage.epochs.map(x=>x.base),...(lineage.closureBase?[lineage.closureBase]:[]),...(lineage.evidenceRepair?.merges.flatMap(x=>[x.base,x.head])??[])].includes(o.base))throw new Error("D-scan-base");
       d=[...lineage.paths,...lineage.dataPaths,...(lineage.closure?["engine/ops/backlog.md"]:[])];
       if(diff.some(x=>!d.includes(x.path)))throw new Error("D-scan-scope");
     }

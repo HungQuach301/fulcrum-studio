@@ -97,8 +97,9 @@ jobs:
         child=subprocess.Popen(args,cwd=pathlib.Path(os.environ['TASK_ROOT'],'mirror'),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         def drain(source,name,dest):
          with (p/(mode+'.'+name+'.txt')).open('wb') as f:
-          for row in iter(source.readline,b''):
-           f.write(row);f.flush();dest.write(row);dest.flush()
+          for row in iter(lambda:source.read(65536),b''):
+           f.write(row);f.flush()
+           if os.environ.get('FS_EVIDENCE_MODE')!='bundle-v1':dest.write(row);dest.flush()
         workers=[threading.Thread(target=drain,args=(child.stdout,'stdout',sys.stdout.buffer)),threading.Thread(target=drain,args=(child.stderr,'stderr',sys.stderr.buffer))]
         for w in workers:w.start()
         status=child.wait()
@@ -162,6 +163,11 @@ jobs:
         (p/'job-summary.json').write_text(json.dumps(summary,ensure_ascii=False)+'\n')
         with open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write('summary='+json.dumps(summary,ensure_ascii=True)+'\n')
         identity=['FS24-D',os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_RUN_ATTEMPT'],os.environ['FS_HEAD'],os.environ['FS_JOB'],os.environ['FS_EVENT'],os.environ.get('FS_BASE','')]
+        if os.environ.get('FS_EVIDENCE_MODE')=='bundle-v1':
+         import subprocess
+         target=pathlib.Path(os.environ['TASK_ROOT'],'evidence-bundle.zip')
+         subprocess.run(['python3',str(pathlib.Path(os.environ['GITHUB_WORKSPACE'],'engine/io/evidence-transfer.py')),'pack','--directory',str(p),'--file',str(target)],check=True)
+         raise SystemExit(0 if ok else 1)
         print('FS24_BEGIN\t'+'\t'.join(identity))
         files=sorted(p.iterdir())
         for f in files:
@@ -172,6 +178,16 @@ jobs:
         print('FS24_COMPLETE\t'+str(len(files)))
         raise SystemExit(0 if ok else 1)
         PY
+    - name: Preserve original evidence bundle
+      id: evidence_bundle
+      if: ${{ always() && env.FS_EVIDENCE_MODE == 'bundle-v1' }}
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: fs24e-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.FS_JOB }}
+        path: ${{ env.TASK_ROOT }}/evidence-bundle.zip
+        retention-days: 7
+        compression-level: 0
+        if-no-files-found: error
     - name: Remove final report data
       id: final_cleanup
       if: ${{ always() }}
