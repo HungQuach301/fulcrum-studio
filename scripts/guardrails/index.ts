@@ -110,7 +110,12 @@ export function inspect(o: Options): ScanReport {
   try {
     if (!/^[a-f0-9]{40}$/.test(o.base) || !/^[a-f0-9]{40}$/.test(o.head)) throw new Error("commit-format");
     git(o.root, "merge-base", "--is-ancestor", o.base, o.head);
-    const ctx = context(o.root, o.base, o.branch, o.title, o.event); report.wpPath = ctx.wpPath;
+    const messageHead=git(o.root,"show","-s","--format=%B",o.head);
+    const lineage=messageHead.split("\n").includes("Fulcrum-Grant: FS24-D")?closureLineage(o.root,o.head):undefined;
+    // The E companion is evidence documentation, not a replacement WP authority.
+    // Verified E lineage freezes the original WP blob at F, including after merge.
+    const contextBase=lineage?.evidenceRepair?"c4a4445e619175c015469cd33ebd427ecdd687a1":o.base;
+    const ctx = context(o.root, contextBase, o.branch, o.title, o.event); report.wpPath = ctx.wpPath;
     const diff = changes(o.root, o.base, o.head); report.checkedPaths = diff.map(x => x.path);
     const messages = git(o.root, "log", "--format=%B", o.base + ".." + o.head);
     const decisions = "engine/docs/02-decisions.md";
@@ -135,9 +140,7 @@ export function inspect(o: Options): ScanReport {
     const r1 = o.base === FS24R1.base && ["wp/002","main"].includes(o.branch) ? repairPolicy(o.root,o.branch === "main" ? git(o.root,"rev-parse",o.head+"^2").trim() : o.head) : [];
     const c = o.base === FS24C.base && ["wp/002","main"].includes(o.branch) ? successorPolicy(o.root,o.branch === "main" ? git(o.root,"rev-parse",o.head+"^2").trim() : o.head) : [];
     let d:string[]=[];
-    const messageHead=git(o.root,"show","-s","--format=%B",o.head);
-    if(messageHead.split("\n").includes("Fulcrum-Grant: FS24-D")) {
-      const lineage=closureLineage(o.root,o.head);
+    if(lineage) {
       if(!["wp/002","main"].includes(o.branch))throw new Error("D-branch");
       if(lineage.unmerged.length ? o.base!==lineage.candidateBase : ![FS24D.base,lineage.code,...lineage.epochs.map(x=>x.base),...(lineage.closureBase?[lineage.closureBase]:[]),...(lineage.evidenceRepair?.merges.flatMap(x=>[x.base,x.head])??[])].includes(o.base))throw new Error("D-scan-base");
       d=[...lineage.paths,...lineage.dataPaths,...(lineage.closure?["engine/ops/backlog.md"]:[])];
