@@ -168,7 +168,18 @@ try {
     test("C-production-scanner-reject-branch",()=>assert.equal(inspect({root:actualRoot,base:FS24C.base,head:actualHead,branch:"bad",title:"",event:"push"}).result,"fail"));
   }
   const currentHead=process.env.FS_HEAD!,currentLineage=closureLineage(actualRoot,currentHead);
-  test("D-current-lineage",()=>{assert.ok(currentLineage.unmerged.length||currentLineage.epochs.length);assert.equal(currentLineage.paths.length,24);});
+  const historicalDLineage=currentLineage.evidenceRepair?closureLineage(actualRoot,"c4a4445e619175c015469cd33ebd427ecdd687a1"):currentLineage;
+  test("D-current-lineage",()=>{assert.ok(historicalDLineage.unmerged.length||historicalDLineage.epochs.length);assert.equal(historicalDLineage.paths.length,24);});
+  test("E-current-lineage-preserves-D",()=>{
+    if(!currentLineage.evidenceRepair)return;
+    assert.equal(currentLineage.evidenceRepair.paths.length,15);
+    assert.equal(currentLineage.paths.length,28);
+    assert.deepEqual([...currentLineage.paths].sort(),[...new Set([...historicalDLineage.paths,...currentLineage.evidenceRepair.paths])].sort());
+    assert.equal(currentLineage.code,historicalDLineage.code);
+    assert.deepEqual(currentLineage.epochs,historicalDLineage.epochs);
+    assert.deepEqual(currentLineage.data,historicalDLineage.data);
+    assert.deepEqual(currentLineage.dataPaths,historicalDLineage.dataPaths);
+  });
   const dRoot=join(work,"d-history");
   const cloned=spawnSync("git",["clone","--shared","--no-checkout",actualRoot,dRoot],{encoding:"utf8"});assert.equal(cloned.status,0,cloned.stderr);
   const dEnv={...process.env,GIT_AUTHOR_NAME:"fixture",GIT_AUTHOR_EMAIL:"fixture@example.invalid",GIT_COMMITTER_NAME:"fixture",GIT_COMMITTER_EMAIL:"fixture@example.invalid",GIT_INDEX_FILE:join(work,"d-index")};

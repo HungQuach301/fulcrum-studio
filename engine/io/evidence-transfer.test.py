@@ -48,6 +48,19 @@ class TransferTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'MissingTerminal'):
             e.decode_part(p, self.index_hash)
 
+    def test_interior_segment_bom_preserves_bytes(self):
+        p = self.logs[0]
+        lines = p.read_text().splitlines(keepends=True)
+        p.write_text(''.join('\ufeff' + row for row in lines))
+        e.receive(self.logs, self.root / 'segment-bom', self.index_hash, self.binding)
+        self.assertEqual((self.root / 'segment-bom/members/original.log').read_bytes(), self.original)
+
+    def test_payload_bom_is_rejected(self):
+        p = self.logs[0]
+        p.write_text(p.read_text().replace('FS24E_DATA\t0\t', 'FS24E_DATA\t0\t\ufeff', 1))
+        with self.assertRaises((ValueError, UnicodeEncodeError)):
+            e.decode_part(p, self.index_hash)
+
     def test_masked_payload(self):
         p = self.logs[0]
         p.write_text(p.read_text().replace('FS24E_DATA\t0\t', 'FS24E_DATA\t0\t***', 1))
@@ -113,6 +126,26 @@ class TransferTests(unittest.TestCase):
             e.receive(self.logs, self.root / 'offline', self.index_hash, self.binding)
         finally:
             e.urllib.request.build_opener = old
+
+    def test_candidate_native_logs_bind_before_get(self):
+        import unittest.mock
+        reader = unittest.mock.Mock()
+        run = {'id': 123, 'status': 'completed', 'run_attempt': 1, 'head_sha': 'a' * 40}
+        job = {'id': 456, 'run_id': 123, 'head_sha': 'a' * 40, 'status': 'completed', 'conclusion': 'success', 'name': 'report'}
+        path = self.raw / 'native.log'
+        path.write_bytes(b'\xef\xbb\xbffinal cleanup\r\n')
+        reader.get.return_value = path
+        source = {'originals': []}
+        e.collect_candidate_job_logs(reader, source, run, [job, {**job, 'id': 457, 'conclusion': 'skipped'}])
+        reader.get.assert_called_once_with('/actions/jobs/456/logs', 'candidate-job-456.log', 4 * 1024 * 1024, True)
+        self.assertEqual(source['originals'][0]['sha256'], e.measure(path)['sha256'])
+        reader.reset_mock()
+        for bad in [{**job, 'run_id': 999}, {**job, 'head_sha': 'b' * 40}, {**job, 'status': 'in_progress'}]:
+            with self.assertRaisesRegex(ValueError, 'CandidateLogJob'):
+                e.collect_candidate_job_logs(reader, source, run, [job, {**bad, 'id': 458}])
+        with self.assertRaisesRegex(ValueError, 'CandidateLogRun'):
+            e.collect_candidate_job_logs(reader, source, {**run, 'id': e.SOURCE_RUN}, [])
+        reader.get.assert_not_called()
 
     def test_historical_reader_outside_actions_denied(self):
         import unittest.mock

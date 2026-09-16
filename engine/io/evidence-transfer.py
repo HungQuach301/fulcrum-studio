@@ -185,7 +185,9 @@ def emit_part(directory, part, output=sys.stdout):
     print('FS24E_END\t%d\t%s' % (part, row['sha256']), file=output)
 
 
-LINE = re.compile(r'^(?:\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+Z\s+)?(FS24E_(?:BEGIN|DATA|END)\t[^\r\n]*)\r?$')
+# GitHub concatenated log segments can begin with BOM at an interior line.
+# Recognize it only before the timestamp/frame; never normalize payload bytes.
+LINE = re.compile(r'^\ufeff?(?:\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+Z\s+)?(FS24E_(?:BEGIN|DATA|END)\t[^\r\n]*)\r?$')
 
 
 def decode_part(path, expected_index_hash):
@@ -541,6 +543,20 @@ def check_ledger(reader, root):
               'closureReserve': {'active': 6, 'jobs': 30}, 'records': records, 'billingActualUsd': None}))
 
 
+def collect_candidate_job_logs(reader, source, run, jobs):
+    # Preserve final cleanup/report lines as well as the earlier uploaded bundle.
+    need(run['id'] != SOURCE_RUN and run['status'] == 'completed' and run['run_attempt'] == 1, 'CandidateLogRun')
+    need(len({j['id'] for j in jobs}) == len(jobs), 'CandidateLogDuplicate')
+    need(all(j['run_id'] == run['id'] and j['head_sha'] == run['head_sha'] and j['status'] == 'completed' for j in jobs), 'CandidateLogJob')
+    for job in jobs:
+        if job['conclusion'] == 'skipped':
+            continue
+        name = 'candidate-job-%d.log' % job['id']
+        path = reader.get('/actions/jobs/%d/logs' % job['id'], name, 4 * 1024 * 1024, True)
+        source['originals'].append({'kind': 'candidate-job-log', 'file': name, 'run': run['id'],
+                                    'job': job['id'], 'name': job['name'], 'head': run['head_sha'], **measure(path)})
+
+
 def collect_candidate_bundles(reader, source, head):
     """Before merge, capture both push and PR evidence; workflow_run is not yet installed on main."""
     import time
@@ -561,6 +577,7 @@ def collect_candidate_bundles(reader, source, head):
         run = bound_run(reader, r['id'], 'candidate-run-%d' % r['id'])
         need(run['head_sha'] == head and run['run_attempt'] == 1, 'CandidateRunIdentity')
         jobs = reader.page('/actions/runs/%d/jobs' % run['id'], 'jobs', 'candidate-jobs-%d' % run['id'])
+        collect_candidate_job_logs(reader, source, run, jobs)
         artifacts = reader.page('/actions/runs/%d/artifacts' % run['id'], 'artifacts', 'candidate-artifacts-%d' % run['id'])
         selected = [a for a in artifacts if a['name'].startswith('fs24e-%d-1-' % run['id'])]
         # Missing failed-job bundles remain explicit; producer success is never CI acceptance.
