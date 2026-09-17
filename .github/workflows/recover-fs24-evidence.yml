@@ -6,6 +6,7 @@ on:
   workflow_run:
     workflows: [Fulcrum CI]
     types: [completed]
+    branches: [main]
 permissions:
   contents: read
   actions: read
@@ -20,7 +21,19 @@ env:
   FS24_F_ACTIVE: 'true'
 jobs:
   prepare:
-    if: ${{ github.repository == 'HungQuach301/fulcrum-studio' && github.run_attempt == 1 && (github.event_name == 'push' || github.event.workflow_run.head_branch == 'main') }}
+    if: >-
+      ${{
+        github.repository == 'HungQuach301/fulcrum-studio' &&
+        github.run_attempt == 1 &&
+        (
+          github.event_name == 'push' ||
+          (
+            github.event_name == 'workflow_run' &&
+            github.event.workflow_run.head_branch == 'main' &&
+            github.event.workflow_run.head_repository.full_name == github.repository
+          )
+        )
+      }}
     runs-on: ubuntu-24.04
     env:
       FS_JOB: prepare

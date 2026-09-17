@@ -402,3 +402,121 @@ SHA-256 canonical UTF-8 JSON+LF:
 ```json
 {"allocations":{"admissionCommits":1,"continuationCommits":0,"dataCommits":0,"dispatches":0,"emptyCommits":0,"premergePullRequests":1,"providerCalls":0,"recoveryActivations":0,"remoteRefUpdates":1,"reruns":0,"technicalMerges":0},"baseline":{"activeRuns":15,"artifactObjects":10,"artifactStorageBytes":36847031,"assignedRunnerWallSeconds":409,"billingActualUsd":null,"jobs":57,"legacyRelays":6,"runIds":[35170328551,35170328555,35170328625,35170352884,35170354386,35170644608,35170644609,35170644653,35170716611,35170770513,35171252396,35171252399,35171252421,35171260379,35171297099],"wholeWorkflowSkips":0},"caps":{"activeRuns":9,"agentLogReceives":3,"artifactObjects":48,"authenticatedRedirects":3,"http206Ranges":3,"jobsIncludingReservations":161,"legacyRelays":4,"newArtifactStorageBytes":134217728,"rangeBytes":33554529,"reserveUsd":5,"runnerMinutes":800,"wholeWorkflowSkips":2,"workflowRuns":11,"zipReceives":32},"checkpoint":{"ledger":199,"main":"2efe60ea7c74d301a1e2fc0ba52e1adc686f40dd","mainTree":"8675b4487a577f24e974c65e9e347f521d6d7b69","wp002":"6b13b756c021de9266ac449506e1e2912fbf290b","wp002Tree":"7d8d3274cdf6f38fd617fa4aab1d3dd5e7de533e"},"preserve":{"B1":"unverified","B2":"unverified","WP002":"todo","branchProtection":"unverified","node20":"reserved","node24":"reserved","responseB":"missing","sourceReceiptReconciliation":"pending"},"receipt":{"bytes":8562,"libraryId":"libfile_65c160f2ee688191a7017dbe0d2a51d5","name":"FS24-G-PREMERGE-RETRIGGER-STOP.md","sha256":"a7ae1ceaebf2dad139966f91b5c513fcee7c5961ffaeae9eb55cdbc9f02a07ba"},"repository":"HungQuach301/fulcrum-studio","transition":{"parent":"6b13b756c021de9266ac449506e1e2912fbf290b","parentTree":"7d8d3274cdf6f38fd617fa4aab1d3dd5e7de533e","paths":["engine/ops/work-packages/WP-002-evidence-recovery.md","engine/io/evidence-transfer.py","engine/io/evidence-transfer.test.py","scripts/guardrails/index.ts","scripts/guardrails/guardrails.test.ts"],"phase":"evidence-volume-admission"},"version":"FS24G-R1/1"}
 ```
+
+## FS24-G-R2C — premerge recovery after the R2B relay gate (đề nghị, chưa phải grant)
+
+Input receipt is pinned as Library ID libfile_e207c8e019588191b353be8a7492cf77,
+canonical name FS24-G-R2B-EXECUTION-RECEIPT.md, 15464 bytes, SHA-256
+b0f3456d938960ca080a716fbb4075b01af9812ae5a1208e576edcfd496a0d4c.
+The user-facing name had an extra “svg” prefix; the immutable ID, byte count, digest,
+and materialized canonical name identify the accepted receipt. R2B is frozen at main
+5ade77afe3fdfe4cb20c03f6234b7aec785f79ab, tree
+c2e32130efcdfcb0026cc514018bb748067ee25b, sole parent
+2efe60ea7c74d301a1e2fc0ba52e1adc686f40dd. Its only changed path is the recovery
+workflow, blob 70a18ea1e79e1e2eed3175ed4347adee122781ed.
+
+The log-free readiness record is exact run 35232709535 at wp/002
+ab6560edc704d8e2901d5afc87a6ebc1712a488a: workflow_dispatch, attempt 1,
+terminal failure at the intentional preflight boundary. All four expected jobs were
+assigned to distinct GitHub Actions runners in group GitHub Actions with label
+ubuntu-24.04; checkout and setup ran, step 4 failed, and the artifact step was skipped.
+Canonical FS24G-R2-readiness/2 is 7278 bytes with SHA-256
+c9e879fbdeaf8fc14362caa0044efda1b826cc00b19b5bcdcd8cfc21ae54a066.
+This proves runner admission only; it does not turn that failing probe into CI success.
+
+R2C re-pins one code-bearing G-R2 transition with sole parent
+ab6560edc704d8e2901d5afc87a6ebc1712a488a, parent tree
+459b80c99144705bc796406c693132853384b7a9, and logical main base
+5ade77afe3fdfe4cb20c03f6234b7aec785f79ab. The exact allowlist is:
+
+- .github/workflows/recover-fs24-evidence.yml
+- engine/ops/work-packages/WP-002-evidence-recovery.md
+- engine/io/evidence-transfer.py
+- engine/io/evidence-transfer.test.py
+- scripts/guardrails/index.ts
+- scripts/guardrails/guardrails.test.ts
+
+The recovery workflow is part of the transition, blob
+e26605cfbde8d2bf235d837b8da0e9dcd8ef34a7. Its workflow_run trigger is restricted
+to main and its job guard additionally requires the exact repository, attempt 1,
+source head branch main, and source head repository equal to the current repository.
+A wp/002 push therefore creates only the direct qualification run and cannot create a
+relay. The lineage validator separately freezes R2B, G-R1 and all F accounting; it
+rejects repeat, wrong parent, wrong authority, incomplete/extra scope, readiness drift,
+relay-gate blob drift, and history replacement.
+
+The authorized commit message, if separately approved, must contain each trailer once:
+
+~~~text
+Fulcrum-Grant: FS24-D
+Fulcrum-Phase: evidence-volume-admission-recovery
+FS24-F-Checkpoint: 2efe60ea7c74d301a1e2fc0ba52e1adc686f40dd
+FS24-F-Authority: cc0187edbfd555887dc021f3f1b7ed0de6c9fd97757e32b46636bafeb96a46e8
+FS24-G-R2-Authority: 4447512a984015f41021286e75e3988e9b96abf522257a36068b59718a7c864f
+Owner-Approval-Receipt: 4447512a984015f41021286e75e3988e9b96abf522257a36068b59718a7c864f
+FS24-G-R2-Round: 1
+FS24-G-R2-Readiness-Run: 35232709535
+FS24-G-R2-Readiness-Receipt: c9e879fbdeaf8fc14362caa0044efda1b826cc00b19b5bcdcd8cfc21ae54a066
+~~~
+
+### Graph, counters, budget and stop gates
+
+Prewrite requires the exact main/wp/002 trees, ledger 207, zero open wp/002→main PR,
+receipt/readiness/patch/tree/authority pins, source artifact 10459765118 metadata only,
+and at least 5 USD read-back headroom. No source artifact download is part of prewrite.
+
+One commit plus one wp/002 ref update may create exactly three push runs:
+Fulcrum CI (4 jobs), WP-002 Foundation Acceptance (6 jobs), and FS24 Evidence Transfer
+(5 jobs). The recovery run must complete qualification with three exact HTTP 206
+responses totaling 33554529 bytes, three bounded agent-log receives, and a matching
+consumer receipt. It must create zero legacy relay. Only after all three push gates,
+accounting, artifact, Range, and budget gates pass may one wp/002→main PR be opened.
+Opening that PR may create exactly two additional runs: CI (4 jobs) and acceptance
+(6 jobs). The two wp/000 workflows listen only for synchronize, so an opened PR with
+no later commit creates no run for them.
+
+The R2C ceiling is 5 workflow runs, 5 active runs, 25 jobs, 0 whole-workflow skips,
+0 legacy relay, 20 artifacts, 16 ZIP receives, 3 agent-log receives, 3 authenticated
+redirects, 3 exact HTTP 206 responses, 33554529 Range bytes, 600 runner-minutes,
+134217728 new artifact bytes, and a new proposed reserve of at most 5 USD. The reserve
+is not approved by this document. R2C allocates exactly one admission-recovery commit,
+one remote ref update, and one premerge PR; it allocates zero merge, activation,
+continuation, empty, repair, retrigger, dispatch, rerun, provider, or data operation.
+
+Live admin UI readback proves classic branch protection is not configured and no ruleset
+exists; the REST branch-protection endpoint remains 403 and is not treated as PASS.
+Platform required checks are therefore empty. Agent-required push and PR runs are
+stricter execution gates, but do not manufacture platform enforcement. R2C must STOP
+after successful PR checks and write a premerge receipt. Merge is unauthorized until a
+later owner decision either configures and positively reads back required checks or
+grants an explicit, separately accounted merge waiver. No F activation may follow R2C.
+
+Any identity, checkpoint, patch, tree, readiness, runner, run topology, counter, Range,
+receipt, accounting, budget, or branch-rule mismatch is an immediate STOP. No retry,
+repair, retrigger, empty commit, second ref write, later PR commit, hidden cap increase,
+or implicit authority extension is allowed.
+
+G-R1 stays consumed at 5 runs/19 jobs/2 legacy relays. R2A stays consumed at 2 runs/
+7 jobs/1 legacy relay/1 artifact of unknown frozen storage. R2B stays consumed at
+1 run/4 jobs/1 ref update. The remaining F allocation stays untouched: at most
+2 technical merges, 1 recovery activation, and 2 continuation commits of no more than
+8 volumes each. Preserve responseB=missing, WP002=todo,
+sourceReceiptReconciliation=pending, B1/B2=unverified, Node20/Node24 reserved, and the
+legacy branchProtection=unverified flag. The separate R2C platform finding is
+“verified absent”, not a mutation of that legacy reservation.
+
+Keep all existing prohibitions: Q0, artifact 10425898194, downloading artifact
+10459765118, both historic logs and every G-R1/R2A/R2B/readiness job log, dispatch,
+rerun, provider, settings, credentials, billing change, history rewrite, force/reset,
+and every other repository. A separately approved G-R2C execution may receive exactly
+the three newly created qualification emitter logs counted above; it grants no other
+job-log access.
+
+### Authority canonical G-R2C
+
+Canonical UTF-8 JSON+LF is 3859 bytes. SHA-256:
+4447512a984015f41021286e75e3988e9b96abf522257a36068b59718a7c864f.
+
+~~~json
+{"allocations":{"admissionRecoveryCommits":1,"candidateCommits":0,"continuationCommits":0,"dataCommits":0,"dispatches":0,"emptyCommits":0,"premergePullRequests":1,"providerCalls":0,"recoveryActivations":0,"remoteRefUpdates":1,"repairCommits":0,"reruns":0,"retriggerCommits":0,"technicalMerges":0},"caps":{"activeRuns":5,"agentLogReceives":3,"artifactObjects":20,"authenticatedRedirects":3,"http206Ranges":3,"jobsIncludingReservations":25,"legacyRelays":0,"newArtifactStorageBytes":134217728,"rangeBytes":33554529,"reserveUsd":5,"runnerMinutes":600,"wholeWorkflowSkips":0,"workflowRuns":5,"zipReceives":16},"checkpoint":{"ledger":207,"main":"5ade77afe3fdfe4cb20c03f6234b7aec785f79ab","mainTree":"c2e32130efcdfcb0026cc514018bb748067ee25b","openWp002ToMainPullRequests":0,"wp002":"ab6560edc704d8e2901d5afc87a6ebc1712a488a","wp002Tree":"459b80c99144705bc796406c693132853384b7a9"},"consumedG1":{"activeRuns":5,"artifactObjects":0,"artifactStorageBytes":0,"authority":"fd6d3c27a2339d7517c03186096e22bc3a5c2dfa1ffaf1625ad6c707efa819e9","commit":"ab6560edc704d8e2901d5afc87a6ebc1712a488a","consumerReceipts":0,"http206Ranges":0,"jobs":19,"legacyRelays":2,"runIds":[35178816801,35178816736,35178816706,35178823940,35178823713],"tree":"459b80c99144705bc796406c693132853384b7a9","wholeWorkflowSkips":0,"workflowRuns":5},"consumedR2A":{"activeRuns":2,"artifactObjects":1,"artifactStorageBytes":null,"authority":"55a830dafb2ecf6294246667565ac8a2c4e6d9458a0e5e6bbc7481cf4bba51e4","budgetChanges":1,"dispatches":1,"jobs":7,"legacyRelays":1,"runIds":[35211069523,35211115853],"workflowRuns":2},"consumedR2B":{"activeRuns":1,"artifactObjects":0,"artifactStorageBytes":0,"authority":"639e3393367a597961af952c597c77ffeeddbda89b77fd6d0ed9cb5687a8a30d","commit":"5ade77afe3fdfe4cb20c03f6234b7aec785f79ab","dispatches":1,"jobs":4,"legacyRelays":0,"remoteRefUpdates":1,"runIds":[35232709535],"tree":"c2e32130efcdfcb0026cc514018bb748067ee25b","workflowRuns":1},"mergeGate":{"agentRequiredRuns":["push:Fulcrum CI","push:WP-002 Foundation Acceptance","push:FS24 Evidence Transfer","pull_request:Fulcrum CI","pull_request:WP-002 Foundation Acceptance"],"authorized":false,"classicBranchProtectionConfigured":false,"platformRequiredChecks":[],"rulesets":0},"preserve":{"B1":"unverified","B2":"unverified","WP002":"todo","branchProtection":"unverified","node20":"reserved","node24":"reserved","responseB":"missing","sourceReceiptReconciliation":"pending"},"readiness":{"chargedToG2":false,"event":"workflow_dispatch","expectedBoundary":"Preflight scope secret policy and checkpoint","head":"ab6560edc704d8e2901d5afc87a6ebc1712a488a","headBranch":"wp/002","jobPredicate":"exact-four-assigned-at-intentional-preflight-boundary","receiptSha256":"c9e879fbdeaf8fc14362caa0044efda1b826cc00b19b5bcdcd8cfc21ae54a066","receiptVersion":"FS24G-R2-readiness/2","repositoryId":1366804410,"runAttempt":1,"runConclusion":"failure","runId":35232709535,"runStatus":"completed","runnerLabel":"ubuntu-24.04","workflowPath":".github/workflows/ci.yml"},"receipt":{"bytes":15464,"libraryId":"libfile_e207c8e019588191b353be8a7492cf77","name":"FS24-G-R2B-EXECUTION-RECEIPT.md","sha256":"b0f3456d938960ca080a716fbb4075b01af9812ae5a1208e576edcfd496a0d4c"},"repository":"HungQuach301/fulcrum-studio","transition":{"mainBase":"5ade77afe3fdfe4cb20c03f6234b7aec785f79ab","mainBaseTree":"c2e32130efcdfcb0026cc514018bb748067ee25b","parent":"ab6560edc704d8e2901d5afc87a6ebc1712a488a","parentTree":"459b80c99144705bc796406c693132853384b7a9","paths":[".github/workflows/recover-fs24-evidence.yml","engine/ops/work-packages/WP-002-evidence-recovery.md","engine/io/evidence-transfer.py","engine/io/evidence-transfer.test.py","scripts/guardrails/index.ts","scripts/guardrails/guardrails.test.ts"],"phase":"evidence-volume-admission-recovery","relayGateBlob":"e26605cfbde8d2bf235d837b8da0e9dcd8ef34a7"},"version":"FS24G-R2/2"}
+~~~

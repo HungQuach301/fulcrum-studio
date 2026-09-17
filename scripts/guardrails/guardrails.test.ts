@@ -216,6 +216,19 @@ try {
     assert.equal(currentLineage.evidenceVolume?.activations.length,0);
     assert.equal(currentLineage.evidenceVolume?.continuations.length,0);
   });
+  test("G2-current-lineage-preserves-G1-and-F-accounting",()=>{
+    const currentMessage=git(actualRoot,"show","-s","--format=%B",currentHead);
+    if(!currentMessage.split("\n").includes("Fulcrum-Phase: evidence-volume-admission-recovery"))return;
+    assert.ok(currentLineage.evidenceAdmissionRecovery);
+    assert.equal(currentLineage.evidenceAdmissionRecovery?.commit,currentHead);
+    assert.equal(currentLineage.evidenceAdmissionRecovery?.parent,"ab6560edc704d8e2901d5afc87a6ebc1712a488a");
+    assert.equal(currentLineage.evidenceAdmission?.commit,"ab6560edc704d8e2901d5afc87a6ebc1712a488a");
+    assert.equal(currentLineage.candidateBase,"5ade77afe3fdfe4cb20c03f6234b7aec785f79ab");
+    assert.equal(currentLineage.relayGateBootstrap?.blob,"70a18ea1e79e1e2eed3175ed4347adee122781ed");
+    assert.equal(currentLineage.evidenceVolume?.rounds.length,3);
+    assert.equal(currentLineage.evidenceVolume?.activations.length,0);
+    assert.equal(currentLineage.evidenceVolume?.continuations.length,0);
+  });
   if(currentLineage.evidenceAdmission) {
     const gRoot=join(work,"g-history");
     const clonedG=spawnSync("git",["clone","--shared","--no-checkout",actualRoot,gRoot],{encoding:"utf8"});assert.equal(clonedG.status,0,clonedG.stderr);
@@ -231,6 +244,19 @@ try {
     test("G-admission-reject-wrong-parent",()=>assert.throws(()=>closureLineage(gRoot,gCommit("44fb08b87bf6690c2f18128b5940b0fb40c05a95",gPaths,gMessage(currentLineage.evidenceAdmission!.approval))),/G-Parent/));
     test("G-admission-reject-incomplete-scope",()=>assert.throws(()=>closureLineage(gRoot,gCommit(currentLineage.evidenceAdmission!.parent,gPaths.slice(0,1),gMessage(currentLineage.evidenceAdmission!.approval))),/G-Scope/));
     test("G-admission-reject-repeat",()=>assert.throws(()=>closureLineage(gRoot,gCommit(validG,gPaths,gMessage(currentLineage.evidenceAdmission!.approval),"\nfixture repeat\n")),/G-Parent/));
+    const g2Authority="4447512a984015f41021286e75e3988e9b96abf522257a36068b59718a7c864f";
+    const g2Receipt="c9e879fbdeaf8fc14362caa0044efda1b826cc00b19b5bcdcd8cfc21ae54a066",g2Run="35232709535";
+    const g2Paths=[".github/workflows/recover-fs24-evidence.yml",...gPaths];
+    const g2Message=(authority:string,run=g2Run,receipt=g2Receipt)=>"Fixture G2 admission recovery\n\nFulcrum-Grant: FS24-D\nFulcrum-Phase: evidence-volume-admission-recovery\nFS24-F-Checkpoint: 2efe60ea7c74d301a1e2fc0ba52e1adc686f40dd\nFS24-F-Authority: "+currentLineage.evidenceVolume!.approval+"\nFS24-G-R2-Authority: "+authority+"\nOwner-Approval-Receipt: "+authority+"\nFS24-G-R2-Round: 1\nFS24-G-R2-Readiness-Run: "+run+"\nFS24-G-R2-Readiness-Receipt: "+receipt+"\n";
+    const g2Commit=(parent:string,paths:string[],message:string,suffix="")=>{ggit(["read-tree",parent]);for(const path of paths){const blob=ggit(["hash-object","-w","--stdin"],readFileSync(join(actualRoot,path),"utf8")+suffix);ggit(["update-index","--add","--cacheinfo","100644,"+blob+","+path]);}return ggit(["commit-tree",ggit(["write-tree"]),"-p",parent],message);};
+    const validG2=g2Commit(currentHead,g2Paths,g2Message(g2Authority));git(gRoot,"checkout","--detach",validG2);
+    test("G2-admission-fixture-valid",()=>{const state=closureLineage(gRoot,validG2);assert.equal(state.evidenceAdmissionRecovery?.commit,validG2);assert.equal(state.evidenceAdmission?.commit,currentHead);assert.equal(state.candidateBase,"5ade77afe3fdfe4cb20c03f6234b7aec785f79ab");assert.equal(state.relayGateBootstrap?.commit,"5ade77afe3fdfe4cb20c03f6234b7aec785f79ab");assert.equal(state.evidenceVolume?.rounds.length,3);});
+    test("G2-admission-reject-wrong-authority",()=>assert.throws(()=>closureLineage(gRoot,g2Commit(currentHead,g2Paths,g2Message("0".repeat(64)))),/G2-Authority/));
+    test("G2-admission-reject-wrong-parent",()=>assert.throws(()=>closureLineage(gRoot,g2Commit(currentLineage.evidenceAdmission!.parent,g2Paths,g2Message(g2Authority))),/G2-Parent/));
+    test("G2-admission-reject-incomplete-scope",()=>assert.throws(()=>closureLineage(gRoot,g2Commit(currentHead,g2Paths.slice(0,-1),g2Message(g2Authority))),/G2-Scope/));
+    test("G2-admission-reject-old-readiness",()=>assert.throws(()=>closureLineage(gRoot,g2Commit(currentHead,g2Paths,g2Message(g2Authority,"35178816801"))),/G2-ReadinessTrailer/));
+    test("G2-admission-reject-wrong-readiness-receipt",()=>assert.throws(()=>closureLineage(gRoot,g2Commit(currentHead,g2Paths,g2Message(g2Authority,g2Run,"0".repeat(64)))),/G2-ReadinessTrailer/));
+    test("G2-admission-reject-repeat",()=>assert.throws(()=>closureLineage(gRoot,g2Commit(validG2,g2Paths,g2Message(g2Authority),"\nfixture repeat\n")),/G2-Parent/));
   }
   test("F-scanner-resolves-canonical-WP-at-final-E",()=>{
     if(!currentLineage.evidenceVolume)return;

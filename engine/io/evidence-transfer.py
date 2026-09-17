@@ -120,6 +120,101 @@ G_AUTHORITY = {
     'preserve': F_AUTHORITY['preserve'],
 }
 
+# FS24-G-R2 is a dormant, separately authorized recovery transition.  R2C
+# re-pins it after the R2B direct-main relay gate and binds the one admission
+# proof that reached the exact intentional preflight boundary on four assigned
+# ubuntu-24.04 runners.  G-R1, R2A, R2B, and every F allocation remain frozen.
+G2_VERSION = 'FS24G-R2/2'
+G2_PHASE = 'evidence-volume-admission-recovery'
+G2_PARENT = 'ab6560edc704d8e2901d5afc87a6ebc1712a488a'
+G2_PARENT_TREE = '459b80c99144705bc796406c693132853384b7a9'
+G2_MAIN = '5ade77afe3fdfe4cb20c03f6234b7aec785f79ab'
+G2_MAIN_TREE = 'c2e32130efcdfcb0026cc514018bb748067ee25b'
+G2_RELAY_PATH = '.github/workflows/recover-fs24-evidence.yml'
+G2_RELAY_BLOB = 'e26605cfbde8d2bf235d837b8da0e9dcd8ef34a7'
+G2_ALLOW = [G2_RELAY_PATH] + list(G_ALLOW)
+G2_STOP_READBACK = '2026-09-17T03:39:06.798Z'
+G2_STOP_RUNS = [35178816801, 35178816736, 35178816706,
+                35178823940, 35178823713]
+G2_R2A_RUNS = [35211069523, 35211115853]
+G2_READINESS_RUN = 35232709535
+G2_READINESS_RECEIPT = 'c9e879fbdeaf8fc14362caa0044efda1b826cc00b19b5bcdcd8cfc21ae54a066'
+G2_READINESS_JOBS = {
+    'typecheck': {'id': 105240678537, 'runner': 'GitHub Actions 1000004521'},
+    'validate': {'id': 105240678740, 'runner': 'GitHub Actions 1000004522'},
+    'guardrails': {'id': 105240678872, 'runner': 'GitHub Actions 1000004523'},
+    'report': {'id': 105240764021, 'runner': 'GitHub Actions 1000004524'},
+}
+G2B_AUTHORITY = '639e3393367a597961af952c597c77ffeeddbda89b77fd6d0ed9cb5687a8a30d'
+G2B_PHASE = 'relay-gate-bootstrap'
+G2B_PATCH = '3bb814bb64bc687a5e73cf74bb83c39cf2a778c17589105b254ecdac52f9bd2d'
+G2B_MAIN_RELAY_BLOB = '70a18ea1e79e1e2eed3175ed4347adee122781ed'
+G2B_RECORD = {'commit': G2_MAIN, 'parent': F_CHECKPOINT, 'tree': G2_MAIN_TREE,
+              'authority': G2B_AUTHORITY, 'path': G2_RELAY_PATH,
+              'blob': G2B_MAIN_RELAY_BLOB}
+G2_AUTHORITY = {
+    'version': G2_VERSION,
+    'repository': REPO,
+    'checkpoint': {'main': G2_MAIN, 'mainTree': G2_MAIN_TREE,
+                   'wp002': G2_PARENT, 'wp002Tree': G2_PARENT_TREE,
+                   'ledger': 207, 'openWp002ToMainPullRequests': 0},
+    'receipt': {'libraryId': 'libfile_e207c8e019588191b353be8a7492cf77',
+                'name': 'FS24-G-R2B-EXECUTION-RECEIPT.md', 'bytes': 15464,
+                'sha256': 'b0f3456d938960ca080a716fbb4075b01af9812ae5a1208e576edcfd496a0d4c'},
+    'consumedG1': {'authority': 'fd6d3c27a2339d7517c03186096e22bc3a5c2dfa1ffaf1625ad6c707efa819e9',
+                   'commit': G2_PARENT, 'tree': G2_PARENT_TREE,
+                   'runIds': G2_STOP_RUNS, 'workflowRuns': 5, 'activeRuns': 5,
+                   'jobs': 19, 'wholeWorkflowSkips': 0, 'legacyRelays': 2,
+                   'artifactObjects': 0, 'artifactStorageBytes': 0,
+                   'http206Ranges': 0, 'consumerReceipts': 0},
+    'consumedR2A': {'authority': '55a830dafb2ecf6294246667565ac8a2c4e6d9458a0e5e6bbc7481cf4bba51e4',
+                    'runIds': G2_R2A_RUNS, 'workflowRuns': 2, 'activeRuns': 2,
+                    'jobs': 7, 'legacyRelays': 1, 'artifactObjects': 1,
+                    'artifactStorageBytes': None, 'dispatches': 1, 'budgetChanges': 1},
+    'consumedR2B': {'authority': G2B_AUTHORITY, 'commit': G2_MAIN,
+                    'tree': G2_MAIN_TREE, 'runIds': [G2_READINESS_RUN],
+                    'workflowRuns': 1, 'activeRuns': 1, 'jobs': 4,
+                    'legacyRelays': 0, 'artifactObjects': 0,
+                    'artifactStorageBytes': 0, 'dispatches': 1,
+                    'remoteRefUpdates': 1},
+    'readiness': {'runId': G2_READINESS_RUN, 'repositoryId': 1366804410,
+                  'head': G2_PARENT, 'headBranch': 'wp/002',
+                  'workflowPath': '.github/workflows/ci.yml',
+                  'event': 'workflow_dispatch', 'runAttempt': 1,
+                  'runStatus': 'completed', 'runConclusion': 'failure',
+                  'expectedBoundary': 'Preflight scope secret policy and checkpoint',
+                  'jobPredicate': 'exact-four-assigned-at-intentional-preflight-boundary',
+                  'runnerLabel': 'ubuntu-24.04',
+                  'receiptVersion': 'FS24G-R2-readiness/2',
+                  'receiptSha256': G2_READINESS_RECEIPT,
+                  'chargedToG2': False},
+    'allocations': {'admissionRecoveryCommits': 1, 'remoteRefUpdates': 1,
+                    'premergePullRequests': 1, 'candidateCommits': 0,
+                    'repairCommits': 0, 'retriggerCommits': 0,
+                    'technicalMerges': 0, 'recoveryActivations': 0,
+                    'continuationCommits': 0, 'emptyCommits': 0,
+                    'dispatches': 0, 'reruns': 0, 'providerCalls': 0,
+                    'dataCommits': 0},
+    'caps': {'workflowRuns': 5, 'activeRuns': 5,
+             'jobsIncludingReservations': 25, 'wholeWorkflowSkips': 0,
+             'legacyRelays': 0, 'artifactObjects': 20, 'zipReceives': 16,
+             'agentLogReceives': 3, 'authenticatedRedirects': 3,
+             'http206Ranges': 3, 'rangeBytes': F_QUALIFICATION_BYTES,
+             'runnerMinutes': 600, 'newArtifactStorageBytes': 134217728,
+             'reserveUsd': 5},
+    'transition': {'phase': G2_PHASE, 'parent': G2_PARENT,
+                   'parentTree': G2_PARENT_TREE, 'mainBase': G2_MAIN,
+                   'mainBaseTree': G2_MAIN_TREE, 'paths': G2_ALLOW,
+                   'relayGateBlob': G2_RELAY_BLOB},
+    'mergeGate': {'authorized': False, 'platformRequiredChecks': [],
+                  'classicBranchProtectionConfigured': False, 'rulesets': 0,
+                  'agentRequiredRuns': ['push:Fulcrum CI', 'push:WP-002 Foundation Acceptance',
+                                        'push:FS24 Evidence Transfer',
+                                        'pull_request:Fulcrum CI',
+                                        'pull_request:WP-002 Foundation Acceptance']},
+    'preserve': F_AUTHORITY['preserve'],
+}
+
 
 def need(ok, reason):
     if not ok:
@@ -356,6 +451,10 @@ def f_authority_sha():
 
 def g_authority_sha():
     return sha(canonical(G_AUTHORITY))
+
+
+def g2_authority_sha():
+    return sha(canonical(G2_AUTHORITY))
 
 
 def f_plan(source, binding, selected=None):
@@ -978,8 +1077,36 @@ def inspect_f_suffix(root, head, baseline, git, field, changed, policy, data):
     cache = {F_CHECKPOINT: json.loads(json.dumps(baseline)),
              F_WP002: json.loads(json.dumps(baseline))}
 
+    def r2b_bootstrap_state():
+        parents = git(root, 'rev-list', '--parents', '-n', '1', G2_MAIN).split()
+        need(parents == [G2_MAIN, F_CHECKPOINT], 'G2B-Parent')
+        need(git(root, 'rev-parse', G2_MAIN + '^{tree}').strip() == G2_MAIN_TREE,
+             'G2B-Tree')
+        need(changed(root, F_CHECKPOINT, G2_MAIN) == [G2_RELAY_PATH],
+             'G2B-Scope')
+        need(git(root, 'rev-parse', G2_MAIN + ':' + G2_RELAY_PATH).strip()
+             == G2B_MAIN_RELAY_BLOB, 'G2B-RelayBlob')
+        message = git(root, 'show', '-s', '--format=%B', G2_MAIN)
+        need(field(message, 'Fulcrum-Grant') == 'FS24-G-R2B'
+             and field(message, 'Fulcrum-Phase') == G2B_PHASE
+             and field(message, 'FS24-G-R2B-Authority') == G2B_AUTHORITY
+             and field(message, 'Owner-Approval-Receipt') == G2B_AUTHORITY
+             and field(message, 'FS24-G-R2B-Parent') == F_CHECKPOINT
+             and field(message, 'FS24-G-R2B-Patch') == G2B_PATCH
+             and field(message, 'FS24-G-R2B-Target-Tree') == G2_MAIN_TREE
+             and field(message, 'FS24-G-R2B-Round') == '1', 'G2B-Trailers')
+        state = json.loads(json.dumps(baseline))
+        state['head'] = G2_MAIN
+        state['candidateBase'] = G2_MAIN
+        state['unmerged'] = []
+        state['relayGateBootstrap'] = json.loads(json.dumps(G2B_RECORD))
+        return state
+
     def visit(commit):
         if commit in cache:
+            return cache[commit]
+        if commit == G2_MAIN:
+            cache[commit] = r2b_bootstrap_state()
             return cache[commit]
         parents = git(root, 'rev-list', '--parents', '-n', '1', commit).split()[1:]
         need(len(parents) in [1, 2], 'F-ParentCount')
@@ -994,6 +1121,10 @@ def inspect_f_suffix(root, head, baseline, git, field, changed, policy, data):
         if phase == G_PHASE:
             g_approval = field(message, 'FS24-G-Authority')
             need(g_approval == g_authority_sha() and owner_approval == g_approval, 'G-Authority')
+        elif phase == G2_PHASE:
+            g2_approval = field(message, 'FS24-G-R2-Authority')
+            need(g2_approval == g2_authority_sha() and owner_approval == g2_approval,
+                 'G2-Authority')
         else:
             need(owner_approval == approval, 'F-Authority')
         extension = state.setdefault('evidenceVolume', {'rounds': [], 'merges': [],
@@ -1049,6 +1180,39 @@ def inspect_f_suffix(root, head, baseline, git, field, changed, policy, data):
             state['evidenceAdmission'] = {'commit': commit, 'parent': G_PARENT,
                                           'approval': g_authority_sha(), 'paths': G_ALLOW}
             state['unmerged'].append(commit)
+        elif phase == G2_PHASE:
+            need(len(parents) == 1 and parents[0] == G2_PARENT, 'G2-Parent')
+            need(git(root, 'rev-parse', G2_PARENT + '^{tree}').strip() == G2_PARENT_TREE,
+                 'G2-ParentTree')
+            need(set(delta) == set(G2_ALLOW), 'G2-Scope')
+            need(field(message, 'FS24-G-R2-Round') == '1', 'G2-Round')
+            readiness_run = field(message, 'FS24-G-R2-Readiness-Run')
+            readiness_receipt = field(message, 'FS24-G-R2-Readiness-Receipt')
+            need(re.fullmatch('[1-9][0-9]*', readiness_run)
+                 and int(readiness_run) == G2_READINESS_RUN
+                 and readiness_receipt == G2_READINESS_RECEIPT,
+                 'G2-ReadinessTrailer')
+            need(len(extension['rounds']) == F_AUTHORITY['allocations']['candidateCommits']
+                 and extension['rounds'][-1] == G_PARENT and not extension['merges']
+                 and not extension['activations'] and not extension['continuations'],
+                 'G2-FState')
+            admission = state.get('evidenceAdmission')
+            need(admission and admission['commit'] == G2_PARENT
+                 and admission['parent'] == G_PARENT
+                 and admission['approval'] == g_authority_sha()
+                 and admission['paths'] == G_ALLOW, 'G2-G1Preserved')
+            need(state['candidateBase'] == F_CHECKPOINT and state['unmerged']
+                 and state['unmerged'][-1] == G2_PARENT
+                 and not state.get('evidenceAdmissionRecovery'), 'G2-Lineage')
+            need(git(root, 'rev-parse', commit + ':' + G2_RELAY_PATH).strip()
+                 == G2_RELAY_BLOB, 'G2-RelayGate')
+            state['evidenceAdmissionRecovery'] = {
+                'commit': commit, 'parent': G2_PARENT, 'approval': g2_authority_sha(),
+                'paths': G2_ALLOW, 'readinessRun': int(readiness_run),
+                'readinessReceipt': readiness_receipt}
+            state['relayGateBootstrap'] = json.loads(json.dumps(G2B_RECORD))
+            state['candidateBase'] = G2_MAIN
+            state['unmerged'].append(commit)
         elif phase == 'evidence-volume-recover':
             need(len(parents) == 1 and not delta and not state['unmerged'] and extension['merges']
                  and not extension['activations'] and not extension['continuations'], 'F-RecoveryTree')
@@ -1084,6 +1248,12 @@ def inspect_f_suffix(root, head, baseline, git, field, changed, policy, data):
              and state.get('evidenceRepair') == baseline.get('evidenceRepair'), 'F-HistoryPreserved')
         if previous.get('evidenceAdmission') is not None:
             need(state.get('evidenceAdmission') == previous['evidenceAdmission'], 'G-HistoryPreserved')
+        if previous.get('evidenceAdmissionRecovery') is not None:
+            need(state.get('evidenceAdmissionRecovery') == previous['evidenceAdmissionRecovery'],
+                 'G2-HistoryPreserved')
+        if previous.get('relayGateBootstrap') is not None:
+            need(state.get('relayGateBootstrap') == previous['relayGateBootstrap'],
+                 'G2B-HistoryPreserved')
         cache[commit] = state
         return state
     return visit(head)
@@ -1095,6 +1265,108 @@ def load_preflight(root):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def g2_readiness_record(run, jobs):
+    """Canonical, log-free proof of the exact R2B admission-only boundary."""
+    need(isinstance(run, dict) and isinstance(jobs, list), 'G2-ReadinessShape')
+    need(run.get('id') == G2_READINESS_RUN, 'G2-ReadinessRun')
+    need(run.get('repository', {}).get('id') == G2_AUTHORITY['readiness']['repositoryId']
+         and run.get('head_repository', {}).get('id') == G2_AUTHORITY['readiness']['repositoryId']
+         and run['repository'].get('full_name') == REPO
+         and run['head_repository'].get('full_name') == REPO, 'G2-ReadinessRepository')
+    need(run.get('run_attempt') == 1 and run.get('event') == 'workflow_dispatch'
+         and run.get('status') == 'completed' and run.get('conclusion') == 'failure'
+         and run.get('path') == '.github/workflows/ci.yml'
+         and run.get('head_branch') == 'wp/002' and run.get('head_sha') == G2_PARENT
+         and run.get('created_at') == '2026-09-17T14:18:42Z'
+         and run.get('run_started_at') == '2026-09-17T14:18:42Z'
+         and run.get('updated_at') == '2026-09-17T14:19:10Z'
+         and run.get('display_title')
+         == 'FS24-D 1707fd757f62dc7a94d964aed9ca03ffffcdd52f5837fa36a66147c6cd646919',
+         'G2-ReadinessRunState')
+    need(len(jobs) == 4 and all(isinstance(x, dict) for x in jobs)
+         and {x.get('name') for x in jobs} == set(G2_READINESS_JOBS)
+         and len({x.get('id') for x in jobs}) == 4, 'G2-ReadinessJobs')
+    common_steps = [
+        (1, 'Set up job', 'success'),
+        (2, 'Initialize evidence directory', 'success'),
+        (3, 'Checkout exact candidate', 'success'),
+        (4, 'Preflight scope secret policy and checkpoint', 'failure'),
+        (5, 'Checksum-pinned runtime', 'skipped'),
+        (6, 'Set up action runtime tooling', 'skipped'),
+        (7, 'Install exact lockfile without lifecycle scripts', 'skipped'),
+        (8, None, 'skipped'),
+        (9, 'Verify source mirror and live main unchanged', 'failure'),
+        (10, 'Remove temporary execution data', 'success'),
+        (11, 'Emit complete evidence bytes', 'success'),
+        (12, 'Preserve original evidence bundle', 'skipped'),
+        (13, 'Remove final report data', 'success'),
+        (26, 'Post Checkout exact candidate', 'success'),
+        (27, 'Complete job', 'success'),
+    ]
+    normalized_jobs = []
+    for job in sorted(jobs, key=lambda x: x.get('name', '')):
+        pin = G2_READINESS_JOBS[job['name']]
+        need(isinstance(job.get('id'), int) and job.get('run_id') == run['id']
+             and job.get('id') == pin['id'] and job.get('run_attempt') == 1
+             and job.get('status') == 'completed' and job.get('conclusion') == 'failure',
+             'G2-ReadinessJobBinding')
+        labels = job.get('labels'); steps = job.get('steps')
+        need(labels == ['ubuntu-24.04'] and job.get('runner_name') == pin['runner']
+             and job.get('runner_group_name') == 'GitHub Actions'
+             and isinstance(steps, list) and len(steps) == len(common_steps),
+             'G2-RunnerNotReady')
+        expected = [(number, ('Run ' + job['name'] + ' checks') if name is None else name,
+                     conclusion) for number, name, conclusion in common_steps]
+        observed = [(x.get('number'), x.get('name'), x.get('conclusion')) for x in steps]
+        need(observed == expected and all(x.get('status') == 'completed' for x in steps),
+             'G2-ReadinessSteps')
+        normalized_jobs.append({
+            'id': job['id'], 'name': job.get('name'), 'runId': job['run_id'],
+            'runAttempt': job['run_attempt'], 'status': job['status'],
+            'conclusion': job.get('conclusion'), 'runnerName': job.get('runner_name'),
+            'runnerGroupName': job.get('runner_group_name'), 'labels': sorted(labels),
+            'steps': [{'number': x.get('number'), 'name': x.get('name'),
+                       'status': x.get('status'), 'conclusion': x.get('conclusion')}
+                      for x in sorted(steps, key=lambda x: x.get('number', -1))]})
+    return {'version': 'FS24G-R2-readiness/2',
+            'run': {'id': run['id'], 'repositoryId': run['repository']['id'],
+                    'repository': run['repository']['full_name'],
+                    'headRepositoryId': run['head_repository']['id'],
+                    'headRepository': run['head_repository']['full_name'],
+                    'headSha': run.get('head_sha'), 'headBranch': run.get('head_branch'),
+                    'event': run['event'], 'path': run['path'],
+                    'runAttempt': run['run_attempt'], 'status': run['status'],
+                    'conclusion': run['conclusion'], 'createdAt': run['created_at'],
+                    'runStartedAt': run['run_started_at'],
+                    'updatedAt': run.get('updated_at'),
+                    'displayTitle': run['display_title']},
+            'jobs': normalized_jobs}
+
+
+def check_g2_readiness(reader, preflight, message):
+    value = preflight.field(message, 'FS24-G-R2-Readiness-Run')
+    need(re.fullmatch('[1-9][0-9]*', value), 'G2-ReadinessRunTrailer')
+    run_id = int(value); run = bound_run(reader, run_id, 'g2-readiness-run')
+    jobs = reader.page('/actions/runs/%d/jobs' % run_id, 'jobs', 'g2-readiness-jobs')
+    record = g2_readiness_record(run, jobs)
+    receipt = preflight.field(message, 'FS24-G-R2-Readiness-Receipt')
+    need(re.fullmatch('[a-f0-9]{64}', receipt) and sha(canonical(record)) == receipt,
+         'G2-ReadinessReceipt')
+    return record
+
+
+def g2_readiness_cli(args):
+    need(args.file and args.binding, 'G2-ReadinessInputs')
+    run = json.loads(pathlib.Path(args.file).read_bytes())
+    jobs_value = json.loads(pathlib.Path(args.binding).read_bytes())
+    jobs = jobs_value.get('jobs') if isinstance(jobs_value, dict) else jobs_value
+    record = g2_readiness_record(run, jobs)
+    directory = pathlib.Path(args.directory); directory.mkdir(exist_ok=False)
+    target = directory / 'g2-readiness.json'; write_new(target, canonical(record))
+    print('FS24G2_READINESS\t' + json.dumps({'run': run['id'],
+          'receipt': sha(canonical(record)), **measure(target)}, separators=(',', ':')))
 
 
 def fixture(directory):
@@ -1168,143 +1440,172 @@ def f_baseline(root):
 
 
 def check_f_ledger(reader, root):
-    pins = f_baseline(root); current = reader.page('/actions/runs', 'workflow_runs', 'f-ledger')
+    """Account only new runs online; all pre-207 groups stay receipt-frozen."""
+    pins = f_baseline(root)
+    current = reader.page('/actions/runs', 'workflow_runs', 'f-ledger')
     by_id = {x['id']: x for x in current}
     for row in pins:
-        need(row['id'] in by_id and all(by_id[row['id']].get(k) == row.get(k) for k in F_LEDGER_FIELDS),
-             'F-BaselineDelta')
-    old = {x['id'] for x in pins}; added = [x for x in current if x['id'] not in old]
-    need(set(G_BASELINE_RUNS) <= {x['id'] for x in added}, 'G-BaselineRunInventory')
-    pf = load_preflight(root); active = 0; jobs = 0; skipped = 0; artifacts = 0
-    artifact_bytes = 0; legacy = 0; records = []; g_head_cache = {}
-    g = {'workflowRuns': 0, 'activeRuns': 0, 'jobsIncludingReservations': 0,
-         'wholeWorkflowSkips': 0, 'legacyRelays': 0, 'artifactObjects': 0,
-         'artifactStorageBytes': 0}
-    g_baseline = {'workflowRuns': 0, 'activeRuns': 0, 'jobs': 0,
-                  'wholeWorkflowSkips': 0, 'legacyRelays': 0,
-                  'artifactObjects': 0, 'artifactStorageBytes': 0}
+        need(row['id'] in by_id and all(by_id[row['id']].get(k) == row.get(k)
+             for k in F_LEDGER_FIELDS), 'F-BaselineDelta')
 
-    def is_g_head(head):
-        if head not in g_head_cache:
+    frozen_groups = {
+        'fBaseline': set(G_BASELINE_RUNS),
+        'g1': set(G2_STOP_RUNS),
+        'r2a': set(G2_R2A_RUNS),
+        'r2b': {G2_READINESS_RUN},
+    }
+    frozen_ids = set().union(*frozen_groups.values())
+    need(sum(len(x) for x in frozen_groups.values()) == len(frozen_ids),
+         'G2-FrozenRunOverlap')
+    added = [x for x in current if x['id'] not in {p['id'] for p in pins}]
+    need(frozen_ids <= {x['id'] for x in added}, 'G2-FrozenRunInventory')
+    for run in [x for x in added if x['id'] in frozen_ids]:
+        need(run.get('repository', {}).get('full_name') == REPO
+             and run.get('head_repository', {}).get('full_name') == REPO
+             and run.get('run_attempt') == 1, 'G2-FrozenRunBinding')
+
+    pf = load_preflight(root)
+    phase_cache = {}
+
+    def head_phase(head):
+        if head not in phase_cache:
             message = pf.git(root, 'show', '-s', '--format=%B', head)
             phases = re.findall(r'^Fulcrum-Phase: (.+)$', message, re.M)
-            if phases == [G_PHASE]:
-                state = pf.inspect(root, head)
-                admission = state.get('evidenceAdmission')
-                g_head_cache[head] = bool(admission and admission['commit'] == head
-                                          and admission['approval'] == g_authority_sha())
+            state = pf.inspect(root, head)
+            if phases == [G2_PHASE]:
+                recovery = state.get('evidenceAdmissionRecovery')
+                phase_cache[head] = ('g2' if recovery
+                    and recovery['commit'] == head
+                    and recovery['approval'] == g2_authority_sha()
+                    and recovery['readinessRun'] == G2_READINESS_RUN else None)
             else:
-                g_head_cache[head] = False
-        return g_head_cache[head]
+                volume = state.get('evidenceVolume')
+                phase_cache[head] = ('f' if volume
+                    and volume['approval'] == f_authority_sha() else None)
+        return phase_cache[head]
 
-    for run in added:
-        need(run['repository']['full_name'] == REPO and run['head_repository']['full_name'] == REPO
-             and run['run_attempt'] == 1 and run['event'] in ['push', 'pull_request', 'workflow_run'], 'F-LedgerIdentity')
-        path = run['path']; reserve = F_JOB_RESERVE.get(path)
-        is_legacy = (path == '.github/workflows/recover-fs24-evidence.yml'
-                     and run['event'] == 'workflow_run' and run['head_sha'] == F_CHECKPOINT
-                     and str(run.get('display_title', '')).startswith('FS24E '))
+    old_f = G_AUTHORITY['baseline']
+    f_charged = {
+        'workflowRuns': len(old_f['runIds']),
+        'activeRuns': old_f['activeRuns'],
+        'jobsIncludingReservations': old_f['jobs'],
+        'wholeWorkflowSkips': old_f['wholeWorkflowSkips'],
+        'legacyRelays': old_f['legacyRelays'],
+        'artifactObjects': old_f['artifactObjects'],
+        'artifactStorageBytes': old_f['artifactStorageBytes'],
+    }
+    g1 = G2_AUTHORITY['consumedG1']
+    r2a = G2_AUTHORITY['consumedR2A']
+    r2b = G2_AUTHORITY['consumedR2B']
+    g2 = {'workflowRuns': 0, 'activeRuns': 0, 'jobsIncludingReservations': 0,
+          'wholeWorkflowSkips': 0, 'legacyRelays': 0, 'artifactObjects': 0,
+          'artifactStorageBytes': 0}
+    records = [{'run': run['id'], 'frozenGroup': name}
+               for name, ids in frozen_groups.items()
+               for run in added if run['id'] in ids]
+    reserve_by_path = {
+        '.github/workflows/ci.yml': 4,
+        '.github/workflows/acceptance-wp002.yml': 6,
+        '.github/workflows/recover-fs24-evidence.yml': 5,
+    }
+
+    for run in [x for x in added if x['id'] not in frozen_ids]:
+        need(run.get('repository', {}).get('full_name') == REPO
+             and run.get('head_repository', {}).get('full_name') == REPO
+             and run.get('run_attempt') == 1, 'F-LedgerIdentity')
+        path = run['path']
+        is_legacy = path == '.github/workflows/recover-fs24-evidence.yml' \
+            and run['event'] == 'workflow_run'
         if is_legacy:
-            source_match = re.fullmatch(r'FS24E ([1-9][0-9]*)', str(run.get('display_title', '')))
-            need(source_match and int(source_match.group(1)) in by_id, 'F-LegacyRelaySource')
-            is_g = is_g_head(by_id[int(source_match.group(1))]['head_sha'])
+            source_match = re.fullmatch(r'FS24[EF] ([1-9][0-9]*)',
+                                        str(run.get('display_title', '')))
+            need(source_match and int(source_match.group(1)) in by_id,
+                 'F-LegacyRelaySource')
+            phase = head_phase(by_id[int(source_match.group(1))]['head_sha'])
         else:
-            is_g = is_g_head(run['head_sha'])
-        is_g_baseline = run['id'] in G_BASELINE_RUNS
+            phase = head_phase(run['head_sha'])
+        need(phase in ['f', 'g2'], 'F-UnclassifiedHead')
+        target = g2 if phase == 'g2' else f_charged
+        if phase == 'g2':
+            need(run['event'] in ['push', 'pull_request'], 'G2-LegacyRelayForbidden')
+            need(path in reserve_by_path or path in [
+                '.github/workflows/acceptance-wp000.yml',
+                '.github/workflows/review-wp000-spec.yml'], 'G2-WorkflowScope')
+        else:
+            need(run['event'] in ['push', 'pull_request', 'workflow_run'],
+                 'F-LedgerEvent')
+
         if run['status'] == 'completed' and run['conclusion'] == 'skipped':
-            need((path in ['.github/workflows/acceptance-wp000.yml', '.github/workflows/review-wp000-spec.yml']
-                  and run['event'] == 'pull_request')
-                 or (path == '.github/workflows/recover-fs24-evidence.yml'
-                     and run['event'] == 'workflow_run'), 'F-UnclassifiedWholeSkip')
-            listed = reader.page('/actions/runs/%d/artifacts' % run['id'], 'artifacts', 'f-artifacts-%d' % run['id'])
-            need(not listed, 'F-SkippedRunArtifact'); skipped += 1
-            if is_g:
-                g['workflowRuns'] += 1; g['wholeWorkflowSkips'] += 1
-            if is_g_baseline:
-                g_baseline['workflowRuns'] += 1; g_baseline['wholeWorkflowSkips'] += 1
-            records.append({'run': run['id'], 'reserve': 0, 'jobs': 0,
-                            'artifacts': 0, 'legacy': is_legacy, 'g': is_g,
+            need(run['event'] == 'pull_request'
+                 and path in ['.github/workflows/acceptance-wp000.yml',
+                              '.github/workflows/review-wp000-spec.yml'],
+                 'F-UnclassifiedWholeSkip')
+            target['workflowRuns'] += 1
+            target['wholeWorkflowSkips'] += 1
+            records.append({'run': run['id'], 'phase': phase, 'reserve': 0,
+                            'jobs': 0, 'artifacts': 0,
                             'wholeWorkflowSkipped': True})
             continue
-        if is_legacy:
-            legacy += 1
+
+        reserve = reserve_by_path.get(path)
+        if phase == 'f' and is_legacy:
             reserve = 34
-        else:
-            state = pf.inspect(root, run['head_sha'])
-            need(state.get('evidenceVolume'), 'F-UnclassifiedHead')
-            if path == '.github/workflows/recover-fs24-evidence.yml':
-                message = pf.git(root, 'show', '-s', '--format=%B', run['head_sha'])
-                phase = pf.field(message, 'Fulcrum-Phase')
-                reserve = 84 if phase == 'evidence-volume-recover' else (10 if phase == 'evidence-volume-continue' else 5)
         need(reserve is not None, 'F-UnclassifiedWorkflow')
-        fetched = reader.page('/actions/runs/%d/jobs' % run['id'], 'jobs', 'f-jobs-%d' % run['id'])
-        listed = reader.page('/actions/runs/%d/artifacts' % run['id'], 'artifacts', 'f-artifacts-%d' % run['id'])
+        fetched = reader.page('/actions/runs/%d/jobs' % run['id'], 'jobs',
+                              'f-jobs-%d' % run['id'])
+        listed = reader.page('/actions/runs/%d/artifacts' % run['id'], 'artifacts',
+                             'f-artifacts-%d' % run['id'])
         sizes = [x.get('size_in_bytes') for x in listed]
         need(all(isinstance(x, int) and x >= 0 for x in sizes), 'F-ArtifactSize')
-        artifacts += len(listed); artifact_bytes += sum(sizes)
-        run_active = 0; run_jobs = 0
         if fetched:
-            run_active = 1; run_jobs = len(fetched) if run['status'] == 'completed' else reserve
-            active += run_active; jobs += run_jobs
+            run_jobs = len(fetched) if run['status'] == 'completed' else max(len(fetched), reserve)
         else:
-            need(run['status'] != 'completed' or run['conclusion'] == 'skipped', 'F-MissingJobs')
-            if run['status'] == 'completed': skipped += 1
-            else:
-                run_active = 1; run_jobs = reserve; active += run_active; jobs += run_jobs
-        if is_g:
-            g['workflowRuns'] += 1; g['activeRuns'] += run_active
-            g['jobsIncludingReservations'] += run_jobs; g['legacyRelays'] += int(is_legacy)
-            g['artifactObjects'] += len(listed); g['artifactStorageBytes'] += sum(sizes)
-        if is_g_baseline:
-            g_baseline['workflowRuns'] += 1; g_baseline['activeRuns'] += run_active
-            g_baseline['jobs'] += run_jobs; g_baseline['legacyRelays'] += int(is_legacy)
-            g_baseline['artifactObjects'] += len(listed)
-            g_baseline['artifactStorageBytes'] += sum(sizes)
-        records.append({'run': run['id'], 'reserve': reserve, 'jobs': len(fetched),
-                        'jobsIncludingReservation': run_jobs, 'artifacts': len(listed),
-                        'artifactBytes': sum(sizes), 'legacy': is_legacy, 'g': is_g})
-    expected_g_baseline = G_AUTHORITY['baseline']
-    need(g_baseline == {'workflowRuns': len(expected_g_baseline['runIds']),
-                        'activeRuns': expected_g_baseline['activeRuns'],
-                        'jobs': expected_g_baseline['jobs'],
-                        'wholeWorkflowSkips': expected_g_baseline['wholeWorkflowSkips'],
-                        'legacyRelays': expected_g_baseline['legacyRelays'],
-                        'artifactObjects': expected_g_baseline['artifactObjects'],
-                        'artifactStorageBytes': expected_g_baseline['artifactStorageBytes']},
-         'G-BaselineAccounting')
+            need(run['status'] != 'completed', 'F-MissingJobs')
+            run_jobs = reserve
+        target['workflowRuns'] += 1
+        target['activeRuns'] += 1
+        target['jobsIncludingReservations'] += run_jobs
+        target['legacyRelays'] += int(is_legacy)
+        target['artifactObjects'] += len(listed)
+        target['artifactStorageBytes'] += sum(sizes)
+        records.append({'run': run['id'], 'phase': phase, 'reserve': reserve,
+                        'jobs': len(fetched), 'jobsIncludingReservation': run_jobs,
+                        'artifacts': len(listed), 'artifactBytes': sum(sizes),
+                        'legacy': is_legacy})
+
     caps = F_AUTHORITY['caps']
-    f_charged = {'activeRuns': active - g['activeRuns'],
-                 'jobsIncludingReservations': jobs - g['jobsIncludingReservations'],
-                 'wholeWorkflowSkips': skipped - g['wholeWorkflowSkips'],
-                 'legacyRelays': legacy - g['legacyRelays'],
-                 'artifactObjects': artifacts - g['artifactObjects'],
-                 'artifactStorageBytes': artifact_bytes - g['artifactStorageBytes']}
     need(f_charged['activeRuns'] <= caps['activeRuns']
          and f_charged['jobsIncludingReservations'] <= caps['jobsIncludingReservations']
          and f_charged['wholeWorkflowSkips'] <= caps['wholeWorkflowSkips']
          and f_charged['artifactObjects'] <= caps['artifactObjects']
          and f_charged['artifactStorageBytes'] <= caps['newArtifactStorageBytes']
-         and f_charged['legacyRelays'] <= 2 * (F_AUTHORITY['allocations']['candidateCommits'] + 1),
+         and f_charged['legacyRelays']
+             <= 2 * (F_AUTHORITY['allocations']['candidateCommits'] + 1),
          'F-WholeCycleCap')
-    g_caps = G_AUTHORITY['caps']
-    need(g['workflowRuns'] <= g_caps['workflowRuns'] and g['activeRuns'] <= g_caps['activeRuns']
-         and g['jobsIncludingReservations'] <= g_caps['jobsIncludingReservations']
-         and g['wholeWorkflowSkips'] <= g_caps['wholeWorkflowSkips']
-         and g['legacyRelays'] <= g_caps['legacyRelays']
-         and g['artifactObjects'] <= g_caps['artifactObjects']
-         and g['artifactStorageBytes'] <= g_caps['newArtifactStorageBytes'], 'G-WholeCycleCap')
+    g2_caps = G2_AUTHORITY['caps']
+    need(g2['workflowRuns'] <= g2_caps['workflowRuns']
+         and g2['activeRuns'] <= g2_caps['activeRuns']
+         and g2['jobsIncludingReservations'] <= g2_caps['jobsIncludingReservations']
+         and g2['wholeWorkflowSkips'] <= g2_caps['wholeWorkflowSkips']
+         and g2['legacyRelays'] == 0
+         and g2['artifactObjects'] <= g2_caps['artifactObjects']
+         and g2['artifactStorageBytes'] <= g2_caps['newArtifactStorageBytes'],
+         'G2-WholeCycleCap')
     write_new(reader.directory / 'f-ledger-summary.json', canonical({
         'baseline': {'ledger': F_BASELINE_LEDGER, 'active': 77, 'jobs': 327,
-                     'wholeWorkflowSkips': 10, 'artifactObjects': 71, 'zipReceives': 95},
-        'observedAfterFBaseline': {'runs': len(added), 'active': active,
-                'jobsIncludingReservations': jobs,
-                'wholeWorkflowSkips': skipped, 'artifactObjects': artifacts,
-                'artifactStorageBytes': artifact_bytes, 'legacyRelays': legacy}, 'caps': caps,
-        'fCharged': f_charged, 'gBaseline': g_baseline, 'gNew': g, 'gCaps': g_caps,
+                     'wholeWorkflowSkips': 10, 'artifactObjects': 71,
+                     'zipReceives': 95},
+        'fCharged': f_charged,
+        'g1Frozen': g1,
+        'r2aFrozen': r2a,
+        'r2bFrozen': r2b,
+        'g2New': g2,
+        'g2Caps': g2_caps,
+        'frozenArtifactStorageUnknown': r2a['artifactStorageBytes'] is None,
         'preservedClosureReserve': {'active': 6, 'jobs': 30},
-        'billingActualUsd': None, 'records': records}))
-
-
+        'billingActualUsd': None,
+        'records': records,
+    }))
 def f_message_state(root, head):
     pf = load_preflight(root); state = pf.inspect(root, head)
     need(state.get('evidenceVolume') and state['evidenceVolume']['approval'] == f_authority_sha(), 'F-CollectorAuthority')
@@ -1319,8 +1620,9 @@ def f_prepare(args):
     event = ident['event']; need(event in ['push', 'workflow_run'], 'F-CollectorEvent')
     reader = Reader(pathlib.Path(args.directory)); main = reader.get('/git/ref/heads/main', 'f-main-before.json')['object']['sha']
     need(main == (state['candidateBase'] if state['unmerged'] else head), 'F-CollectorMainDelta')
+    readiness = check_g2_readiness(reader, pf, message) if phase == G2_PHASE else None
     check_f_ledger(reader, root)
-    if phase in ['evidence-volume-implementation', G_PHASE, 'evidence-volume-merge']:
+    if phase in ['evidence-volume-implementation', G_PHASE, G2_PHASE, 'evidence-volume-merge']:
         mode = 'qualify'; selected = None
         target = pathlib.Path(args.directory) / 'qualification-source.bin'
         write_new(target, hashlib.shake_256(b'FS24F/1 deterministic range qualification').digest(F_QUALIFICATION_BYTES))
@@ -1357,6 +1659,8 @@ def f_prepare(args):
     write_new(pathlib.Path(args.directory) / 'prepare.json', canonical({
         'version': F_VERSION, 'authoritySha256': f_authority_sha(), 'identity': ident,
         'phase': phase, 'mode': mode, 'selectedVolumes': selected,
+        'g2AuthoritySha256': g2_authority_sha() if phase == G2_PHASE else None,
+        'g2Readiness': readiness,
         'preserve': F_AUTHORITY['preserve'], 'billingActualUsd': None}))
 
 
@@ -1607,7 +1911,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('mode', choices=['pack', 'split', 'emit', 'receive', 'collect', 'download-carrier',
                                     'unpack-artifact', 'extract-carrier', 'prepare-f', 'plan-f',
-                                    'emit-volume-f', 'collect-root-f', 'receive-volumes-f'])
+                                    'emit-volume-f', 'collect-root-f', 'receive-volumes-f',
+                                    'readiness-g2'])
     p.add_argument('--directory', required=True)
     p.add_argument('--file')
     p.add_argument('--part', type=int)
@@ -1617,7 +1922,9 @@ def main():
     p.add_argument('--roots', nargs='*')
     args = p.parse_args()
     directory = pathlib.Path(args.directory)
-    if args.mode == 'prepare-f':
+    if args.mode == 'readiness-g2':
+        g2_readiness_cli(args)
+    elif args.mode == 'prepare-f':
         f_prepare(args)
     elif args.mode == 'plan-f':
         f_plan_live(args)
