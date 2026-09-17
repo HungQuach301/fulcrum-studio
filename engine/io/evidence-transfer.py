@@ -28,6 +28,56 @@ VERSION = 'FS24E/1'
 sys.dont_write_bytecode = True
 E_APPROVAL = 'aba01d018c9a3281dd4e100660264597510ec3005d8e1c0c1b74de5c4e5e0c1f'
 
+# FS24-F is a new, separately accounted successor.  It does not reopen any
+# FS24-E allocation and it never reads the two historical job-log endpoints.
+F_VERSION = 'FS24F/1'
+F_CHECKPOINT = '2efe60ea7c74d301a1e2fc0ba52e1adc686f40dd'
+F_CHECKPOINT_TREE = '8675b4487a577f24e974c65e9e347f521d6d7b69'
+F_WP002 = 'e84ed63d77a07a5c89af7872a25a749f07aa5f98'
+F_BASELINE_LEDGER = 184
+F_SOURCE = {
+    'artifact': 10459765118,
+    'name': 'fs24e-failure-35125073370-prepare',
+    'bytes': 1362257675,
+    'sha256': 'a9379fb49992eb6554d15e8f60f7415265fcdaa481501439a204942a14eccd63',
+    'expiresAtKnown': '2026-09-23T16:58:15Z',
+    'run': 35125073370,
+    'head': 'f08231650ce3f7fb26194c64ae3a9fa3ea18cdb0',
+    'repositoryId': 1366804410,
+}
+F_PART_BYTES = 2 * 1024 * 1024
+F_PARTS_PER_VOLUME = 8
+F_VOLUME_BYTES = F_PART_BYTES * F_PARTS_PER_VOLUME
+F_MAX_VOLUMES = 82
+F_QUALIFICATION_BYTES = 32 * 1024 * 1024 + 97
+F_ALLOW = ['engine/ops/work-packages/WP-002-evidence-recovery.md',
+           '.github/workflows/recover-fs24-evidence.yml', 'engine/io/evidence-transfer.py',
+           'engine/io/evidence-transfer.test.py', 'scripts/wp002-preflight.py',
+           'scripts/guardrails/index.ts', 'scripts/guardrails/guardrails.test.ts']
+F_AUTHORITY = {
+    'version': F_VERSION,
+    'repository': REPO,
+    'checkpoint': {'main': F_CHECKPOINT, 'tree': F_CHECKPOINT_TREE,
+                   'wp002': F_WP002, 'ledger': F_BASELINE_LEDGER},
+    'source': F_SOURCE,
+    'allocations': {'candidateCommits': 3, 'technicalMerges': 2,
+                    'recoveryActivations': 1, 'continuationCommits': 2,
+                    'continuationVolumesPerCommit': 8, 'dispatches': 0,
+                    'reruns': 0, 'providerCalls': 0, 'dataCommits': 0},
+    'caps': {'activeRuns': 36, 'jobsIncludingReservations': 384,
+             'wholeWorkflowSkips': 16, 'artifactObjects': 384,
+             'zipReceives': 256, 'agentLogReceives': 128,
+             'authenticatedRedirects': 128, 'http206Ranges': 128,
+             'rangeBytes': 1900000000, 'runnerMinutes': 1500,
+             'newArtifactStorageBytes': 3221225472, 'reserveUsd': 25},
+    'transfer': {'partBytes': F_PART_BYTES, 'partsPerVolume': F_PARTS_PER_VOLUME,
+                 'maxVolumes': F_MAX_VOLUMES, 'qualificationBytes': F_QUALIFICATION_BYTES},
+    'preserve': {'responseB': 'missing', 'WP002': 'todo',
+                 'sourceReceiptReconciliation': 'pending', 'B1': 'unverified',
+                 'B2': 'unverified', 'node20': 'reserved', 'node24': 'reserved',
+                 'branchProtection': 'unverified'},
+}
+
 
 def need(ok, reason):
     if not ok:
@@ -258,6 +308,321 @@ def receive(logs, directory, index_hash, expected_binding):
     return receipt
 
 
+def f_authority_sha():
+    return sha(canonical(F_AUTHORITY))
+
+
+def f_plan(source, binding, selected=None):
+    """Describe every byte before any Range request; selected limits this run only."""
+    need(source['artifact'] > 0 and safe_name(source['name']), 'F-SourceIdentity')
+    need(0 < source['bytes'] <= MAX_RAW and re.fullmatch('[a-f0-9]{64}', source['sha256']), 'F-SourcePin')
+    parts = []
+    offset = 0
+    while offset < source['bytes']:
+        number = len(parts)
+        size = min(F_PART_BYTES, source['bytes'] - offset)
+        parts.append({'part': number, 'name': 'part-%04d.bin' % number,
+                      'offset': offset, 'bytes': size})
+        offset += size
+    volumes = []
+    for first in range(0, len(parts), F_PARTS_PER_VOLUME):
+        rows = parts[first:first + F_PARTS_PER_VOLUME]
+        start = rows[0]['offset']
+        size = sum(x['bytes'] for x in rows)
+        volumes.append({'volume': len(volumes), 'start': start, 'end': start + size - 1,
+                        'bytes': size, 'parts': [x['part'] for x in rows]})
+    need(1 <= len(volumes) <= F_MAX_VOLUMES, 'F-VolumeCount')
+    chosen = list(range(len(volumes))) if selected is None else selected
+    need(chosen and chosen == sorted(set(chosen)) and len(chosen) <= len(volumes)
+         and all(isinstance(x, int) and 0 <= x < len(volumes) for x in chosen), 'F-SelectedVolumes')
+    plan = {'version': F_VERSION, 'authoritySha256': f_authority_sha(), 'binding': binding,
+            'source': source, 'partBytes': F_PART_BYTES, 'partsPerVolume': F_PARTS_PER_VOLUME,
+            'parts': parts, 'volumes': volumes, 'selectedVolumes': chosen,
+            'preserve': F_AUTHORITY['preserve']}
+    validate_f_plan(plan)
+    return plan
+
+
+def validate_f_plan(plan):
+    need(plan['version'] == F_VERSION and plan['authoritySha256'] == f_authority_sha(), 'F-PlanAuthority')
+    source = plan['source']
+    need(isinstance(source['artifact'], int) and source['artifact'] > 0 and safe_name(source['name']), 'F-SourceIdentity')
+    need(isinstance(source['bytes'], int) and 0 < source['bytes'] <= MAX_RAW
+         and re.fullmatch('[a-f0-9]{64}', source['sha256']), 'F-SourcePin')
+    need(plan['partBytes'] == F_PART_BYTES and plan['partsPerVolume'] == F_PARTS_PER_VOLUME, 'F-LayoutConstants')
+    offset = 0
+    for number, row in enumerate(plan['parts']):
+        need(row == {'part': number, 'name': 'part-%04d.bin' % number, 'offset': offset,
+                     'bytes': min(F_PART_BYTES, source['bytes'] - offset)}, 'F-PartInventory')
+        offset += row['bytes']
+    need(offset == source['bytes'] and 1 <= len(plan['parts']) <= 1024, 'F-PartCoverage')
+    expected_volumes = []
+    for first in range(0, len(plan['parts']), F_PARTS_PER_VOLUME):
+        rows = plan['parts'][first:first + F_PARTS_PER_VOLUME]
+        start = rows[0]['offset']; size = sum(x['bytes'] for x in rows)
+        expected_volumes.append({'volume': len(expected_volumes), 'start': start,
+                                 'end': start + size - 1, 'bytes': size,
+                                 'parts': [x['part'] for x in rows]})
+    need(plan['volumes'] == expected_volumes and len(expected_volumes) <= F_MAX_VOLUMES, 'F-VolumeInventory')
+    selected = plan['selectedVolumes']
+    need(selected and selected == sorted(set(selected)) and len(selected) <= len(expected_volumes)
+         and all(isinstance(x, int) and 0 <= x < len(expected_volumes) for x in selected), 'F-SelectedVolumes')
+    need(plan['preserve'] == F_AUTHORITY['preserve'], 'F-Preservation')
+
+
+def f_source_from_metadata(value, expected):
+    digest = str(value.get('digest') or '').removeprefix('sha256:')
+    source = {'artifact': value.get('id'), 'name': value.get('name'),
+              'bytes': value.get('size_in_bytes'), 'sha256': digest,
+              'expiresAt': value.get('expires_at'),
+              'workflowRun': value.get('workflow_run')}
+    need(not value.get('expired') and source['artifact'] == expected['artifact']
+         and source['name'] == expected['name'] and source['bytes'] == expected['bytes']
+         and source['sha256'] == expected['sha256'], 'F-ArtifactMetadataPin')
+    if 'expiresAtKnown' in expected:
+        workflow = source['workflowRun'] or {}
+        need(source['expiresAt'] == expected['expiresAtKnown']
+             and workflow.get('id') == expected['run'] and workflow.get('head_sha') == expected['head']
+             and workflow.get('repository_id') == expected['repositoryId']
+             and workflow.get('head_repository_id') == expected['repositoryId'], 'F-ArtifactLineagePin')
+    return source
+
+
+def f_volume_manifest(plan, volume_number, data, http):
+    validate_f_plan(plan)
+    need(volume_number in plan['selectedVolumes'], 'F-VolumeNotSelected')
+    volume = plan['volumes'][volume_number]
+    need(len(data) == volume['bytes'], 'F-RangeLength')
+    rows = []
+    cursor = 0
+    for number in volume['parts']:
+        declared = plan['parts'][number]
+        raw = data[cursor:cursor + declared['bytes']]
+        need(len(raw) == declared['bytes'], 'F-PartSlice')
+        rows.append({**declared, 'sha256': sha(raw)})
+        cursor += len(raw)
+    need(cursor == len(data), 'F-VolumeCoverage')
+    manifest = {'version': F_VERSION, 'authoritySha256': f_authority_sha(),
+                'planSha256': sha(canonical(plan)), 'binding': plan['binding'],
+                'source': plan['source'], 'volume': volume_number,
+                'range': {'start': volume['start'], 'end': volume['end'],
+                          'bytes': volume['bytes'], **http}, 'parts': rows,
+                'volumeSha256': sha(data), 'preserve': F_AUTHORITY['preserve']}
+    validate_f_volume(manifest, plan)
+    return manifest
+
+
+def validate_f_volume(manifest, plan):
+    validate_f_plan(plan)
+    need(manifest['version'] == F_VERSION and manifest['authoritySha256'] == f_authority_sha()
+         and manifest['planSha256'] == sha(canonical(plan)), 'F-VolumePlanPin')
+    need(manifest['binding'] == plan['binding'] and manifest['source'] == plan['source'], 'F-VolumeBinding')
+    number = manifest['volume']
+    need(number in plan['selectedVolumes'], 'F-VolumeNotSelected')
+    volume = plan['volumes'][number]
+    receipt = manifest['range']
+    need(receipt['start'] == volume['start'] and receipt['end'] == volume['end']
+         and receipt['bytes'] == volume['bytes'] and receipt['status'] == 206
+         and receipt['contentRange'] == 'bytes %d-%d/%d' % (volume['start'], volume['end'], plan['source']['bytes'])
+         and receipt['contentLength'] == str(volume['bytes'])
+         and receipt['contentEncoding'] in [None, 'identity'] and receipt['attempts'] == 1
+         and receipt['authorizationForwarded'] is False, 'F-HTTP206Receipt')
+    declared = [plan['parts'][x] for x in volume['parts']]
+    need(len(manifest['parts']) == len(declared), 'F-VolumePartCount')
+    for row, expected in zip(manifest['parts'], declared):
+        need({k: row[k] for k in expected} == expected and re.fullmatch('[a-f0-9]{64}', row['sha256']), 'F-VolumePartPin')
+    need(re.fullmatch('[a-f0-9]{64}', manifest['volumeSha256']) is not None
+         and manifest['preserve'] == F_AUTHORITY['preserve'], 'F-VolumeDigest')
+
+
+def emit_volume(manifest, data, output=sys.stdout):
+    header = {'manifest': manifest, 'manifestSha256': sha(canonical(manifest))}
+    print('FS24F_BEGIN\t' + base64.b64encode(canonical(header)).decode(), file=output)
+    cursor = 0
+    for row in manifest['parts']:
+        raw = data[cursor:cursor + row['bytes']]
+        encoded = base64.b64encode(raw).decode()
+        for sequence, at in enumerate(range(0, len(encoded), 2048)):
+            print('FS24F_DATA\t%d\t%d\t%s' % (row['part'], sequence, encoded[at:at + 2048]), file=output)
+        print('FS24F_PART_END\t%d\t%s' % (row['part'], row['sha256']), file=output)
+        cursor += row['bytes']
+    print('FS24F_END\t%d\t%s' % (manifest['volume'], sha(canonical(manifest))), file=output)
+
+
+F_LINE = re.compile(r'^\ufeff?(?:\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+Z\s+)?(FS24F_(?:BEGIN|DATA|PART_END|END)\t[^\r\n]*)\r?$')
+
+
+def volume_log_manifest_hash(path):
+    with pathlib.Path(path).open('r', encoding='utf-8', errors='strict', newline='') as f:
+        for line in f:
+            match = F_LINE.fullmatch(line.rstrip('\n'))
+            if match and match[1].startswith('FS24F_BEGIN\t'):
+                header = json.loads(base64.b64decode(match[1].split('\t')[1], validate=True))
+                need(header['manifestSha256'] == sha(canonical(header['manifest'])), 'F-ManifestSelfHash')
+                return header['manifestSha256']
+    raise ValueError('F-MissingBegin')
+
+
+def decode_volume(path, expected_manifest):
+    need(measure(path)['bytes'] <= 24 * 1024 * 1024, 'F-JobLogEnvelope')
+    header = None; chunks = {}; ended = False; part_ended = set()
+    with pathlib.Path(path).open('r', encoding='utf-8', errors='strict', newline='') as f:
+        for line in f:
+            match = F_LINE.fullmatch(line.rstrip('\n'))
+            if not match:
+                continue
+            bits = match[1].split('\t')
+            if bits[0] == 'FS24F_BEGIN':
+                need(header is None and len(bits) == 2, 'F-DuplicateBegin')
+                header = json.loads(base64.b64decode(bits[1], validate=True))
+                need(header['manifest'] == expected_manifest
+                     and header['manifestSha256'] == sha(canonical(expected_manifest)), 'F-ManifestPin')
+                chunks = {row['part']: [] for row in expected_manifest['parts']}
+            elif bits[0] == 'FS24F_DATA':
+                need(header is not None and not ended and len(bits) == 4, 'F-DataState')
+                part = int(bits[1]); sequence = int(bits[2])
+                need(part in chunks and part not in part_ended and sequence == len(chunks[part])
+                     and 0 < len(bits[3]) <= 2048, 'F-DataSequence')
+                chunks[part].append(bits[3])
+            elif bits[0] == 'FS24F_PART_END':
+                need(header is not None and not ended and len(bits) == 3, 'F-PartEndState')
+                part = int(bits[1]); row = next((x for x in expected_manifest['parts'] if x['part'] == part), None)
+                need(row is not None and part not in part_ended and bits[2] == row['sha256'], 'F-PartEndPin')
+                part_ended.add(part)
+            else:
+                need(header is not None and not ended and len(bits) == 3
+                     and int(bits[1]) == expected_manifest['volume']
+                     and bits[2] == sha(canonical(expected_manifest)), 'F-VolumeEndPin')
+                ended = True
+    need(header is not None and ended and part_ended == set(chunks), 'F-MissingTerminal')
+    result = {}
+    for row in expected_manifest['parts']:
+        data = base64.b64decode(''.join(chunks[row['part']]), validate=True)
+        need(len(data) == row['bytes'] and sha(data) == row['sha256'], 'F-PartHash')
+        result[row['part']] = data
+    joined = b''.join(result[x['part']] for x in expected_manifest['parts'])
+    need(sha(joined) == expected_manifest['volumeSha256'], 'F-VolumeHash')
+    return result
+
+
+def validate_root_manifest(root):
+    need(root['version'] == F_VERSION and root['authoritySha256'] == f_authority_sha(), 'F-RootAuthority')
+    plan = root['plan']; validate_f_plan(plan)
+    need(root['planSha256'] == sha(canonical(plan)), 'F-RootPlanPin')
+    manifests = root['volumeManifests']
+    present = [x['volume'] for x in manifests]
+    missing = [x for x in plan['selectedVolumes'] if x not in present]
+    need(present == sorted(set(present)) and set(present) <= set(plan['selectedVolumes'])
+         and root['missingVolumes'] == missing, 'F-RootVolumeInventory')
+    for manifest in manifests:
+        validate_f_volume(manifest, plan)
+    need(root['producerResult'] in ['success', 'failure']
+         and (root['producerResult'] != 'success' or not missing)
+         and root['agentReceive'] == 'unproven'
+         and root['preserve'] == F_AUTHORITY['preserve'], 'F-RootProducerClaim')
+
+
+def zip_inventory(path):
+    rows = []
+    with zipfile.ZipFile(path) as z:
+        infos = z.infolist()
+        need(infos and len(infos) <= MAX_FILES and len({x.filename for x in infos}) == len(infos), 'F-ZipInventory')
+        need(all(not x.is_dir() and not x.flag_bits & 1 and not stat.S_ISLNK(x.external_attr >> 16)
+                 and not pathlib.PurePosixPath(x.filename).is_absolute() and '..' not in pathlib.PurePosixPath(x.filename).parts
+                 for x in infos), 'F-UnsafeZip')
+        need(sum(x.file_size for x in infos) <= MAX_RAW, 'F-ZipExpansionEnvelope')
+        need(z.testzip() is None, 'F-ZipCRC')
+        rows = [{'name': x.filename, 'bytes': x.file_size, 'crc32': '%08x' % x.CRC,
+                 'compressedBytes': x.compress_size} for x in infos]
+    return rows
+
+
+def reconcile_saved_artifact(path, directory):
+    wanted = [104622761595, 104628070660]
+    results = []
+    with zipfile.ZipFile(path) as z:
+        names = z.namelist()
+        for job in wanted:
+            matches = [n for n in names if pathlib.PurePosixPath(n).name == 'original-%d.log' % job]
+            need(len(matches) == 1, 'F-HistoricMember:%d' % job)
+            target = pathlib.Path(directory) / ('original-%d.log' % job)
+            with z.open(matches[0]) as src, target.open('xb') as out:
+                for block in iter(lambda: src.read(1024 * 1024), b''):
+                    out.write(block)
+            info = measure(target)
+            receipts = []
+            for name in names:
+                if not re.search(r'\d{4}-http\.json$', name):
+                    continue
+                try:
+                    value = json.loads(z.read(name))
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    continue
+                if pathlib.PurePosixPath(str(value.get('body', ''))).name == target.name:
+                    receipts.append(value)
+            need(len(receipts) == 1, 'F-HistoricHTTPReceipt:%d' % job)
+            receipt = receipts[0]
+            need(receipt.get('complete') is True and receipt.get('attempts') == 1
+                 and receipt.get('bytes') == info['bytes'] and receipt.get('sha256') == info['sha256']
+                 and receipt.get('contentEncoding') in [None, 'identity'], 'F-HistoricReceiptPin:%d' % job)
+            hops = receipt.get('hops', [])
+            need(hops and hops[-1].get('status') == 200, 'F-HistoricHTTPStatus:%d' % job)
+            results.append({'job': job, **info, 'savedReceiptVerified': True,
+                            'semanticClaim': 'unverified'})
+    return results
+
+
+def receive_f_volumes(logs, roots, directory):
+    """Network-free consumer. Roots may span rescue plus bounded continuations."""
+    directory = pathlib.Path(directory); directory.mkdir(exist_ok=False)
+    root_values = [json.loads(pathlib.Path(x).read_bytes()) for x in roots]
+    need(root_values, 'F-MissingRoot')
+    for root in root_values:
+        validate_root_manifest(root)
+    first = root_values[0]['plan']
+    need(all(root['plan']['source'] == first['source'] and root['plan']['binding']['mode'] in ['recover', 'continue', 'qualify']
+             and root['authoritySha256'] == root_values[0]['authoritySha256'] for root in root_values), 'F-MixedRoots')
+    declared = {}
+    for root in root_values:
+        for manifest in root['volumeManifests']:
+            number = manifest['volume']; need(number not in declared, 'F-DuplicateVolume')
+            declared[number] = manifest
+    need(len(logs) == len(declared), 'F-LogCount')
+    by_hash = {sha(canonical(value)): value for value in declared.values()}
+    need(len(by_hash) == len(declared), 'F-DuplicateManifest')
+    archive = directory / 'source-artifact.zip'; parts = set(); log_receipts = []
+    with archive.open('xb') as assembled:
+        assembled.truncate(first['source']['bytes'])
+        for path in logs:
+            manifest_hash = volume_log_manifest_hash(path)
+            need(manifest_hash in by_hash, 'F-LogManifestMatch')
+            manifest = by_hash[manifest_hash]; number = manifest['volume']
+            value = decode_volume(path, manifest)
+            need(all(part not in parts for part in value), 'F-DuplicatePart')
+            for part, raw in value.items():
+                row = first['parts'][part]
+                need(len(raw) == row['bytes'], 'F-PartAssembly')
+                assembled.seek(row['offset']); assembled.write(raw); parts.add(part)
+            log_receipts.append({'volume': number, **measure(path)})
+    need(sorted(parts) == list(range(len(first['parts']))), 'F-MissingPart')
+    need(measure(archive) == {k: first['source'][k] for k in ['bytes', 'sha256']}, 'F-ArchivePin')
+    members = zip_inventory(archive)
+    historic = []
+    if first['source']['artifact'] == F_SOURCE['artifact']:
+        historic = reconcile_saved_artifact(archive, directory)
+    receipt = {'version': F_VERSION, 'status': 'bytes-crc-members-verified',
+               'authoritySha256': f_authority_sha(), 'source': first['source'],
+               'archive': measure(archive), 'members': members, 'historicLogs': historic,
+               'carrierLogs': sorted(log_receipts, key=lambda x: x['volume']),
+               'savedArtifactReceiptReconciliation': 'bytes-verified' if historic else 'not-applicable',
+               'sourceReceiptReconciliation': 'pending', 'responseB': 'missing',
+               'WP002': 'todo', 'B1': 'unverified', 'B2': 'unverified',
+               'node20': 'reserved', 'node24': 'reserved',
+               'branchProtection': 'unverified', 'ownerAcceptance': 'pending'}
+    write_new(directory / 'consumer-receipt.json', canonical(receipt))
+    return receipt
+
+
 
 def verify_nested_bundles(directory, binding):
     results = []
@@ -306,8 +671,11 @@ class Reader:
     def get(self, path, name, cap=1024 * 1024, binary=False):
         need(re.fullmatch(r'/(?:actions|git|pulls)/[A-Za-z0-9_/?=&.%-]+', path) and '..' not in path, 'GETScope')
         need('10425898194' not in path and safe_name(name), 'DeniedHistoricZIP')
+        need(not (os.environ.get('FS24_F_ACTIVE') == 'true'
+                  and path == '/actions/artifacts/10459765118/zip'), 'F-SavedArtifactFullGET')
         need(path != '/actions/jobs/104622761595/logs' and path != '/actions/jobs/104628070660/logs'
-             or os.environ.get('FS_TRANSFER_MODE') == 'recover', 'HistoricLogGate')
+             or os.environ.get('FS_TRANSFER_MODE') == 'recover' and os.environ.get('FS24_F_ACTIVE') != 'true',
+             'HistoricLogGate')
         self.sequence += 1
         prefix = '%04d-' % self.sequence
         dest = self.directory / name
@@ -371,6 +739,74 @@ class Reader:
                 need(len(rows) == value.get('total_count', len(rows)), 'PaginationIncomplete')
                 return rows
             page += 1
+
+    def artifact_redirect(self, artifact_id, label):
+        """Resolve once, retain only non-secret hop metadata, and never follow with auth."""
+        need(isinstance(artifact_id, int) and artifact_id > 0 and safe_name(label), 'F-RedirectInput')
+        path = '/actions/artifacts/%d/zip' % artifact_id
+        url = 'https://api.github.com/repos/' + REPO + path
+        request = urllib.request.Request(url, headers={
+            'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+            'Accept': 'application/vnd.github+json', 'Accept-Encoding': 'identity',
+            'X-GitHub-Api-Version': '2022-11-28'}, method='GET')
+        try:
+            response = self.opener.open(request)
+        except urllib.error.HTTPError as error:
+            response = error
+        try:
+            status = response.status; location = response.headers.get('Location', '')
+            target = urllib.parse.urlparse(location)
+            receipt = {'path': path, 'status': status,
+                       'requestId': response.headers.get('x-github-request-id'),
+                       'apiVersion': response.headers.get('x-github-api-version-selected'),
+                       'locationPresent': bool(location), 'attempts': 1,
+                       'authorizationForwarded': False}
+            write_new(self.directory / (label + '-redirect.json'), canonical(receipt))
+            need(status == 302 and target.scheme == 'https' and target.hostname
+                 and not target.username and not target.password and target.port in [None, 443]
+                 and not target.fragment, 'F-RedirectShape')
+            need(target.hostname.endswith(('.blob.core.windows.net', '.actions.githubusercontent.com',
+                                           '.githubusercontent.com')), 'F-RedirectHost')
+            return target.geturl(), receipt
+        finally:
+            response.close()
+
+    def range_get(self, signed_url, start, end, total, target, label):
+        """Exactly one unauthenticated Range request.  A full 200 is a hard failure."""
+        parsed = urllib.parse.urlparse(signed_url)
+        need(parsed.scheme == 'https' and parsed.hostname and not parsed.username and not parsed.password
+             and parsed.port in [None, 443] and parsed.hostname.endswith(('.blob.core.windows.net',
+             '.actions.githubusercontent.com', '.githubusercontent.com')), 'F-RangeURL')
+        need(0 <= start <= end < total and end - start + 1 <= F_VOLUME_BYTES, 'F-RangeBounds')
+        request = urllib.request.Request(signed_url, headers={'Accept-Encoding': 'identity',
+                                         'Range': 'bytes=%d-%d' % (start, end)}, method='GET')
+        try:
+            response = self.opener.open(request)
+        except urllib.error.HTTPError as error:
+            response = error
+        target = pathlib.Path(target); expected = end - start + 1; used = 0
+        receipt_path = self.directory / (label + '-range.json')
+        receipt = {'status': response.status, 'contentRange': response.headers.get('Content-Range'),
+                   'contentLength': response.headers.get('Content-Length'),
+                   'contentEncoding': response.headers.get('Content-Encoding'),
+                   'etag': response.headers.get('ETag'), 'requestId': response.headers.get('x-ms-request-id'),
+                   'attempts': 1, 'authorizationForwarded': False}
+        try:
+            need(response.status == 206, 'F-HTTP206Required:' + str(response.status))
+            need(receipt['contentRange'] == 'bytes %d-%d/%d' % (start, end, total)
+                 and receipt['contentLength'] == str(expected)
+                 and receipt['contentEncoding'] in [None, 'identity'], 'F-ContentRange')
+            with target.open('xb') as out:
+                for block in iter(lambda: response.read(1024 * 1024), b''):
+                    used += len(block); need(used <= expected, 'F-RangeOverflow'); out.write(block)
+            need(used == expected, 'F-RangeShort')
+            return target, receipt
+        finally:
+            response.close()
+            write_new(receipt_path, canonical({**receipt, 'start': start, 'end': end,
+                      'expectedBytes': expected, 'bytes': used,
+                      'sha256': measure(target)['sha256'] if target.is_file() else None,
+                      'complete': target.is_file() and used == expected and response.status == 206}))
 
 
 def bound_run(reader, run_id, label):
@@ -480,6 +916,96 @@ def inspect_suffix(root, head, baseline, git, field, changed, policy, data):
     return visit(head)
 
 
+def inspect_f_suffix(root, head, baseline, git, field, changed, policy, data):
+    """Bound FS24-F without changing or replenishing the exhausted E record."""
+    need(git(root, 'rev-parse', F_CHECKPOINT + '^{tree}').strip() == F_CHECKPOINT_TREE, 'F-CheckpointTree')
+    cache = {F_CHECKPOINT: json.loads(json.dumps(baseline))}
+
+    def visit(commit):
+        if commit in cache:
+            return cache[commit]
+        parents = git(root, 'rev-list', '--parents', '-n', '1', commit).split()[1:]
+        need(len(parents) in [1, 2], 'F-ParentCount')
+        previous = visit(parents[0]); state = json.loads(json.dumps(previous))
+        message = git(root, 'show', '-s', '--format=%B', commit)
+        need(field(message, 'Fulcrum-Grant') == 'FS24-D', 'F-PreserveGrant')
+        need(field(message, 'FS24-F-Checkpoint') == F_CHECKPOINT, 'F-Checkpoint')
+        approval = field(message, 'FS24-F-Authority')
+        need(approval == f_authority_sha() and field(message, 'Owner-Approval-Receipt') == approval, 'F-Authority')
+        extension = state.setdefault('evidenceVolume', {'rounds': [], 'merges': [],
+            'approval': approval, 'paths': F_ALLOW, 'activations': [], 'continuations': []})
+        need(extension['approval'] == approval and extension['paths'] == F_ALLOW, 'F-AuthorityChanged')
+        delta = changed(root, parents[0], commit)
+        need(set(changed(root, F_CHECKPOINT, commit)) <= set(F_ALLOW), 'F-TotalScope')
+        for path, blob in policy.items():
+            need(git(root, 'rev-parse', commit + ':' + path).strip() == blob, 'F-PolicyFreeze')
+        for path in data:
+            need(git(root, 'ls-tree', F_CHECKPOINT, '--', path) == git(root, 'ls-tree', commit, '--', path), 'F-DataFreeze')
+        for path in delta:
+            need(path in F_ALLOW and git(root, 'ls-tree', commit, '--', path).startswith('100644 '), 'F-ScopeMode')
+        phase = field(message, 'Fulcrum-Phase')
+        if len(parents) == 2:
+            need(phase == 'evidence-volume-merge', 'F-MergePhase')
+            candidate = visit(parents[1])
+            need(candidate['candidateBase'] == parents[0] and candidate['unmerged'], 'F-MergeBase')
+            need(candidate['evidenceVolume']['approval'] == approval, 'F-MergeAuthority')
+            need(git(root, 'rev-parse', commit + '^{tree}') == git(root, 'rev-parse', parents[1] + '^{tree}'), 'F-MergeTree')
+            state = json.loads(json.dumps(candidate)); extension = state['evidenceVolume']
+            number = int(field(message, 'Fulcrum-Integration-PR'))
+            need(number > 18, 'F-MergePR')
+            need(re.fullmatch('[1-9][0-9]*', field(message, 'FS24-F-Qualification-Run')), 'F-MergeQualification')
+            need(re.fullmatch('[a-f0-9]{64}', field(message, 'FS24-F-Consumer-Receipt')), 'F-MergeReceipt')
+            extension['merges'].append({'head': commit, 'base': parents[0],
+                                        'candidate': parents[1], 'pr': number})
+            need(len(extension['merges']) <= F_AUTHORITY['allocations']['technicalMerges'], 'F-MergeAllocation')
+            state['unmerged'] = []; state['candidateBase'] = commit
+        elif phase == 'evidence-volume-implementation':
+            need(len(parents) == 1 and delta
+                 and int(field(message, 'FS24-F-Round')) == len(extension['rounds']) + 1, 'F-RoundOrder')
+            need(not extension['activations'], 'F-CodeAfterActivation')
+            extension['rounds'].append(commit)
+            need(len(extension['rounds']) <= F_AUTHORITY['allocations']['candidateCommits'], 'F-CandidateAllocation')
+            if not state['unmerged']:
+                state['candidateBase'] = parents[0]
+            state['unmerged'].append(commit)
+        elif phase == 'evidence-volume-recover':
+            need(len(parents) == 1 and not delta and not state['unmerged'] and extension['merges']
+                 and not extension['activations'] and not extension['continuations'], 'F-RecoveryTree')
+            need(re.fullmatch('[1-9][0-9]*', field(message, 'FS24-F-Qualification-Run')), 'F-QualificationRun')
+            need(re.fullmatch('[a-f0-9]{64}', field(message, 'FS24-F-Consumer-Receipt')), 'F-ConsumerReceipt')
+            extension['activations'].append(commit)
+            need(len(extension['activations']) <= F_AUTHORITY['allocations']['recoveryActivations'], 'F-ActivationAllocation')
+            state['candidateBase'] = parents[0]; state['unmerged'] = [commit]
+        elif phase == 'evidence-volume-continue':
+            need(len(parents) == 1 and not delta and len(extension['activations']) == 1
+                 and state['unmerged'], 'F-ContinuationTree')
+            number = int(field(message, 'FS24-F-Continuation'))
+            need(number == len(extension['continuations']) + 1, 'F-ContinuationOrder')
+            volumes = json.loads(field(message, 'FS24-F-Missing-Volumes'))
+            used = {x for row in extension['continuations'] for x in row['volumes']}
+            need(isinstance(volumes, list) and volumes == sorted(set(volumes))
+                 and 1 <= len(volumes) <= F_AUTHORITY['allocations']['continuationVolumesPerCommit']
+                 and all(isinstance(x, int) and 0 <= x < F_MAX_VOLUMES and x not in used for x in volumes), 'F-ContinuationVolumes')
+            source_run = int(field(message, 'FS24-F-Recovery-Run'))
+            need(source_run > 0 and re.fullmatch('[a-f0-9]{64}', field(message, 'FS24-F-Consumer-Receipt')), 'F-ContinuationReceipt')
+            need(not extension['continuations'] or extension['continuations'][0]['sourceRun'] == source_run,
+                 'F-ContinuationSourceChanged')
+            extension['continuations'].append({'head': commit, 'round': number,
+                                               'sourceRun': source_run, 'volumes': volumes})
+            need(len(extension['continuations']) <= F_AUTHORITY['allocations']['continuationCommits'], 'F-ContinuationAllocation')
+            state['unmerged'].append(commit)
+        else:
+            raise ValueError('F-UnclassifiedPhase')
+        state['head'] = commit
+        state['paths'] = sorted(set(baseline['paths']) | set(F_ALLOW))
+        need(state['epochs'] == baseline['epochs'] and state['data'] == baseline['data']
+             and state['code'] == baseline['code'] and state['closure'] == baseline['closure']
+             and state.get('evidenceRepair') == baseline.get('evidenceRepair'), 'F-HistoryPreserved')
+        cache[commit] = state
+        return state
+    return visit(head)
+
+
 def load_preflight(root):
     import importlib.util
     spec = importlib.util.spec_from_file_location('fs24_preflight', root / 'scripts/wp002-preflight.py')
@@ -541,6 +1067,241 @@ def check_ledger(reader, root):
     write_new(reader.directory / 'e-ledger-summary.json', canonical({'baseline': {'ledger': 150, 'active': 45, 'jobs': 189},
               'activeIncludingReservations': active, 'jobsIncludingReservations': jobs, 'skipped': skipped,
               'closureReserve': {'active': 6, 'jobs': 30}, 'records': records, 'billingActualUsd': None}))
+
+
+F_LEDGER_FIELDS = ['id', 'head_sha', 'head_branch', 'event', 'status', 'conclusion',
+                   'run_attempt', 'path', 'display_title']
+F_JOB_RESERVE = {'.github/workflows/ci.yml': 4,
+                 '.github/workflows/acceptance-wp002.yml': 6}
+
+
+def f_baseline(root):
+    text = (root / F_ALLOW[0]).read_text()
+    rows = json.loads(text.split('<!-- BEGIN_FS24F_BASELINE_JSON -->\n')[1]
+                      .split('\n<!-- END_FS24F_BASELINE_JSON -->')[0])
+    need(len(rows) == F_BASELINE_LEDGER and len({x['id'] for x in rows}) == F_BASELINE_LEDGER,
+         'F-BaselineInventory')
+    return rows
+
+
+def check_f_ledger(reader, root):
+    pins = f_baseline(root); current = reader.page('/actions/runs', 'workflow_runs', 'f-ledger')
+    by_id = {x['id']: x for x in current}
+    for row in pins:
+        need(row['id'] in by_id and all(by_id[row['id']].get(k) == row.get(k) for k in F_LEDGER_FIELDS),
+             'F-BaselineDelta')
+    old = {x['id'] for x in pins}; added = [x for x in current if x['id'] not in old]
+    pf = load_preflight(root); active = 0; jobs = 0; skipped = 0; artifacts = 0
+    artifact_bytes = 0; legacy = 0; records = []
+    for run in added:
+        need(run['repository']['full_name'] == REPO and run['head_repository']['full_name'] == REPO
+             and run['run_attempt'] == 1 and run['event'] in ['push', 'pull_request', 'workflow_run'], 'F-LedgerIdentity')
+        path = run['path']; reserve = F_JOB_RESERVE.get(path)
+        if run['status'] == 'completed' and run['conclusion'] == 'skipped':
+            need((path in ['.github/workflows/acceptance-wp000.yml', '.github/workflows/review-wp000-spec.yml']
+                  and run['event'] == 'pull_request')
+                 or (path == '.github/workflows/recover-fs24-evidence.yml'
+                     and run['event'] == 'workflow_run'), 'F-UnclassifiedWholeSkip')
+            listed = reader.page('/actions/runs/%d/artifacts' % run['id'], 'artifacts', 'f-artifacts-%d' % run['id'])
+            need(not listed, 'F-SkippedRunArtifact'); skipped += 1
+            records.append({'run': run['id'], 'reserve': 0, 'jobs': 0,
+                            'artifacts': 0, 'legacy': False, 'wholeWorkflowSkipped': True})
+            continue
+        is_legacy = (path == '.github/workflows/recover-fs24-evidence.yml'
+                     and run['event'] == 'workflow_run' and run['head_sha'] == F_CHECKPOINT
+                     and str(run.get('display_title', '')).startswith('FS24E '))
+        if is_legacy:
+            legacy += 1; need(legacy <= 4, 'F-LegacyRelayAllocation'); reserve = 34
+        else:
+            state = pf.inspect(root, run['head_sha'])
+            need(state.get('evidenceVolume'), 'F-UnclassifiedHead')
+            if path == '.github/workflows/recover-fs24-evidence.yml':
+                message = pf.git(root, 'show', '-s', '--format=%B', run['head_sha'])
+                phase = pf.field(message, 'Fulcrum-Phase')
+                reserve = 84 if phase == 'evidence-volume-recover' else (10 if phase == 'evidence-volume-continue' else 5)
+        need(reserve is not None, 'F-UnclassifiedWorkflow')
+        fetched = reader.page('/actions/runs/%d/jobs' % run['id'], 'jobs', 'f-jobs-%d' % run['id'])
+        listed = reader.page('/actions/runs/%d/artifacts' % run['id'], 'artifacts', 'f-artifacts-%d' % run['id'])
+        sizes = [x.get('size_in_bytes') for x in listed]
+        need(all(isinstance(x, int) and x >= 0 for x in sizes), 'F-ArtifactSize')
+        artifacts += len(listed); artifact_bytes += sum(sizes)
+        if fetched:
+            active += 1; jobs += len(fetched) if run['status'] == 'completed' else reserve
+        else:
+            need(run['status'] != 'completed' or run['conclusion'] == 'skipped', 'F-MissingJobs')
+            if run['status'] == 'completed': skipped += 1
+            else: active += 1; jobs += reserve
+        records.append({'run': run['id'], 'reserve': reserve, 'jobs': len(fetched),
+                        'artifacts': len(listed), 'artifactBytes': sum(sizes), 'legacy': is_legacy})
+    caps = F_AUTHORITY['caps']
+    need(active <= caps['activeRuns'] and jobs <= caps['jobsIncludingReservations']
+         and skipped <= caps['wholeWorkflowSkips'] and artifacts <= caps['artifactObjects']
+         and artifact_bytes <= caps['newArtifactStorageBytes'], 'F-WholeCycleCap')
+    write_new(reader.directory / 'f-ledger-summary.json', canonical({
+        'baseline': {'ledger': F_BASELINE_LEDGER, 'active': 77, 'jobs': 327,
+                     'wholeWorkflowSkips': 10, 'artifactObjects': 71, 'zipReceives': 95},
+        'new': {'runs': len(added), 'active': active, 'jobsIncludingReservations': jobs,
+                'wholeWorkflowSkips': skipped, 'artifactObjects': artifacts,
+                'artifactStorageBytes': artifact_bytes, 'legacyRelays': legacy}, 'caps': caps,
+        'preservedClosureReserve': {'active': 6, 'jobs': 30},
+        'billingActualUsd': None, 'records': records}))
+
+
+def f_message_state(root, head):
+    pf = load_preflight(root); state = pf.inspect(root, head)
+    need(state.get('evidenceVolume') and state['evidenceVolume']['approval'] == f_authority_sha(), 'F-CollectorAuthority')
+    message = pf.git(root, 'show', '-s', '--format=%B', head)
+    return pf, state, message, pf.field(message, 'Fulcrum-Phase')
+
+
+def f_prepare(args):
+    root = pathlib.Path(os.environ['GITHUB_WORKSPACE']); ident = identity(); head = ident['head']
+    pf, state, message, phase = f_message_state(root, head)
+    need(pf.git(root, 'rev-parse', 'HEAD').strip() == head, 'F-CollectorCheckout')
+    event = ident['event']; need(event in ['push', 'workflow_run'], 'F-CollectorEvent')
+    reader = Reader(pathlib.Path(args.directory)); main = reader.get('/git/ref/heads/main', 'f-main-before.json')['object']['sha']
+    need(main == (state['candidateBase'] if state['unmerged'] else head), 'F-CollectorMainDelta')
+    check_f_ledger(reader, root)
+    if phase in ['evidence-volume-implementation', 'evidence-volume-merge']:
+        mode = 'qualify'; selected = None
+        target = pathlib.Path(args.directory) / 'qualification-source.bin'
+        write_new(target, hashlib.shake_256(b'FS24F/1 deterministic range qualification').digest(F_QUALIFICATION_BYTES))
+    elif phase == 'evidence-volume-recover':
+        mode = 'recover'; selected = None
+        qid = int(pf.field(message, 'FS24-F-Qualification-Run'))
+        q = bound_run(reader, qid, 'f-qualification-run')
+        need(q['path'] == '.github/workflows/recover-fs24-evidence.yml' and q['conclusion'] == 'success'
+             and q['event'] == 'workflow_run' and q['head_branch'] == 'main'
+             and q['head_sha'] == state['candidateBase'] and q['run_attempt'] == 1,
+             'F-QualificationRunBinding')
+        for path in F_ALLOW:
+            need(pf.git(root, 'ls-tree', q['head_sha'], '--', path)
+                 == pf.git(root, 'ls-tree', head, '--', path), 'F-QualificationCodeChanged')
+    elif phase == 'evidence-volume-continue':
+        mode = 'continue'; selected = json.loads(pf.field(message, 'FS24-F-Missing-Volumes'))
+        recovery_id = int(pf.field(message, 'FS24-F-Recovery-Run'))
+        recovery = bound_run(reader, recovery_id, 'f-recovery-run')
+        need(recovery['path'] == '.github/workflows/recover-fs24-evidence.yml'
+             and recovery['event'] == 'push' and recovery['head_branch'] == 'wp/002'
+             and recovery['head_sha'] == state['evidenceVolume']['activations'][0]
+             and recovery['status'] == 'completed' and recovery['run_attempt'] == 1,
+             'F-RecoveryRunBinding')
+    else:
+        raise ValueError('F-CollectorPhase')
+    current = bound_run(reader, int(os.environ['GITHUB_RUN_ID']), 'f-current-run')
+    need(current['head_sha'] == os.environ['GITHUB_SHA']
+         and current['path'] == '.github/workflows/recover-fs24-evidence.yml', 'F-CollectorRunBinding')
+    after = reader.get('/git/ref/heads/main', 'f-main-after.json')['object']['sha']; need(after == main, 'F-CollectorPreservation')
+    with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+        output.write('mode=' + mode + '\n')
+        output.write('selected=' + json.dumps(selected, separators=(',', ':')) + '\n')
+        output.write('source_name=' + ('fs24f-range-source-%s' % ident['run'] if mode == 'qualify' else F_SOURCE['name']) + '\n')
+    write_new(pathlib.Path(args.directory) / 'prepare.json', canonical({
+        'version': F_VERSION, 'authoritySha256': f_authority_sha(), 'identity': ident,
+        'phase': phase, 'mode': mode, 'selectedVolumes': selected,
+        'preserve': F_AUTHORITY['preserve'], 'billingActualUsd': None}))
+
+
+def f_expected_source(reader, mode):
+    artifact = int(os.environ['FS_SOURCE_ID'])
+    value = reader.get('/actions/artifacts/%d' % artifact, 'f-source-metadata.json')
+    if mode == 'qualify':
+        digest = os.environ['FS_SOURCE_DIGEST'].removeprefix('sha256:')
+        expected = {'artifact': artifact, 'name': os.environ['FS_SOURCE_NAME'],
+                    'bytes': value.get('size_in_bytes'), 'sha256': digest}
+        workflow = value.get('workflow_run', {})
+        need(workflow.get('id') == int(os.environ['GITHUB_RUN_ID'])
+             and workflow.get('head_sha') == os.environ['GITHUB_SHA']
+             and workflow.get('repository_id') == F_SOURCE['repositoryId']
+             and workflow.get('head_repository_id') == F_SOURCE['repositoryId']
+             and F_QUALIFICATION_BYTES <= expected['bytes'] <= F_QUALIFICATION_BYTES + 1024 * 1024,
+             'F-QualificationArtifact')
+    else:
+        expected = F_SOURCE
+    return f_source_from_metadata(value, expected)
+
+
+def f_binding(mode):
+    return {'repository': REPO, 'run': os.environ['GITHUB_RUN_ID'], 'attempt': '1',
+            'head': os.environ['FS_HEAD'], 'event': os.environ['GITHUB_EVENT_NAME'],
+            'mode': mode, 'authoritySha256': f_authority_sha()}
+
+
+def f_plan_live(args):
+    directory = pathlib.Path(args.directory); reader = Reader(directory)
+    mode = os.environ['FS_TRANSFER_MODE']; source = f_expected_source(reader, mode)
+    selected = None if os.environ.get('FS_SELECTED', 'null') == 'null' else json.loads(os.environ['FS_SELECTED'])
+    plan = f_plan(source, f_binding(mode), selected)
+    if mode == 'qualify': need(len(plan['volumes']) == 3, 'F-QualificationVolumeCount')
+    if mode == 'recover': need(len(plan['volumes']) == F_MAX_VOLUMES, 'F-RecoveryVolumeCount')
+    write_new(directory / 'root-plan.json', canonical(plan))
+    with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+        output.write('matrix=' + json.dumps({'volume': plan['selectedVolumes']}, separators=(',', ':')) + '\n')
+        output.write('plan_hash=' + sha(canonical(plan)) + '\n')
+        output.write('source_id=' + str(source['artifact']) + '\n')
+        output.write('source_name=' + source['name'] + '\n')
+        output.write('source_bytes=' + str(source['bytes']) + '\n')
+        output.write('source_sha256=' + source['sha256'] + '\n')
+
+
+def f_emit_live(args):
+    directory = pathlib.Path(args.directory); directory.mkdir(exist_ok=False); reader = Reader(directory)
+    mode = os.environ['FS_TRANSFER_MODE']; source = f_expected_source(reader, mode)
+    selected = json.loads(os.environ['FS_SELECTED']); plan = f_plan(source, f_binding(mode), selected)
+    need(sha(canonical(plan)) == os.environ['FS_PLAN_HASH'], 'F-EmitterPlanPin')
+    volume = int(os.environ['FS_VOLUME']); need(volume in selected, 'F-EmitterVolume')
+    signed, redirect = reader.artifact_redirect(source['artifact'], 'f-source')
+    row = plan['volumes'][volume]; target = directory / ('volume-%03d.bin' % volume)
+    target, receipt = reader.range_get(signed, row['start'], row['end'], source['bytes'], target, 'f-volume-%03d' % volume)
+    data = target.read_bytes(); manifest = f_volume_manifest(plan, volume, data, receipt)
+    write_new(directory / 'volume-manifest.json', canonical(manifest)); emit_volume(manifest, data)
+
+
+def extract_single_json_artifact(path, expected):
+    with zipfile.ZipFile(path) as z:
+        infos = z.infolist()
+        need(len(infos) == 1 and pathlib.PurePosixPath(infos[0].filename).name == expected
+             and not infos[0].flag_bits & 1 and not stat.S_ISLNK(infos[0].external_attr >> 16)
+             and infos[0].file_size <= 2 * 1024 * 1024, 'F-SmallArtifactInventory')
+        raw = z.read(infos[0])
+    return json.loads(raw)
+
+
+def f_collect_root(args):
+    directory = pathlib.Path(args.directory); directory.mkdir(exist_ok=False); reader = Reader(directory)
+    run_id = int(os.environ['GITHUB_RUN_ID']); artifacts = reader.page('/actions/runs/%d/artifacts' % run_id,
+                                                                       'artifacts', 'f-report-artifacts')
+    def one(name, required=True):
+        rows = [x for x in artifacts if x['name'] == name]
+        if not rows and not required:
+            return None
+        need(len(rows) == 1 and not rows[0]['expired'] and rows[0]['workflow_run']['id'] == run_id,
+             'F-ReportArtifact:' + name)
+        target = reader.get('/actions/artifacts/%d/zip' % rows[0]['id'], 'artifact-%d.zip' % rows[0]['id'],
+                            3 * 1024 * 1024, True)
+        need(measure(target)['sha256'] == str(rows[0].get('digest') or '').removeprefix('sha256:'),
+             'F-ReportArtifactDigest')
+        return target
+    plan = extract_single_json_artifact(one('fs24f-plan-%d' % run_id), 'root-plan.json')
+    validate_f_plan(plan); need(sha(canonical(plan)) == os.environ['FS_PLAN_HASH'], 'F-ReportPlanPin')
+    manifests = []
+    for volume in plan['selectedVolumes']:
+        artifact = one('fs24f-volume-%d-%d' % (run_id, volume), False)
+        if artifact is None:
+            continue
+        value = extract_single_json_artifact(artifact,
+                                             'volume-manifest.json')
+        validate_f_volume(value, plan); manifests.append(value)
+    missing = [x for x in plan['selectedVolumes'] if x not in {m['volume'] for m in manifests}]
+    producer = 'success' if os.environ.get('EMIT_RESULT') == 'success' and not missing else 'failure'
+    root = {'version': F_VERSION, 'authoritySha256': f_authority_sha(),
+            'planSha256': sha(canonical(plan)), 'plan': plan, 'volumeManifests': manifests,
+            'missingVolumes': missing, 'producerResult': producer, 'agentReceive': 'unproven',
+            'preserve': F_AUTHORITY['preserve'], 'billingActualUsd': None}
+    validate_root_manifest(root); write_new(directory / 'root-manifest.json', canonical(root))
+    print(json.dumps({'producerResult': producer, 'planSha256': root['planSha256'],
+                      'volumes': len(manifests), 'missingVolumes': missing, 'agentReceive': 'unproven',
+                      **F_AUTHORITY['preserve'], 'billingActualUsd': None}, separators=(',', ':')))
 
 
 def collect_candidate_job_logs(reader, source, run, jobs):
@@ -680,16 +1441,29 @@ def download_carrier(args):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('mode', choices=['pack', 'split', 'emit', 'receive', 'collect', 'download-carrier', 'unpack-artifact', 'extract-carrier'])
+    p.add_argument('mode', choices=['pack', 'split', 'emit', 'receive', 'collect', 'download-carrier',
+                                    'unpack-artifact', 'extract-carrier', 'prepare-f', 'plan-f',
+                                    'emit-volume-f', 'collect-root-f', 'receive-volumes-f'])
     p.add_argument('--directory', required=True)
     p.add_argument('--file')
     p.add_argument('--part', type=int)
     p.add_argument('--binding')
     p.add_argument('--index-hash')
     p.add_argument('--logs', nargs='*')
+    p.add_argument('--roots', nargs='*')
     args = p.parse_args()
     directory = pathlib.Path(args.directory)
-    if args.mode == 'pack':
+    if args.mode == 'prepare-f':
+        f_prepare(args)
+    elif args.mode == 'plan-f':
+        f_plan_live(args)
+    elif args.mode == 'emit-volume-f':
+        f_emit_live(args)
+    elif args.mode == 'collect-root-f':
+        f_collect_root(args)
+    elif args.mode == 'receive-volumes-f':
+        receive_f_volumes(args.logs or [], args.roots or [], directory)
+    elif args.mode == 'pack':
         source = identity()
         pack(directory, args.file, source)
         print('FS24E_REF\t' + json.dumps({'source': source, 'bundle': measure(args.file)}, separators=(',', ':')))

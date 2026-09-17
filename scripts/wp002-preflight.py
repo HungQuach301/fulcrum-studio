@@ -50,6 +50,12 @@ def changed(root, before, after):
 
 def inspect(root, head):
     anchor="c4a4445e619175c015469cd33ebd427ecdd687a1"
+    fanchor="2efe60ea7c74d301a1e2fc0ba52e1adc686f40dd"
+    if head!=fanchor and subprocess.run(["git","-C",str(root),"merge-base","--is-ancestor",fanchor,head],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0:
+        import importlib.util
+        spec=importlib.util.spec_from_file_location("fs24f",root/"engine/io/evidence-transfer.py")
+        helper=importlib.util.module_from_spec(spec);spec.loader.exec_module(helper)
+        return helper.inspect_f_suffix(root,head,inspect(root,fanchor),git,field,changed,POLICY,DATA)
     if head!=anchor and subprocess.run(["git","-C",str(root),"merge-base","--is-ancestor",anchor,head],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0:
         import importlib.util
         spec=importlib.util.spec_from_file_location("fs24e",root/"engine/io/evidence-transfer.py")
@@ -214,7 +220,7 @@ def runtime(root,head):
     else:
         require(event in ["push","workflow_run"] and main==head and state["epochs"],"MainContext")
     outcomes=[]
-    for number,merge,expected in HISTORY+[(x["pr"],x["code"],x["candidate"]) for x in state["epochs"]]+[(x["pr"],x["head"],x["candidate"]) for x in state.get("evidenceRepair",{}).get("merges",[])]:
+    for number,merge,expected in HISTORY+[(x["pr"],x["code"],x["candidate"]) for x in state["epochs"]]+[(x["pr"],x["head"],x["candidate"]) for x in state.get("evidenceRepair",{}).get("merges",[])]+[(x["pr"],x["head"],x["candidate"]) for x in state.get("evidenceVolume",{}).get("merges",[])]:
         try:
             pr=get(directory,"/pulls/"+str(number),"static-merge-"+str(number),"2022-11-28")
             require(pr["number"]==number and pr["merged"] is True and pr["merge_commit_sha"]==merge and pr["head"]["sha"]==expected,"ReceiptFields")
@@ -245,6 +251,7 @@ TEST_IDS = {'integration-tests.json': ['manifest-valid', 'manifest-extra-member'
 
 TEST_IDS["integration-tests.json"] += ["E-file-observations-preserve-repeated-name","E-production-control-blocked","E-controller-blocked","E-readonly-mode"]
 TEST_IDS["guardrails-tests.json"] += ["E-reference-identity","E-reference-wrong-head","E-reference-overflow"]
+TEST_IDS["guardrails-tests.json"] += ["F-current-lineage-preserves-exhausted-E","F-scanner-resolves-canonical-WP-at-final-E"]
 
 def verify_tests(suite):
     directory=pathlib.Path(os.environ["FS_EVIDENCE"])

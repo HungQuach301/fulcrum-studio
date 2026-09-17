@@ -1,5 +1,6 @@
-"""Draft executable regression cases. Run in approved Actions, not during PREP."""
+"""Executable network-free codec, lineage, and HTTP contract regression cases."""
 import base64
+import hashlib
 import importlib.util
 import io
 import json
@@ -207,6 +208,19 @@ class TransferTests(unittest.TestCase):
                 reader.get('/actions/jobs/104622761595/logs', 'denied.log', binary=True)
             reader.opener.open.assert_not_called()
 
+    def test_f_recovery_still_denies_historic_job_log_endpoints(self):
+        import unittest.mock
+        with unittest.mock.patch.dict(e.os.environ, {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': e.REPO,
+                'GH_TOKEN': 'fixture', 'FS_TRANSFER_MODE': 'recover', 'FS24_F_ACTIVE': 'true'}):
+            reader = e.Reader(self.raw); reader.opener = unittest.mock.Mock()
+            for job in [104622761595, 104628070660]:
+                with self.assertRaisesRegex(ValueError, 'HistoricLogGate'):
+                    reader.get('/actions/jobs/%d/logs' % job, 'denied-%d.log' % job, binary=True)
+            reader.opener.open.assert_not_called()
+            with self.assertRaisesRegex(ValueError, 'F-SavedArtifactFullGET'):
+                reader.get('/actions/artifacts/10459765118/zip', 'saved.zip', binary=True)
+            reader.opener.open.assert_not_called()
+
     def test_trailing_bundle_bytes(self):
         with (self.root / 'bundle.zip').open('ab') as out:
             out.write(b'junk')
@@ -253,6 +267,160 @@ class TransferTests(unittest.TestCase):
         path.write_bytes(raw)
         with self.assertRaises(zipfile.BadZipFile):
             e.unpack(path, self.root / 'crc')
+
+    def f_binding(self, mode='qualify'):
+        return {'repository': e.REPO, 'run': '123', 'attempt': '1', 'head': 'f' * 40,
+                'event': 'push', 'mode': mode, 'authoritySha256': e.f_authority_sha()}
+
+    def test_f_saved_layout_is_650_parts_82_volumes(self):
+        source = {'artifact': e.F_SOURCE['artifact'], 'name': e.F_SOURCE['name'],
+                  'bytes': e.F_SOURCE['bytes'], 'sha256': e.F_SOURCE['sha256']}
+        plan = e.f_plan(source, self.f_binding('recover'))
+        self.assertEqual(len(plan['parts']), 650)
+        self.assertEqual(len(plan['volumes']), 82)
+        self.assertEqual(plan['parts'][-1]['bytes'], 1206027)
+        self.assertEqual(plan['volumes'][-1]['bytes'], 3303179)
+        self.assertEqual(plan['selectedVolumes'], list(range(82)))
+
+    def test_f_saved_artifact_metadata_is_fully_pinned(self):
+        value = {'id': e.F_SOURCE['artifact'], 'name': e.F_SOURCE['name'],
+                 'size_in_bytes': e.F_SOURCE['bytes'], 'digest': 'sha256:' + e.F_SOURCE['sha256'],
+                 'expires_at': e.F_SOURCE['expiresAtKnown'], 'expired': False,
+                 'workflow_run': {'id': e.F_SOURCE['run'], 'head_sha': e.F_SOURCE['head'],
+                                  'repository_id': e.F_SOURCE['repositoryId'],
+                                  'head_repository_id': e.F_SOURCE['repositoryId']}}
+        self.assertEqual(e.f_source_from_metadata(value, e.F_SOURCE)['artifact'], e.F_SOURCE['artifact'])
+        for mutation in [{'expires_at': '2026-09-23T16:58:16Z'},
+                         {'workflow_run': {**value['workflow_run'], 'head_sha': '0' * 40}}]:
+            with self.assertRaisesRegex(ValueError, 'F-ArtifactLineagePin'):
+                e.f_source_from_metadata({**value, **mutation}, e.F_SOURCE)
+
+    def test_f_range_requires_exact_206_and_never_forwards_auth(self):
+        import unittest.mock
+        body = b'range-bytes'
+        class Response(io.BytesIO):
+            def __init__(self, payload, status, headers):
+                super().__init__(payload); self.status = status; self.headers = headers
+        class Opener:
+            def __init__(self, status=206, content_range=None):
+                self.requests = []; self.status = status; self.content_range = content_range
+            def open(self, request):
+                self.requests.append(request)
+                return Response(body, self.status, {'Content-Length': str(len(body)),
+                    'Content-Range': self.content_range or 'bytes 10-20/100'})
+        env = {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': e.REPO, 'GH_TOKEN': 'fixture'}
+        with unittest.mock.patch.dict(e.os.environ, env):
+            reader = e.Reader(self.raw); opener = Opener(); reader.opener = opener
+            target, receipt = reader.range_get('https://fixture.blob.core.windows.net/archive?sig=secret',
+                                               10, 20, 100, self.root / 'range.bin', 'range')
+            self.assertEqual(target.read_bytes(), body)
+            self.assertEqual(receipt['status'], 206)
+            self.assertIsNone(opener.requests[0].get_header('Authorization'))
+            self.assertEqual(opener.requests[0].get_header('Range'), 'bytes=10-20')
+        for status, content_range, reason in [(200, None, 'F-HTTP206Required'),
+                                               (206, 'bytes 0-10/100', 'F-ContentRange')]:
+            with self.subTest(status=status, content_range=content_range), unittest.mock.patch.dict(e.os.environ, env):
+                reader = e.Reader(self.raw); reader.opener = Opener(status, content_range)
+                with self.assertRaisesRegex(ValueError, reason):
+                    reader.range_get('https://fixture.blob.core.windows.net/archive', 10, 20, 100,
+                                     self.root / ('bad-%d.bin' % status), 'bad-%d' % status)
+
+    def test_f_volume_roundtrip_large_zip_crc_and_offline_receiver(self):
+        archive = self.root / 'large-source.zip'
+        payload = hashlib.shake_256(b'FS24F test large zip').digest(e.F_VOLUME_BYTES + 97)
+        with zipfile.ZipFile(archive, 'x', compression=zipfile.ZIP_STORED, allowZip64=True) as z:
+            z.writestr('large.bin', payload)
+        source = {'artifact': 123, 'name': 'fixture-source', **e.measure(archive)}
+        plan = e.f_plan(source, self.f_binding())
+        self.assertEqual(len(plan['volumes']), 2)
+        logs = []; manifests = []
+        raw = archive.read_bytes()
+        for volume in plan['volumes']:
+            data = raw[volume['start']:volume['end'] + 1]
+            http = {'status': 206,
+                    'contentRange': 'bytes %d-%d/%d' % (volume['start'], volume['end'], source['bytes']),
+                    'contentLength': str(volume['bytes']), 'contentEncoding': None,
+                    'attempts': 1, 'authorizationForwarded': False}
+            manifest = e.f_volume_manifest(plan, volume['volume'], data, http); manifests.append(manifest)
+            stream = io.StringIO(); e.emit_volume(manifest, data, stream)
+            log = self.root / ('f-volume-%d.log' % volume['volume'])
+            log.write_text(''.join('2026-09-16T12:00:00.0000000Z ' + line + '\n'
+                                   for line in stream.getvalue().splitlines()))
+            logs.append(log)
+        root = {'version': e.F_VERSION, 'authoritySha256': e.f_authority_sha(),
+                'planSha256': e.sha(e.canonical(plan)), 'plan': plan,
+                'volumeManifests': manifests, 'missingVolumes': [], 'producerResult': 'success',
+                'agentReceive': 'unproven', 'preserve': e.F_AUTHORITY['preserve'],
+                'billingActualUsd': None}
+        root_path = self.root / 'root-manifest.json'; root_path.write_bytes(e.canonical(root))
+        old = e.urllib.request.build_opener
+        e.urllib.request.build_opener = lambda *a, **k: self.fail('F receiver attempted network')
+        try:
+            receipt = e.receive_f_volumes(list(reversed(logs)), [root_path], self.root / 'f-received')
+        finally:
+            e.urllib.request.build_opener = old
+        self.assertEqual(receipt['archive'], e.measure(archive))
+        self.assertEqual(receipt['sourceReceiptReconciliation'], 'pending')
+        self.assertEqual(receipt['B1'], 'unverified')
+        with self.assertRaisesRegex(ValueError, 'F-LogCount'):
+            e.receive_f_volumes(logs[:-1], [root_path], self.root / 'f-missing')
+        partial = {**root, 'volumeManifests': manifests[:-1],
+                   'missingVolumes': [plan['volumes'][-1]['volume']], 'producerResult': 'failure'}
+        partial_path = self.root / 'partial-root.json'; partial_path.write_bytes(e.canonical(partial))
+        e.validate_root_manifest(partial)
+        selected = [plan['volumes'][-1]['volume']]
+        continuation_plan = e.f_plan(source, self.f_binding('continue'), selected)
+        volume = continuation_plan['volumes'][selected[0]]
+        data = raw[volume['start']:volume['end'] + 1]
+        http = {'status': 206,
+                'contentRange': 'bytes %d-%d/%d' % (volume['start'], volume['end'], source['bytes']),
+                'contentLength': str(volume['bytes']), 'contentEncoding': None,
+                'attempts': 1, 'authorizationForwarded': False}
+        continuation_manifest = e.f_volume_manifest(continuation_plan, selected[0], data, http)
+        stream = io.StringIO(); e.emit_volume(continuation_manifest, data, stream)
+        continuation_log = self.root / 'continuation.log'; continuation_log.write_text(stream.getvalue())
+        continuation_root = {'version': e.F_VERSION, 'authoritySha256': e.f_authority_sha(),
+            'planSha256': e.sha(e.canonical(continuation_plan)), 'plan': continuation_plan,
+            'volumeManifests': [continuation_manifest], 'missingVolumes': [],
+            'producerResult': 'success', 'agentReceive': 'unproven',
+            'preserve': e.F_AUTHORITY['preserve'], 'billingActualUsd': None}
+        continuation_path = self.root / 'continuation-root.json'
+        continuation_path.write_bytes(e.canonical(continuation_root))
+        repaired = e.receive_f_volumes([logs[0], continuation_log],
+                                       [partial_path, continuation_path], self.root / 'f-repaired')
+        self.assertEqual(repaired['archive'], e.measure(archive))
+
+    def test_f_saved_receipt_reconciliation_keeps_semantics_unverified(self):
+        archive = self.root / 'saved-fixture.zip'
+        with zipfile.ZipFile(archive, 'x', compression=zipfile.ZIP_STORED) as z:
+            for index, job in enumerate([104622761595, 104628070660], 1):
+                name = 'raw/original-%d.log' % job; body = ('job-%d\n' % job).encode()
+                z.writestr(name, body)
+                receipt = {'body': name, 'bytes': len(body), 'sha256': e.sha(body),
+                           'complete': True, 'attempts': 1, 'contentEncoding': None,
+                           'hops': [{'status': 302}, {'status': 200}]}
+                z.writestr('raw/%04d-http.json' % index, e.canonical(receipt))
+        target = self.root / 'historic'; target.mkdir()
+        rows = e.reconcile_saved_artifact(archive, target)
+        self.assertEqual([x['job'] for x in rows], [104622761595, 104628070660])
+        self.assertTrue(all(x['savedReceiptVerified'] and x['semanticClaim'] == 'unverified' for x in rows))
+
+    def test_f_volume_rejects_manifest_or_payload_mutation(self):
+        archive = self.root / 'tiny.zip'
+        with zipfile.ZipFile(archive, 'x') as z: z.writestr('a', b'abc')
+        source = {'artifact': 123, 'name': 'tiny', **e.measure(archive)}
+        plan = e.f_plan(source, self.f_binding()); volume = plan['volumes'][0]; data = archive.read_bytes()
+        http = {'status': 206, 'contentRange': 'bytes 0-%d/%d' % (len(data)-1, len(data)),
+                'contentLength': str(len(data)), 'contentEncoding': None,
+                'attempts': 1, 'authorizationForwarded': False}
+        manifest = e.f_volume_manifest(plan, 0, data, http)
+        stream = io.StringIO(); e.emit_volume(manifest, data, stream)
+        log = self.root / 'tiny.log'; log.write_text(stream.getvalue())
+        bad = json.loads(json.dumps(manifest)); bad['parts'][0]['sha256'] = '0' * 64
+        with self.assertRaisesRegex(ValueError, 'F-ManifestPin'):
+            e.decode_volume(log, bad)
+        log.write_text(log.read_text().replace('FS24F_DATA\t0\t0\t', 'FS24F_DATA\t0\t0\t***', 1))
+        with self.assertRaises(ValueError): e.decode_volume(log, manifest)
 
     def e_lineage(self, delta=None, policy_changed=False, data_changed=False, ordinal='1'):
         anchor = e.CHECKPOINT
@@ -307,6 +475,48 @@ class TransferTests(unittest.TestCase):
     def test_e_suffix_rejects_round_reset(self):
         with self.assertRaisesRegex(ValueError, 'E-RoundOrder'):
             self.e_lineage(ordinal='0')
+
+    def f_lineage(self, delta=None, ordinal='1', authority=None):
+        anchor = e.F_CHECKPOINT; candidate = 'f' * 40
+        repair = {'rounds': ['r1'], 'merges': [], 'approval': e.E_APPROVAL,
+                  'paths': e.ALLOW, 'activations': []}
+        baseline = {'head': anchor, 'code': e.SOURCE_HEAD, 'epochs': [{'code': e.SOURCE_HEAD}],
+                    'data': [{'commit': 'd' * 40}], 'unmerged': [], 'candidateBase': anchor,
+                    'closure': False, 'paths': e.ALLOW, 'dataPaths': ['pipeline/state.json'],
+                    'evidenceRepair': repair}
+        approval = authority or e.f_authority_sha()
+        message = '\n'.join(['Fulcrum-Grant: FS24-D', 'Fulcrum-Phase: evidence-volume-implementation',
+                             'FS24-F-Checkpoint: ' + anchor, 'FS24-F-Authority: ' + approval,
+                             'Owner-Approval-Receipt: ' + approval, 'FS24-F-Round: ' + ordinal])
+        def git(root, *args):
+            if args == ('rev-parse', anchor + '^{tree}'): return e.F_CHECKPOINT_TREE + '\n'
+            if args == ('rev-list', '--parents', '-n', '1', candidate): return candidate + ' ' + anchor + '\n'
+            if args == ('show', '-s', '--format=%B', candidate): return message
+            if args == ('rev-parse', candidate + ':AGENTS.md'): return 'a' * 40 + '\n'
+            if args[0] == 'ls-tree': return '100644 blob ' + 'a' * 40 + '\t' + args[-1] + '\n'
+            self.fail('unexpected F git request: ' + str(args))
+        def field(text, key):
+            rows = [x[len(key) + 2:] for x in text.splitlines() if x.startswith(key + ': ')]
+            e.need(len(rows) == 1, 'Trailer:' + key); return rows[0]
+        state = e.inspect_f_suffix(self.root, candidate, baseline, git, field,
+                                   lambda *a: delta if delta is not None else [e.F_ALLOW[2]],
+                                   {'AGENTS.md': 'a' * 40}, ['pipeline/state.json'])
+        return baseline, state
+
+    def test_f_suffix_separate_authority_preserves_d_and_e(self):
+        before, after = self.f_lineage()
+        self.assertEqual(after['evidenceRepair'], before['evidenceRepair'])
+        self.assertEqual(after['data'], before['data'])
+        self.assertEqual(len(after['evidenceVolume']['rounds']), 1)
+        self.assertNotEqual(after['evidenceVolume']['approval'], e.E_APPROVAL)
+
+    def test_f_suffix_rejects_scope_authority_and_round_reset(self):
+        with self.assertRaisesRegex(ValueError, 'F-TotalScope'):
+            self.f_lineage(delta=['package.json'])
+        with self.assertRaisesRegex(ValueError, 'F-Authority'):
+            self.f_lineage(authority='0' * 64)
+        with self.assertRaisesRegex(ValueError, 'F-RoundOrder'):
+            self.f_lineage(ordinal='0')
 
 
 

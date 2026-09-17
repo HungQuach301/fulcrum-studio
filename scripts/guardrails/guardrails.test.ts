@@ -168,17 +168,18 @@ try {
     test("C-production-scanner-reject-branch",()=>assert.equal(inspect({root:actualRoot,base:FS24C.base,head:actualHead,branch:"bad",title:"",event:"push"}).result,"fail"));
   }
   const currentHead=process.env.FS_HEAD!,currentLineage=closureLineage(actualRoot,currentHead);
-  const historicalDLineage=currentLineage.evidenceRepair?closureLineage(actualRoot,"c4a4445e619175c015469cd33ebd427ecdd687a1"):currentLineage;
+  const finalELineage=currentLineage.evidenceVolume?closureLineage(actualRoot,"2efe60ea7c74d301a1e2fc0ba52e1adc686f40dd"):currentLineage;
+  const historicalDLineage=finalELineage.evidenceRepair?closureLineage(actualRoot,"c4a4445e619175c015469cd33ebd427ecdd687a1"):finalELineage;
   test("D-current-lineage",()=>{assert.ok(historicalDLineage.unmerged.length||historicalDLineage.epochs.length);assert.equal(historicalDLineage.paths.length,24);});
   test("E-current-lineage-preserves-D",()=>{
-    if(!currentLineage.evidenceRepair)return;
-    assert.equal(currentLineage.evidenceRepair.paths.length,15);
-    assert.equal(currentLineage.paths.length,28);
-    assert.deepEqual([...currentLineage.paths].sort(),[...new Set([...historicalDLineage.paths,...currentLineage.evidenceRepair.paths])].sort());
-    assert.equal(currentLineage.code,historicalDLineage.code);
-    assert.deepEqual(currentLineage.epochs,historicalDLineage.epochs);
-    assert.deepEqual(currentLineage.data,historicalDLineage.data);
-    assert.deepEqual(currentLineage.dataPaths,historicalDLineage.dataPaths);
+    if(!finalELineage.evidenceRepair)return;
+    assert.equal(finalELineage.evidenceRepair.paths.length,15);
+    assert.equal(finalELineage.paths.length,28);
+    assert.deepEqual([...finalELineage.paths].sort(),[...new Set([...historicalDLineage.paths,...finalELineage.evidenceRepair.paths])].sort());
+    assert.equal(finalELineage.code,historicalDLineage.code);
+    assert.deepEqual(finalELineage.epochs,historicalDLineage.epochs);
+    assert.deepEqual(finalELineage.data,historicalDLineage.data);
+    assert.deepEqual(finalELineage.dataPaths,historicalDLineage.dataPaths);
   });
   test("E-scanner-resolves-original-WP-after-companion",()=>{
     if(!currentLineage.evidenceRepair)return;
@@ -193,6 +194,23 @@ try {
     const report=inspect({root:actualRoot,base,head:activation,branch:"wp/002",title:"",event:"push"});
     assert.equal(report.result,"pass",JSON.stringify(report.errors));assert.deepEqual(report.checkedPaths,[]);
     assert.equal(inspect({root:actualRoot,base,head:activation,branch:"wp/003",title:"",event:"push"}).result,"fail");
+  });
+  test("F-current-lineage-preserves-exhausted-E",()=>{
+    if(!currentLineage.evidenceVolume)return;
+    assert.equal(currentLineage.evidenceVolume.paths.length,7);
+    assert.deepEqual(currentLineage.evidenceRepair,finalELineage.evidenceRepair);
+    assert.deepEqual(currentLineage.epochs,finalELineage.epochs);
+    assert.deepEqual(currentLineage.data,finalELineage.data);
+    assert.equal(currentLineage.code,finalELineage.code);
+    assert.equal(currentLineage.evidenceVolume.approval.length,64);
+    assert.notEqual(currentLineage.evidenceVolume.approval,currentLineage.evidenceRepair?.approval);
+  });
+  test("F-scanner-resolves-canonical-WP-at-final-E",()=>{
+    if(!currentLineage.evidenceVolume)return;
+    const base=currentLineage.unmerged.length?currentLineage.candidateBase:currentHead;
+    const report=inspect({root:actualRoot,base,head:currentHead,branch:currentLineage.unmerged.length?"wp/002":"main",title:"WP-002 FS24-F volume recovery",event:"push"});
+    assert.equal(report.result,"pass",JSON.stringify(report.errors));
+    if(currentLineage.unmerged.length)assert.equal(report.wpPath,"engine/ops/work-packages/WP-002-interfaces.md");
   });
   const dRoot=join(work,"d-history");
   const cloned=spawnSync("git",["clone","--shared","--no-checkout",actualRoot,dRoot],{encoding:"utf8"});assert.equal(cloned.status,0,cloned.stderr);
