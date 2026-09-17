@@ -6,6 +6,7 @@ on:
   workflow_run:
     workflows: [Fulcrum CI, WP-002 Foundation Acceptance, WP-002 Serialized Writer, WP-002 Reindex]
     types: [completed]
+    branches: [main]
 permissions:
   contents: read
   actions: read
@@ -19,7 +20,19 @@ env:
   FS_GRANT: FS24-D
 jobs:
   prepare:
-    if: ${{ github.repository == 'HungQuach301/fulcrum-studio' && github.run_attempt == 1 }}
+    if: >-
+      ${{
+        github.repository == 'HungQuach301/fulcrum-studio' &&
+        github.run_attempt == 1 &&
+        (
+          github.event_name == 'push' ||
+          (
+            github.event_name == 'workflow_run' &&
+            github.event.workflow_run.head_branch == 'main' &&
+            github.event.workflow_run.head_repository.full_name == github.repository
+          )
+        )
+      }}
     runs-on: ubuntu-24.04
     env:
       FS_JOB: prepare
@@ -122,7 +135,7 @@ jobs:
           compression-level: 0
           if-no-files-found: error
   report:
-    if: ${{ always() }}
+    if: ${{ always() && needs.prepare.result != 'skipped' }}
     needs: [prepare, emit]
     runs-on: ubuntu-24.04
     env:
