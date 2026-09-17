@@ -109,9 +109,14 @@ export function inspect(o: Options): ScanReport {
   const report: ScanReport = { result: "fail", base: o.base, head: o.head, branch: o.branch, wpPath: "", checkedPaths: [], errors: [] };
   try {
     if (!/^[a-f0-9]{40}$/.test(o.base) || !/^[a-f0-9]{40}$/.test(o.head)) throw new Error("commit-format");
-    git(o.root, "merge-base", "--is-ancestor", o.base, o.head);
     const messageHead=git(o.root,"show","-s","--format=%B",o.head);
     const lineage=messageHead.split("\n").includes("Fulcrum-Grant: FS24-D")?closureLineage(o.root,o.head):undefined;
+    // The first F candidate grows from wp/002, the second parent of the
+    // canonical checkpoint merge.  A fully validated F lineage binds that
+    // topic head back to candidateBase, so direct ancestry is neither true
+    // nor required for this one bounded case.
+    if(!(lineage?.evidenceVolume&&lineage.candidateBase===o.base))
+      git(o.root, "merge-base", "--is-ancestor", o.base, o.head);
     // The E companion is evidence documentation, not a replacement WP authority.
     // Verified E lineage freezes the original WP blob at F, including after merge.
     const contextBase=lineage?.evidenceVolume?"2efe60ea7c74d301a1e2fc0ba52e1adc686f40dd":lineage?.evidenceRepair?"c4a4445e619175c015469cd33ebd427ecdd687a1":o.base;

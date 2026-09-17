@@ -665,7 +665,12 @@ class Reader:
     def __init__(self, directory):
         need(os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('GITHUB_REPOSITORY') == REPO, 'ActionsOnly')
         self.directory = pathlib.Path(directory)
-        self.sequence = 0
+        # Several deliberately separate commands share the prepare directory.
+        # Continue the immutable receipt sequence instead of overwriting the
+        # first command's raw HTTP receipts when the next process starts.
+        prior = [int(path.name[:4]) for path in self.directory.iterdir()
+                 if path.is_file() and re.fullmatch(r'[0-9]{4}-http\.json', path.name)]
+        self.sequence = max(prior, default=0)
         self.opener = urllib.request.build_opener(NoRedirect())
 
     def get(self, path, name, cap=1024 * 1024, binary=False):
@@ -1121,7 +1126,14 @@ def check_f_ledger(reader, root):
                      and run['event'] == 'workflow_run' and run['head_sha'] == F_CHECKPOINT
                      and str(run.get('display_title', '')).startswith('FS24E '))
         if is_legacy:
-            legacy += 1; need(legacy <= 4, 'F-LegacyRelayAllocation'); reserve = 34
+            legacy += 1
+            # Before F reaches main, each candidate push plus the single
+            # premerge PR can complete CI and acceptance under the still-live
+            # E workflow.  These strict-identity relays replace planned F
+            # workflow_run skips; aggregate run/job/storage caps remain the
+            # controlling authority and are not increased here.
+            legacy_limit = 2 * (F_AUTHORITY['allocations']['candidateCommits'] + 1)
+            need(legacy <= legacy_limit, 'F-LegacyRelayAllocation'); reserve = 34
         else:
             state = pf.inspect(root, run['head_sha'])
             need(state.get('evidenceVolume'), 'F-UnclassifiedHead')
@@ -1255,7 +1267,10 @@ def f_plan_live(args):
 
 
 def f_emit_live(args):
-    directory = pathlib.Path(args.directory); directory.mkdir(exist_ok=False); reader = Reader(directory)
+    directory = pathlib.Path(args.directory)
+    need(directory.is_dir() and not directory.is_symlink() and not any(directory.iterdir()),
+         'F-EmitterDirectory')
+    reader = Reader(directory)
     mode = os.environ['FS_TRANSFER_MODE']; source = f_expected_source(reader, mode)
     selected = json.loads(os.environ['FS_SELECTED']); plan = f_plan(source, f_binding(mode), selected)
     need(sha(canonical(plan)) == os.environ['FS_PLAN_HASH'], 'F-EmitterPlanPin')
@@ -1278,7 +1293,10 @@ def extract_single_json_artifact(path, expected):
 
 
 def f_collect_root(args):
-    directory = pathlib.Path(args.directory); directory.mkdir(exist_ok=False); reader = Reader(directory)
+    directory = pathlib.Path(args.directory)
+    need(directory.is_dir() and not directory.is_symlink() and not any(directory.iterdir()),
+         'F-ReportDirectory')
+    reader = Reader(directory)
     run_id = int(os.environ['GITHUB_RUN_ID']); artifacts = reader.page('/actions/runs/%d/artifacts' % run_id,
                                                                        'artifacts', 'f-report-artifacts')
     def one(name, required=True):

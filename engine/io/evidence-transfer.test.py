@@ -189,6 +189,23 @@ class TransferTests(unittest.TestCase):
                 reader.get('/actions/runs/1', 'short.json')
         self.assertFalse(json.loads((self.raw / '0001-http.json').read_bytes())['complete'])
 
+    def test_f_reader_continues_receipts_across_commands(self):
+        import unittest.mock
+        class Response(io.BytesIO):
+            status = 200
+            headers = {'Content-Length': '2'}
+        class Opener:
+            def open(self, request):
+                return Response(b'{}')
+        env = {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': e.REPO, 'GH_TOKEN': 'fixture'}
+        with unittest.mock.patch.dict(e.os.environ, env):
+            first = e.Reader(self.raw); first.opener = Opener()
+            first.get('/actions/runs/1', 'first.json')
+            second = e.Reader(self.raw); second.opener = Opener()
+            second.get('/actions/runs/2', 'second.json')
+        self.assertTrue((self.raw / '0001-http.json').is_file())
+        self.assertTrue((self.raw / '0002-http.json').is_file())
+
     def test_denied_zip_zero_get(self):
         import unittest.mock
         with unittest.mock.patch.dict(e.os.environ, {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': e.REPO, 'GH_TOKEN': 'fixture'}):
