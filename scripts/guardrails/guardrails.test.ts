@@ -205,6 +205,33 @@ try {
     assert.equal(currentLineage.evidenceVolume.approval.length,64);
     assert.notEqual(currentLineage.evidenceVolume.approval,currentLineage.evidenceRepair?.approval);
   });
+  test("G-current-lineage-preserves-F-accounting",()=>{
+    const currentMessage=git(actualRoot,"show","-s","--format=%B",currentHead);
+    if(!currentMessage.split("\n").includes("Fulcrum-Phase: evidence-volume-admission"))return;
+    assert.ok(currentLineage.evidenceAdmission);
+    assert.equal(currentLineage.evidenceAdmission?.commit,currentHead);
+    assert.equal(currentLineage.evidenceAdmission?.parent,"6b13b756c021de9266ac449506e1e2912fbf290b");
+    assert.equal(currentLineage.evidenceAdmission?.paths.length,5);
+    assert.equal(currentLineage.evidenceVolume?.rounds.length,3);
+    assert.equal(currentLineage.evidenceVolume?.activations.length,0);
+    assert.equal(currentLineage.evidenceVolume?.continuations.length,0);
+  });
+  if(currentLineage.evidenceAdmission) {
+    const gRoot=join(work,"g-history");
+    const clonedG=spawnSync("git",["clone","--shared","--no-checkout",actualRoot,gRoot],{encoding:"utf8"});assert.equal(clonedG.status,0,clonedG.stderr);
+    git(gRoot,"checkout","--detach",currentHead);
+    const gEnv={...process.env,GIT_AUTHOR_NAME:"fixture",GIT_AUTHOR_EMAIL:"fixture@example.invalid",GIT_COMMITTER_NAME:"fixture",GIT_COMMITTER_EMAIL:"fixture@example.invalid",GIT_INDEX_FILE:join(work,"g-index")};
+    const ggit=(args:string[],input?:string)=>{const p=spawnSync("git",["-C",gRoot,...args],{encoding:"utf8",env:gEnv,input});assert.equal(p.status,0,p.stderr);return p.stdout.trimEnd();};
+    const gPaths=currentLineage.evidenceAdmission.paths;
+    const gMessage=(authority:string)=>"Fixture G admission\n\nFulcrum-Grant: FS24-D\nFulcrum-Phase: evidence-volume-admission\nFS24-F-Checkpoint: 2efe60ea7c74d301a1e2fc0ba52e1adc686f40dd\nFS24-F-Authority: "+currentLineage.evidenceVolume!.approval+"\nFS24-G-Authority: "+authority+"\nOwner-Approval-Receipt: "+authority+"\nFS24-G-Round: 1\n";
+    const gCommit=(parent:string,paths:string[],message:string,suffix="")=>{ggit(["read-tree",parent]);for(const path of paths){const blob=ggit(["hash-object","-w","--stdin"],at(actualRoot,currentHead,path)+suffix);ggit(["update-index","--add","--cacheinfo","100644,"+blob+","+path]);}return ggit(["commit-tree",ggit(["write-tree"]),"-p",parent],message);};
+    const validG=gCommit(currentLineage.evidenceAdmission.parent,gPaths,gMessage(currentLineage.evidenceAdmission.approval));
+    test("G-admission-fixture-valid",()=>{const state=closureLineage(gRoot,validG);assert.equal(state.evidenceAdmission?.commit,validG);assert.equal(state.evidenceVolume?.rounds.length,3);});
+    test("G-admission-reject-wrong-authority",()=>assert.throws(()=>closureLineage(gRoot,gCommit(currentLineage.evidenceAdmission!.parent,gPaths,gMessage("0".repeat(64)))),/G-Authority/));
+    test("G-admission-reject-wrong-parent",()=>assert.throws(()=>closureLineage(gRoot,gCommit("44fb08b87bf6690c2f18128b5940b0fb40c05a95",gPaths,gMessage(currentLineage.evidenceAdmission!.approval))),/G-Parent/));
+    test("G-admission-reject-incomplete-scope",()=>assert.throws(()=>closureLineage(gRoot,gCommit(currentLineage.evidenceAdmission!.parent,gPaths.slice(0,1),gMessage(currentLineage.evidenceAdmission!.approval))),/G-Scope/));
+    test("G-admission-reject-repeat",()=>assert.throws(()=>closureLineage(gRoot,gCommit(validG,gPaths,gMessage(currentLineage.evidenceAdmission!.approval),"\nfixture repeat\n")),/G-Parent/));
+  }
   test("F-scanner-resolves-canonical-WP-at-final-E",()=>{
     if(!currentLineage.evidenceVolume)return;
     const base=currentLineage.unmerged.length?currentLineage.candidateBase:currentHead;

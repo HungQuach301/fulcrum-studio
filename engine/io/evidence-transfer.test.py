@@ -535,6 +535,168 @@ class TransferTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'F-RoundOrder'):
             self.f_lineage(ordinal='0')
 
+    def g_lineage(self, authority=None, parent=None, delta=None, repeat=False):
+        c1 = '3ceb822b8b0f3bd69952ed7510c6dc269d92e8be'
+        c2 = '44fb08b87bf6690c2f18128b5940b0fb40c05a95'
+        c3 = e.G_PARENT
+        g1 = 'a' * 40; g2 = 'b' * 40
+        repair = {'rounds': ['r1'], 'merges': [], 'approval': e.E_APPROVAL,
+                  'paths': e.ALLOW, 'activations': []}
+        baseline = {'head': e.F_CHECKPOINT, 'code': e.SOURCE_HEAD,
+                    'epochs': [{'code': e.SOURCE_HEAD}], 'data': [{'commit': 'd' * 40}],
+                    'unmerged': [], 'candidateBase': e.F_CHECKPOINT, 'closure': False,
+                    'paths': e.ALLOW, 'dataPaths': ['pipeline/state.json'],
+                    'evidenceRepair': repair}
+        f_approval = e.f_authority_sha(); g_approval = authority or e.g_authority_sha()
+        f_message = lambda ordinal: '\n'.join([
+            'Fulcrum-Grant: FS24-D', 'Fulcrum-Phase: evidence-volume-implementation',
+            'FS24-F-Checkpoint: ' + e.F_CHECKPOINT, 'FS24-F-Authority: ' + f_approval,
+            'Owner-Approval-Receipt: ' + f_approval, 'FS24-F-Round: ' + str(ordinal)])
+        g_message = '\n'.join([
+            'Fulcrum-Grant: FS24-D', 'Fulcrum-Phase: ' + e.G_PHASE,
+            'FS24-F-Checkpoint: ' + e.F_CHECKPOINT, 'FS24-F-Authority: ' + f_approval,
+            'FS24-G-Authority: ' + g_approval, 'Owner-Approval-Receipt: ' + g_approval,
+            'FS24-G-Round: 1'])
+        parents = {c1: e.F_WP002, c2: c1, c3: c2, g1: parent or c3, g2: g1}
+        messages = {c1: f_message(1), c2: f_message(2), c3: f_message(3),
+                    g1: g_message, g2: g_message}
+        g_delta = list(e.G_ALLOW) if delta is None else delta
+
+        def git(root, *args):
+            if args == ('rev-parse', e.F_CHECKPOINT + '^{tree}'):
+                return e.F_CHECKPOINT_TREE + '\n'
+            if args[:4] == ('rev-list', '--parents', '-n', '1') and args[4] in parents:
+                return args[4] + ' ' + parents[args[4]] + '\n'
+            if args[:3] == ('show', '-s', '--format=%B') and args[3] in messages:
+                return messages[args[3]]
+            if args[0] == 'rev-parse' and args[1].endswith(':AGENTS.md'):
+                return 'a' * 40 + '\n'
+            if args[0] == 'ls-tree':
+                return '100644 blob ' + 'a' * 40 + '\t' + args[-1] + '\n'
+            self.fail('unexpected G git request: ' + str(args))
+
+        def field(text, key):
+            rows = [x[len(key) + 2:] for x in text.splitlines() if x.startswith(key + ': ')]
+            e.need(len(rows) == 1, 'Trailer:' + key); return rows[0]
+
+        def changed(root, before, after):
+            if before == e.F_CHECKPOINT:
+                return ([e.F_ALLOW[2]] if after in [c1, c2, c3]
+                        else sorted(set([e.F_ALLOW[2]] + g_delta)))
+            return g_delta if after in [g1, g2] else [e.F_ALLOW[2]]
+
+        head = g2 if repeat else g1
+        state = e.inspect_f_suffix(self.root, head, baseline, git, field, changed,
+                                   {'AGENTS.md': 'a' * 40}, ['pipeline/state.json'])
+        return baseline, state, g1
+
+    def test_g_admission_is_separate_and_does_not_replenish_f(self):
+        before, after, commit = self.g_lineage()
+        self.assertEqual(e.f_authority_sha(),
+                         'cc0187edbfd555887dc021f3f1b7ed0de6c9fd97757e32b46636bafeb96a46e8')
+        self.assertEqual(after['evidenceVolume']['rounds'][-1], e.G_PARENT)
+        self.assertEqual(len(after['evidenceVolume']['rounds']), 3)
+        self.assertEqual(after['evidenceVolume']['approval'], e.f_authority_sha())
+        self.assertEqual(after['evidenceAdmission'], {
+            'commit': commit, 'parent': e.G_PARENT, 'approval': e.g_authority_sha(),
+            'paths': e.G_ALLOW})
+        self.assertEqual(after['evidenceRepair'], before['evidenceRepair'])
+        self.assertEqual(after['unmerged'][-1], commit)
+
+    def test_g_admission_rejects_authority_parent_repeat_and_scope(self):
+        with self.assertRaisesRegex(ValueError, 'G-Authority'):
+            self.g_lineage(authority='0' * 64)
+        with self.assertRaisesRegex(ValueError, 'G-Parent'):
+            self.g_lineage(parent='44fb08b87bf6690c2f18128b5940b0fb40c05a95')
+        with self.assertRaisesRegex(ValueError, 'G-Parent'):
+            self.g_lineage(repeat=True)
+        with self.assertRaisesRegex(ValueError, 'G-Scope'):
+            self.g_lineage(delta=e.G_ALLOW[:-1])
+        with self.assertRaisesRegex(ValueError, 'F-TotalScope'):
+            self.g_lineage(delta=['package.json'])
+
+    def test_g_ledger_is_charged_separately_from_f(self):
+        old_head = 'c' * 40; g_head = 'e' * 40
+
+        def run(run_id, head=old_head, path='.github/workflows/ci.yml', event='push',
+                conclusion='success', title='fixture'):
+            return {'id': run_id, 'head_sha': head, 'head_branch': 'wp/002',
+                    'event': event, 'status': 'completed', 'conclusion': conclusion,
+                    'run_attempt': 1, 'path': path, 'display_title': title,
+                    'repository': {'full_name': e.REPO},
+                    'head_repository': {'full_name': e.REPO}}
+
+        pin = run(1, head=e.F_CHECKPOINT, path='.github/workflows/ci.yml')
+        baseline = []
+        ids = list(e.G_BASELINE_RUNS)
+        for index, run_id in enumerate(ids):
+            if index < 6:
+                baseline.append(run(run_id, head=e.F_CHECKPOINT,
+                    path='.github/workflows/recover-fs24-evidence.yml', event='workflow_run',
+                    conclusion='failure', title='FS24E ' + str(ids[6 + index])))
+            else:
+                baseline.append(run(run_id, conclusion='failure'))
+        direct_id = 35180000001
+        direct = run(direct_id, head=g_head, conclusion='success')
+        relay = run(35180000002, head=e.F_CHECKPOINT,
+                    path='.github/workflows/recover-fs24-evidence.yml', event='workflow_run',
+                    conclusion='failure', title='FS24E ' + str(direct_id))
+        whole_skip = run(35180000003, head=g_head,
+                         path='.github/workflows/acceptance-wp000.yml',
+                         event='pull_request', conclusion='skipped')
+        current = [pin] + baseline + [direct, relay, whole_skip]
+        jobs = {row['id']: [{}] * (4 if index < 12 else 3)
+                for index, row in enumerate(baseline)}
+        jobs[direct_id] = [{}] * 4; jobs[relay['id']] = [{}] * 3; jobs[whole_skip['id']] = []
+        artifacts = {row['id']: [] for row in current}
+        for index, row in enumerate(baseline[:10]):
+            artifacts[row['id']] = [{'size_in_bytes': 1 if index < 9 else 36847022}]
+        artifacts[direct_id] = [{'size_in_bytes': 11}, {'size_in_bytes': 13}]
+
+        class Reader:
+            def __init__(self, directory): self.directory = directory
+            def page(self, path, key, label):
+                if path == '/actions/runs': return current
+                match = __import__('re').fullmatch(r'/actions/runs/(\d+)/(jobs|artifacts)', path)
+                self_outer.assertIsNotNone(match)
+                return jobs[int(match.group(1))] if match.group(2) == 'jobs' else artifacts[int(match.group(1))]
+
+        class Preflight:
+            @staticmethod
+            def git(root, *args):
+                self.assertEqual(args[:3], ('show', '-s', '--format=%B'))
+                return ('Fulcrum-Phase: ' + (e.G_PHASE if args[3] == g_head
+                                             else 'evidence-volume-implementation') + '\n')
+            @staticmethod
+            def field(message, name):
+                return [line[len(name) + 2:] for line in message.splitlines()
+                        if line.startswith(name + ': ')][0]
+            @staticmethod
+            def inspect(root, head):
+                value = {'evidenceVolume': {'approval': e.f_authority_sha()}}
+                if head == g_head:
+                    value['evidenceAdmission'] = {'commit': g_head,
+                                                  'approval': e.g_authority_sha()}
+                return value
+
+        self_outer = self
+        original_baseline, original_preflight = e.f_baseline, e.load_preflight
+        e.f_baseline = lambda root: [{key: pin[key] for key in e.F_LEDGER_FIELDS}]
+        e.load_preflight = lambda root: Preflight()
+        directory = self.root / 'ledger'; directory.mkdir()
+        try:
+            e.check_f_ledger(Reader(directory), self.root)
+        finally:
+            e.f_baseline, e.load_preflight = original_baseline, original_preflight
+        summary = json.loads((directory / 'f-ledger-summary.json').read_text())
+        self.assertEqual(summary['fCharged']['activeRuns'], 15)
+        self.assertEqual(summary['fCharged']['jobsIncludingReservations'], 57)
+        self.assertEqual(summary['fCharged']['legacyRelays'], 6)
+        self.assertEqual(summary['gNew'], {
+            'workflowRuns': 3, 'activeRuns': 2, 'jobsIncludingReservations': 7,
+            'wholeWorkflowSkips': 1, 'legacyRelays': 1, 'artifactObjects': 2,
+            'artifactStorageBytes': 24})
+
 
 
 if __name__ == '__main__':
