@@ -520,3 +520,81 @@ Canonical UTF-8 JSON+LF is 3859 bytes. SHA-256:
 ~~~json
 {"allocations":{"admissionRecoveryCommits":1,"candidateCommits":0,"continuationCommits":0,"dataCommits":0,"dispatches":0,"emptyCommits":0,"premergePullRequests":1,"providerCalls":0,"recoveryActivations":0,"remoteRefUpdates":1,"repairCommits":0,"reruns":0,"retriggerCommits":0,"technicalMerges":0},"caps":{"activeRuns":5,"agentLogReceives":3,"artifactObjects":20,"authenticatedRedirects":3,"http206Ranges":3,"jobsIncludingReservations":25,"legacyRelays":0,"newArtifactStorageBytes":134217728,"rangeBytes":33554529,"reserveUsd":5,"runnerMinutes":600,"wholeWorkflowSkips":0,"workflowRuns":5,"zipReceives":16},"checkpoint":{"ledger":207,"main":"5ade77afe3fdfe4cb20c03f6234b7aec785f79ab","mainTree":"c2e32130efcdfcb0026cc514018bb748067ee25b","openWp002ToMainPullRequests":0,"wp002":"ab6560edc704d8e2901d5afc87a6ebc1712a488a","wp002Tree":"459b80c99144705bc796406c693132853384b7a9"},"consumedG1":{"activeRuns":5,"artifactObjects":0,"artifactStorageBytes":0,"authority":"fd6d3c27a2339d7517c03186096e22bc3a5c2dfa1ffaf1625ad6c707efa819e9","commit":"ab6560edc704d8e2901d5afc87a6ebc1712a488a","consumerReceipts":0,"http206Ranges":0,"jobs":19,"legacyRelays":2,"runIds":[35178816801,35178816736,35178816706,35178823940,35178823713],"tree":"459b80c99144705bc796406c693132853384b7a9","wholeWorkflowSkips":0,"workflowRuns":5},"consumedR2A":{"activeRuns":2,"artifactObjects":1,"artifactStorageBytes":null,"authority":"55a830dafb2ecf6294246667565ac8a2c4e6d9458a0e5e6bbc7481cf4bba51e4","budgetChanges":1,"dispatches":1,"jobs":7,"legacyRelays":1,"runIds":[35211069523,35211115853],"workflowRuns":2},"consumedR2B":{"activeRuns":1,"artifactObjects":0,"artifactStorageBytes":0,"authority":"639e3393367a597961af952c597c77ffeeddbda89b77fd6d0ed9cb5687a8a30d","commit":"5ade77afe3fdfe4cb20c03f6234b7aec785f79ab","dispatches":1,"jobs":4,"legacyRelays":0,"remoteRefUpdates":1,"runIds":[35232709535],"tree":"c2e32130efcdfcb0026cc514018bb748067ee25b","workflowRuns":1},"mergeGate":{"agentRequiredRuns":["push:Fulcrum CI","push:WP-002 Foundation Acceptance","push:FS24 Evidence Transfer","pull_request:Fulcrum CI","pull_request:WP-002 Foundation Acceptance"],"authorized":false,"classicBranchProtectionConfigured":false,"platformRequiredChecks":[],"rulesets":0},"preserve":{"B1":"unverified","B2":"unverified","WP002":"todo","branchProtection":"unverified","node20":"reserved","node24":"reserved","responseB":"missing","sourceReceiptReconciliation":"pending"},"readiness":{"chargedToG2":false,"event":"workflow_dispatch","expectedBoundary":"Preflight scope secret policy and checkpoint","head":"ab6560edc704d8e2901d5afc87a6ebc1712a488a","headBranch":"wp/002","jobPredicate":"exact-four-assigned-at-intentional-preflight-boundary","receiptSha256":"c9e879fbdeaf8fc14362caa0044efda1b826cc00b19b5bcdcd8cfc21ae54a066","receiptVersion":"FS24G-R2-readiness/2","repositoryId":1366804410,"runAttempt":1,"runConclusion":"failure","runId":35232709535,"runStatus":"completed","runnerLabel":"ubuntu-24.04","workflowPath":".github/workflows/ci.yml"},"receipt":{"bytes":15464,"libraryId":"libfile_e207c8e019588191b353be8a7492cf77","name":"FS24-G-R2B-EXECUTION-RECEIPT.md","sha256":"b0f3456d938960ca080a716fbb4075b01af9812ae5a1208e576edcfd496a0d4c"},"repository":"HungQuach301/fulcrum-studio","transition":{"mainBase":"5ade77afe3fdfe4cb20c03f6234b7aec785f79ab","mainBaseTree":"c2e32130efcdfcb0026cc514018bb748067ee25b","parent":"ab6560edc704d8e2901d5afc87a6ebc1712a488a","parentTree":"459b80c99144705bc796406c693132853384b7a9","paths":[".github/workflows/recover-fs24-evidence.yml","engine/ops/work-packages/WP-002-evidence-recovery.md","engine/io/evidence-transfer.py","engine/io/evidence-transfer.test.py","scripts/guardrails/index.ts","scripts/guardrails/guardrails.test.ts"],"phase":"evidence-volume-admission-recovery","relayGateBlob":"e26605cfbde8d2bf235d837b8da0e9dcd8ef34a7"},"version":"FS24G-R2/2"}
 ~~~
+
+## FS24-G-R2D — fail-closed repair after R2C STOP (đề nghị, chưa phải grant)
+
+Input receipt: Library ID `libfile_30a630abd3548191851c70e71805c9c1`, canonical
+name `FS24-G-R2C-PREMERGE-EXECUTION-STOP.md`, 22513 bytes, SHA-256
+`c85cfbdc447d70bc749540e56de2e9db8211b554e003b39f1f5e5beab68cea58`.
+Checkpoint is main `5ade77afe3fdfe4cb20c03f6234b7aec785f79ab`, tree
+`c2e32130efcdfcb0026cc514018bb748067ee25b`; wp/002
+`96cceb58a9dac119aabffe93b11f62990ef62905`, tree
+`569a2f260662a185efb34ea4bf3cd708bfc9b1b7`; ledger210 and zero open
+wp/002→main PR.
+
+R2C is frozen as consumed: three runs/15 jobs, 11 artifacts/33903067 bytes,
+seven ZIP receives, zero emitter-log receive and zero consumer receipt. Six observed
+guardrail failures have two proven causes: four G2 fixtures incorrectly parented their
+synthetic transition at current head instead of the preserved G1 admission commit; two
+scanner cases treated every prefixed companion document as a second authority. R2D anchors
+G2 fixtures to the preserved G1 commit and selects exactly one document carrying the
+numbered `4. Phạm vi cho phép` authority marker. Missing or duplicate markers remain a
+hard failure.
+
+R2C also proved that Range addresses the uploaded artifact archive, not its raw fixture:
+33554529 raw bytes became an exact 33554691-byte archive. R2D keeps both pins, requires
+the archive metadata and root manifest to equal 33554691 exactly, and proposes an explicit
+new Range cap of 33554691 bytes (+162). This proposal does not retroactively turn the R2C
+breach into PASS and is not approved merely by this document.
+
+The exact R2D allowlist is six paths:
+
+- `engine/ops/work-packages/WP-002-evidence-recovery.md`;
+- `engine/io/evidence-transfer.py`;
+- `engine/io/evidence-transfer.test.py`;
+- `scripts/guardrails/index.ts`;
+- `scripts/guardrails/scope.ts`;
+- `scripts/guardrails/guardrails.test.ts`.
+
+One separately approved code-bearing repair commit must have sole parent
+`96cceb58a9dac119aabffe93b11f62990ef62905`, exact non-empty six-path delta, and:
+
+~~~text
+Fulcrum-Grant: FS24-D
+Fulcrum-Phase: evidence-volume-admission-repair
+FS24-F-Checkpoint: 2efe60ea7c74d301a1e2fc0ba52e1adc686f40dd
+FS24-F-Authority: cc0187edbfd555887dc021f3f1b7ed0de6c9fd97757e32b46636bafeb96a46e8
+FS24-G-R2-Authority: 4447512a984015f41021286e75e3988e9b96abf522257a36068b59718a7c864f
+FS24-G-R2D-Authority: f160bb5e58a361b21aa7015282c7142ab046430b933642403f012a124b2d2e69
+Owner-Approval-Receipt: f160bb5e58a361b21aa7015282c7142ab046430b933642403f012a124b2d2e69
+FS24-G-R2D-Round: 1
+FS24-G-R2D-Range-Bytes: 33554691
+~~~
+
+Validator rejects repeat, wrong parent/tree, wrong old or new authority, incomplete/extra
+scope, Range-cap drift, relay blob drift and replacement of R2C/G1/F history. It adds no
+F candidate, merge, activation or continuation allocation.
+
+The proposed execution graph is three push runs (CI4 + acceptance6 + recovery5) followed,
+only after CI, exact three HTTP206/Content-Range receipts, three emitter-log receives and
+an independent consumer receipt all pass, by one PR and two PR runs (CI4 + acceptance6).
+R2D caps: 5 runs, 25 jobs, 20 artifacts, 16 ZIP receives, 3 emitter logs, 3 redirects,
+3 exact HTTP206, 33554691 Range bytes, 600 runner-minutes, 134217728 new artifact bytes,
+and a new reserve at most5USD. Current budget evidence is not embedded as a permanent
+fact; execution must freshly read Stop usage=Yes and headroom≥5USD before write.
+
+No relay is permitted. Any failed push/Range/receipt/accounting/budget/topology gate stops
+before PR with no retry, rerun, empty repair or second ref update. Platform rulesets and
+classic protection are currently absent, so even successful PR checks end at PREMERGE
+STOP; merge and F activation remain unauthorized. All prior grants/accounting/reservations,
+including responseB missing, WP002 todo, sourceReceiptReconciliation pending, B1/B2
+unverified, Node20/Node24 reserved and legacy branchProtection unverified, remain unchanged.
+
+### Authority canonical G-R2D
+
+Canonical UTF-8 JSON+LF is 3561 bytes. SHA-256:
+`f160bb5e58a361b21aa7015282c7142ab046430b933642403f012a124b2d2e69`.
+
+~~~json
+{"allocations":{"admissionRecoveryCommits":0,"candidateCommits":0,"continuationCommits":0,"dataCommits":0,"dispatches":0,"emptyCommits":0,"premergePullRequests":1,"providerCalls":0,"recoveryActivations":0,"remoteRefUpdates":1,"repairCommits":1,"reruns":0,"retriggerCommits":0,"technicalMerges":0},"caps":{"activeRuns":5,"agentLogReceives":3,"artifactObjects":20,"authenticatedRedirects":3,"http206Ranges":3,"jobsIncludingReservations":25,"legacyRelays":0,"newArtifactStorageBytes":134217728,"rangeBytes":33554691,"reserveUsd":5,"runnerMinutes":600,"wholeWorkflowSkips":0,"workflowRuns":5,"zipReceives":16},"checkpoint":{"ledger":210,"main":"5ade77afe3fdfe4cb20c03f6234b7aec785f79ab","mainTree":"c2e32130efcdfcb0026cc514018bb748067ee25b","openWp002ToMainPullRequests":0,"wp002":"96cceb58a9dac119aabffe93b11f62990ef62905","wp002Tree":"569a2f260662a185efb34ea4bf3cd708bfc9b1b7"},"consumedR2C":{"activeRuns":3,"agentLogReceives":0,"approvedRangeBytes":33554529,"artifactObjects":11,"artifactStorageBytes":33903067,"assignedRunnerWallSeconds":326,"authenticatedRedirectPaths":3,"authority":"4447512a984015f41021286e75e3988e9b96abf522257a36068b59718a7c864f","budgetActualUsd":0.2,"commit":"96cceb58a9dac119aabffe93b11f62990ef62905","consumerReceipts":0,"http206Ranges":3,"jobs":15,"legacyRelays":0,"rangeBytes":33554691,"rangeDeltaBytes":162,"result":"STOP","runIds":[35243814149,35243814163,35243814309],"standaloneRedirectReceipts":0,"tree":"569a2f260662a185efb34ea4bf3cd708bfc9b1b7","wholeWorkflowSkips":0,"workflowRuns":3,"zipReceives":7},"inheritedAuthorities":{"F":"cc0187edbfd555887dc021f3f1b7ed0de6c9fd97757e32b46636bafeb96a46e8","G1":"fd6d3c27a2339d7517c03186096e22bc3a5c2dfa1ffaf1625ad6c707efa819e9","R2A":"55a830dafb2ecf6294246667565ac8a2c4e6d9458a0e5e6bbc7481cf4bba51e4","R2B":"639e3393367a597961af952c597c77ffeeddbda89b77fd6d0ed9cb5687a8a30d","R2C":"4447512a984015f41021286e75e3988e9b96abf522257a36068b59718a7c864f"},"mergeGate":{"agentRequiredRuns":["push:Fulcrum CI","push:WP-002 Foundation Acceptance","push:FS24 Evidence Transfer","pull_request:Fulcrum CI","pull_request:WP-002 Foundation Acceptance"],"authorized":false,"classicBranchProtectionConfigured":false,"platformRequiredChecks":[],"rulesets":0},"preserve":{"B1":"unverified","B2":"unverified","WP002":"todo","branchProtection":"unverified","node20":"reserved","node24":"reserved","responseB":"missing","sourceReceiptReconciliation":"pending"},"qualification":{"archiveOverheadBytes":162,"artifactArchiveBytes":33554691,"httpStatus":206,"rangeByteSumMustEqualCap":true,"rangeCount":3,"rawPayloadBytes":33554529},"receipt":{"bytes":22513,"libraryId":"libfile_30a630abd3548191851c70e71805c9c1","name":"FS24-G-R2C-PREMERGE-EXECUTION-STOP.md","sha256":"c85cfbdc447d70bc749540e56de2e9db8211b554e003b39f1f5e5beab68cea58"},"repository":"HungQuach301/fulcrum-studio","transition":{"mainBase":"5ade77afe3fdfe4cb20c03f6234b7aec785f79ab","mainBaseTree":"c2e32130efcdfcb0026cc514018bb748067ee25b","parent":"96cceb58a9dac119aabffe93b11f62990ef62905","parentTree":"569a2f260662a185efb34ea4bf3cd708bfc9b1b7","paths":["engine/ops/work-packages/WP-002-evidence-recovery.md","engine/io/evidence-transfer.py","engine/io/evidence-transfer.test.py","scripts/guardrails/index.ts","scripts/guardrails/scope.ts","scripts/guardrails/guardrails.test.ts"],"phase":"evidence-volume-admission-repair","priorAuthority":"4447512a984015f41021286e75e3988e9b96abf522257a36068b59718a7c864f","priorPhase":"evidence-volume-admission-recovery","relayGateBlob":"e26605cfbde8d2bf235d837b8da0e9dcd8ef34a7"},"version":"FS24G-R2D/1"}
+~~~

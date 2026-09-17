@@ -342,13 +342,33 @@ class TransferTests(unittest.TestCase):
                     reader.range_get('https://fixture.blob.core.windows.net/archive', 10, 20, 100,
                                      self.root / ('bad-%d.bin' % status), 'bad-%d' % status)
 
+    def test_g2d_qualification_range_cap_is_exact_archive_not_raw_payload(self):
+        self.assertEqual(e.F_QUALIFICATION_ARCHIVE_BYTES - e.F_QUALIFICATION_BYTES, 162)
+        self.assertEqual(e.G2D_AUTHORITY['caps']['rangeBytes'],
+                         e.F_QUALIFICATION_ARCHIVE_BYTES)
+        def root_for(size):
+            source = {'artifact': 123, 'name': 'qualification', 'bytes': size,
+                      'sha256': 'a' * 64}
+            plan = e.f_plan(source, self.f_binding('qualify'))
+            return {'version': e.F_VERSION, 'authoritySha256': e.f_authority_sha(),
+                    'planSha256': e.sha(e.canonical(plan)), 'plan': plan,
+                    'volumeManifests': [],
+                    'missingVolumes': plan['selectedVolumes'],
+                    'producerResult': 'failure', 'agentReceive': 'unproven',
+                    'preserve': e.F_AUTHORITY['preserve'], 'billingActualUsd': None}
+        e.validate_root_manifest(root_for(e.F_QUALIFICATION_ARCHIVE_BYTES))
+        for size in [e.F_QUALIFICATION_BYTES,
+                     e.F_QUALIFICATION_ARCHIVE_BYTES + 1]:
+            with self.assertRaisesRegex(ValueError, 'F-QualificationArchiveBytes'):
+                e.validate_root_manifest(root_for(size))
+
     def test_f_volume_roundtrip_large_zip_crc_and_offline_receiver(self):
         archive = self.root / 'large-source.zip'
         payload = hashlib.shake_256(b'FS24F test large zip').digest(e.F_VOLUME_BYTES + 97)
         with zipfile.ZipFile(archive, 'x', compression=zipfile.ZIP_STORED, allowZip64=True) as z:
             z.writestr('large.bin', payload)
         source = {'artifact': 123, 'name': 'fixture-source', **e.measure(archive)}
-        plan = e.f_plan(source, self.f_binding())
+        plan = e.f_plan(source, self.f_binding('recover'))
         self.assertEqual(len(plan['volumes']), 2)
         logs = []; manifests = []
         raw = archive.read_bytes()
@@ -721,6 +741,69 @@ class TransferTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'G2-ReadinessTrailer'):
             self.g2_lineage(readiness_receipt='0' * 64)
 
+    def g2d_transition(self, authority=None, parent=None, delta=None,
+                       range_bytes=None, repeated=False, relay_blob=None):
+        commit = 'f' * 40
+        approval = authority or e.g2d_authority_sha()
+        message = '\n'.join([
+            'Fulcrum-Grant: FS24-D', 'Fulcrum-Phase: ' + e.G2D_PHASE,
+            'FS24-F-Checkpoint: ' + e.F_CHECKPOINT,
+            'FS24-F-Authority: ' + e.f_authority_sha(),
+            'FS24-G-R2-Authority: ' + e.g2_authority_sha(),
+            'FS24-G-R2D-Authority: ' + approval,
+            'Owner-Approval-Receipt: ' + approval,
+            'FS24-G-R2D-Round: 1',
+            'FS24-G-R2D-Range-Bytes: ' + (range_bytes or str(e.F_QUALIFICATION_ARCHIVE_BYTES))])
+        state = {
+            'candidateBase': e.G2_MAIN, 'unmerged': [e.G2D_PARENT],
+            'evidenceAdmission': {'commit': e.G2_PARENT},
+            'evidenceAdmissionRecovery': {
+                'commit': e.G2D_PARENT, 'parent': e.G2_PARENT,
+                'approval': e.g2_authority_sha(), 'paths': e.G2_ALLOW,
+                'readinessRun': e.G2_READINESS_RUN,
+                'readinessReceipt': e.G2_READINESS_RECEIPT}}
+        if repeated:
+            state['evidenceAdmissionRepair'] = {'commit': 'e' * 40}
+
+        def git(root, *args):
+            values = {
+                ('rev-parse', e.G2D_PARENT + '^{tree}'): e.G2D_PARENT_TREE,
+                ('rev-parse', commit + ':' + e.G2_RELAY_PATH):
+                    relay_blob or e.G2_RELAY_BLOB}
+            self.assertIn(args, values)
+            return values[args] + '\n'
+
+        def field(text, key):
+            rows = [x[len(key) + 2:] for x in text.splitlines()
+                    if x.startswith(key + ': ')]
+            e.need(len(rows) == 1, 'Trailer:' + key)
+            return rows[0]
+
+        return e.validate_g2d_transition(
+            self.root, commit, [parent or e.G2D_PARENT],
+            list(e.G2D_ALLOW) if delta is None else delta,
+            state, git, field, message)
+
+    def test_g2d_transition_is_exact_and_preserves_consumed_lineage(self):
+        self.assertEqual(self.g2d_transition(), {
+            'commit': 'f' * 40, 'parent': e.G2D_PARENT,
+            'approval': e.g2d_authority_sha(), 'paths': e.G2D_ALLOW,
+            'rangeBytes': e.F_QUALIFICATION_ARCHIVE_BYTES})
+
+    def test_g2d_rejects_authority_parent_repeat_scope_range_and_relay(self):
+        with self.assertRaisesRegex(ValueError, 'G2D-Authority'):
+            self.g2d_transition(authority='0' * 64)
+        with self.assertRaisesRegex(ValueError, 'G2D-Parent'):
+            self.g2d_transition(parent=e.G2_PARENT)
+        with self.assertRaisesRegex(ValueError, 'G2D-Lineage'):
+            self.g2d_transition(repeated=True)
+        with self.assertRaisesRegex(ValueError, 'G2D-Scope'):
+            self.g2d_transition(delta=e.G2D_ALLOW[:-1])
+        with self.assertRaisesRegex(ValueError, 'G2D-RangeCap'):
+            self.g2d_transition(range_bytes=str(e.F_QUALIFICATION_BYTES))
+        with self.assertRaisesRegex(ValueError, 'G2D-RelayGate'):
+            self.g2d_transition(relay_blob='0' * 40)
+
     @staticmethod
     def readiness_fixture():
         run = {'id': e.G2_READINESS_RUN, 'head_sha': e.G2_PARENT,
@@ -831,9 +914,10 @@ class TransferTests(unittest.TestCase):
         self.assertEqual(state['candidateBase'], e.G2_MAIN)
         self.assertEqual(state['evidenceVolume'], baseline['evidenceVolume'])
 
-    def test_g2_ledger_freezes_pre207_without_historic_subresource_gets(self):
+    def test_g2d_ledger_freezes_through_210_without_historic_subresource_gets(self):
         old_head = 'c' * 40
         g2_head = 'e' * 40
+        g2d_head = 'f' * 40
         def run(run_id, head=old_head, path='.github/workflows/ci.yml',
                 event='push', conclusion='success', title='fixture',
                 branch='wp/002', status='completed'):
@@ -855,11 +939,17 @@ class TransferTests(unittest.TestCase):
                 title='FS24E ' + str(e.G2_R2A_RUNS[0]), branch='main'),
             run(e.G2_READINESS_RUN, head=e.G2_PARENT, event='workflow_dispatch',
                 conclusion='failure')]
-        direct = [
-            run(40000000001, head=g2_head),
-            run(40000000002, head=g2_head,
+        frozen += [
+            run(e.G2C_RUNS[0], head=g2_head,
+                path='.github/workflows/recover-fs24-evidence.yml'),
+            run(e.G2C_RUNS[1], head=g2_head,
                 path='.github/workflows/acceptance-wp002.yml'),
-            run(40000000003, head=g2_head,
+            run(e.G2C_RUNS[2], head=g2_head, conclusion='failure')]
+        direct = [
+            run(40000000001, head=g2d_head),
+            run(40000000002, head=g2d_head,
+                path='.github/workflows/acceptance-wp002.yml'),
+            run(40000000003, head=g2d_head,
                 path='.github/workflows/recover-fs24-evidence.yml')]
         current = [pin] + frozen + direct
         jobs = {direct[0]['id']: [{}] * 4, direct[1]['id']: [{}] * 6,
@@ -883,15 +973,15 @@ class TransferTests(unittest.TestCase):
         class Preflight:
             @staticmethod
             def git(root, *args):
-                self.assertEqual(args, ('show', '-s', '--format=%B', g2_head))
-                return 'Fulcrum-Phase: ' + e.G2_PHASE + '\n'
+                self.assertEqual(args, ('show', '-s', '--format=%B', g2d_head))
+                return 'Fulcrum-Phase: ' + e.G2D_PHASE + '\n'
             @staticmethod
             def inspect(root, head):
-                self.assertEqual(head, g2_head)
+                self.assertEqual(head, g2d_head)
                 return {'evidenceVolume': {'approval': e.f_authority_sha()},
-                        'evidenceAdmissionRecovery': {
-                            'commit': g2_head, 'approval': e.g2_authority_sha(),
-                            'readinessRun': e.G2_READINESS_RUN}}
+                        'evidenceAdmissionRepair': {
+                            'commit': g2d_head, 'approval': e.g2d_authority_sha(),
+                            'rangeBytes': e.F_QUALIFICATION_ARCHIVE_BYTES}}
 
         self_outer = self
         original_baseline, original_preflight = e.f_baseline, e.load_preflight
@@ -907,7 +997,9 @@ class TransferTests(unittest.TestCase):
         self.assertEqual(summary['g1Frozen']['workflowRuns'], 5)
         self.assertEqual(summary['r2aFrozen']['workflowRuns'], 2)
         self.assertEqual(summary['r2bFrozen']['workflowRuns'], 1)
-        self.assertEqual(summary['g2New'], {
+        self.assertEqual(summary['r2cFrozen']['workflowRuns'], 3)
+        self.assertEqual(summary['r2cFrozen']['rangeDeltaBytes'], 162)
+        self.assertEqual(summary['g2dNew'], {
             'workflowRuns': 3, 'activeRuns': 3,
             'jobsIncludingReservations': 15, 'wholeWorkflowSkips': 0,
             'legacyRelays': 0, 'artifactObjects': 6,

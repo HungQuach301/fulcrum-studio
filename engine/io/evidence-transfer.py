@@ -50,6 +50,9 @@ F_PARTS_PER_VOLUME = 8
 F_VOLUME_BYTES = F_PART_BYTES * F_PARTS_PER_VOLUME
 F_MAX_VOLUMES = 82
 F_QUALIFICATION_BYTES = 32 * 1024 * 1024 + 97
+# The upload-artifact v4 archive observed in R2C is the byte source addressed
+# by HTTP Range.  Keep raw payload and carrier bytes as separate pins.
+F_QUALIFICATION_ARCHIVE_BYTES = 33554691
 F_ALLOW = ['engine/ops/work-packages/WP-002-evidence-recovery.md',
            '.github/workflows/recover-fs24-evidence.yml', 'engine/io/evidence-transfer.py',
            'engine/io/evidence-transfer.test.py', 'scripts/wp002-preflight.py',
@@ -205,6 +208,79 @@ G2_AUTHORITY = {
     'transition': {'phase': G2_PHASE, 'parent': G2_PARENT,
                    'parentTree': G2_PARENT_TREE, 'mainBase': G2_MAIN,
                    'mainBaseTree': G2_MAIN_TREE, 'paths': G2_ALLOW,
+                   'relayGateBlob': G2_RELAY_BLOB},
+    'mergeGate': {'authorized': False, 'platformRequiredChecks': [],
+                  'classicBranchProtectionConfigured': False, 'rulesets': 0,
+                  'agentRequiredRuns': ['push:Fulcrum CI', 'push:WP-002 Foundation Acceptance',
+                                        'push:FS24 Evidence Transfer',
+                                        'pull_request:Fulcrum CI',
+                                        'pull_request:WP-002 Foundation Acceptance']},
+    'preserve': F_AUTHORITY['preserve'],
+}
+
+# FS24-G-R2D is a one-shot, code-bearing repair of the six R2C regressions.
+# It preserves the consumed R2C transition and gives the observed artifact
+# archive its own explicit Range cap instead of silently treating raw payload
+# bytes as transport bytes.
+G2D_VERSION = 'FS24G-R2D/1'
+G2D_PHASE = 'evidence-volume-admission-repair'
+G2D_PARENT = '96cceb58a9dac119aabffe93b11f62990ef62905'
+G2D_PARENT_TREE = '569a2f260662a185efb34ea4bf3cd708bfc9b1b7'
+G2D_ALLOW = ['engine/ops/work-packages/WP-002-evidence-recovery.md',
+             'engine/io/evidence-transfer.py', 'engine/io/evidence-transfer.test.py',
+             'scripts/guardrails/index.ts', 'scripts/guardrails/scope.ts',
+             'scripts/guardrails/guardrails.test.ts']
+G2C_RUNS = [35243814149, 35243814163, 35243814309]
+G2D_AUTHORITY = {
+    'version': G2D_VERSION,
+    'repository': REPO,
+    'checkpoint': {'main': G2_MAIN, 'mainTree': G2_MAIN_TREE,
+                   'wp002': G2D_PARENT, 'wp002Tree': G2D_PARENT_TREE,
+                   'ledger': 210, 'openWp002ToMainPullRequests': 0},
+    'receipt': {'libraryId': 'libfile_30a630abd3548191851c70e71805c9c1',
+                'name': 'FS24-G-R2C-PREMERGE-EXECUTION-STOP.md', 'bytes': 22513,
+                'sha256': 'c85cfbdc447d70bc749540e56de2e9db8211b554e003b39f1f5e5beab68cea58'},
+    'inheritedAuthorities': {
+        'F': 'cc0187edbfd555887dc021f3f1b7ed0de6c9fd97757e32b46636bafeb96a46e8',
+        'G1': 'fd6d3c27a2339d7517c03186096e22bc3a5c2dfa1ffaf1625ad6c707efa819e9',
+        'R2A': '55a830dafb2ecf6294246667565ac8a2c4e6d9458a0e5e6bbc7481cf4bba51e4',
+        'R2B': G2B_AUTHORITY,
+        'R2C': '4447512a984015f41021286e75e3988e9b96abf522257a36068b59718a7c864f'},
+    'consumedR2C': {
+        'authority': '4447512a984015f41021286e75e3988e9b96abf522257a36068b59718a7c864f',
+        'commit': G2D_PARENT, 'tree': G2D_PARENT_TREE, 'runIds': G2C_RUNS,
+        'workflowRuns': 3, 'activeRuns': 3, 'jobs': 15,
+        'wholeWorkflowSkips': 0, 'legacyRelays': 0,
+        'artifactObjects': 11, 'artifactStorageBytes': 33903067,
+        'zipReceives': 7, 'agentLogReceives': 0,
+        'authenticatedRedirectPaths': 3, 'standaloneRedirectReceipts': 0,
+        'http206Ranges': 3, 'rangeBytes': F_QUALIFICATION_ARCHIVE_BYTES,
+        'approvedRangeBytes': F_QUALIFICATION_BYTES, 'rangeDeltaBytes': 162,
+        'consumerReceipts': 0, 'assignedRunnerWallSeconds': 326,
+        'budgetActualUsd': 0.20, 'result': 'STOP'},
+    'allocations': {'repairCommits': 1, 'remoteRefUpdates': 1,
+                    'premergePullRequests': 1, 'candidateCommits': 0,
+                    'admissionRecoveryCommits': 0, 'retriggerCommits': 0,
+                    'technicalMerges': 0, 'recoveryActivations': 0,
+                    'continuationCommits': 0, 'emptyCommits': 0,
+                    'dispatches': 0, 'reruns': 0, 'providerCalls': 0,
+                    'dataCommits': 0},
+    'caps': {'workflowRuns': 5, 'activeRuns': 5,
+             'jobsIncludingReservations': 25, 'wholeWorkflowSkips': 0,
+             'legacyRelays': 0, 'artifactObjects': 20, 'zipReceives': 16,
+             'agentLogReceives': 3, 'authenticatedRedirects': 3,
+             'http206Ranges': 3, 'rangeBytes': F_QUALIFICATION_ARCHIVE_BYTES,
+             'runnerMinutes': 600, 'newArtifactStorageBytes': 134217728,
+             'reserveUsd': 5},
+    'qualification': {'rawPayloadBytes': F_QUALIFICATION_BYTES,
+                      'artifactArchiveBytes': F_QUALIFICATION_ARCHIVE_BYTES,
+                      'archiveOverheadBytes': 162, 'httpStatus': 206,
+                      'rangeCount': 3, 'rangeByteSumMustEqualCap': True},
+    'transition': {'phase': G2D_PHASE, 'parent': G2D_PARENT,
+                   'parentTree': G2D_PARENT_TREE, 'mainBase': G2_MAIN,
+                   'mainBaseTree': G2_MAIN_TREE, 'paths': G2D_ALLOW,
+                   'priorPhase': G2_PHASE,
+                   'priorAuthority': '4447512a984015f41021286e75e3988e9b96abf522257a36068b59718a7c864f',
                    'relayGateBlob': G2_RELAY_BLOB},
     'mergeGate': {'authorized': False, 'platformRequiredChecks': [],
                   'classicBranchProtectionConfigured': False, 'rulesets': 0,
@@ -457,6 +533,45 @@ def g2_authority_sha():
     return sha(canonical(G2_AUTHORITY))
 
 
+def g2d_authority_sha():
+    return sha(canonical(G2D_AUTHORITY))
+
+
+def validate_g2d_transition(root, commit, parents, delta, state, git, field, message):
+    """Validate the one-shot R2D repair independently of historical traversal."""
+    approval = field(message, 'FS24-G-R2D-Authority')
+    need(field(message, 'FS24-G-R2-Authority') == g2_authority_sha()
+         and approval == g2d_authority_sha()
+         and field(message, 'Owner-Approval-Receipt') == approval,
+         'G2D-Authority')
+    need(len(parents) == 1 and parents[0] == G2D_PARENT, 'G2D-Parent')
+    need(git(root, 'rev-parse', G2D_PARENT + '^{tree}').strip()
+         == G2D_PARENT_TREE, 'G2D-ParentTree')
+    need(set(delta) == set(G2D_ALLOW), 'G2D-Scope')
+    need(field(message, 'FS24-G-R2D-Round') == '1', 'G2D-Round')
+    range_bytes = field(message, 'FS24-G-R2D-Range-Bytes')
+    need(re.fullmatch('[1-9][0-9]*', range_bytes)
+         and int(range_bytes) == F_QUALIFICATION_ARCHIVE_BYTES,
+         'G2D-RangeCap')
+    recovery = state.get('evidenceAdmissionRecovery')
+    need(recovery and recovery['commit'] == G2D_PARENT
+         and recovery['parent'] == G2_PARENT
+         and recovery['approval'] == g2_authority_sha()
+         and recovery['paths'] == G2_ALLOW
+         and recovery['readinessRun'] == G2_READINESS_RUN
+         and recovery['readinessReceipt'] == G2_READINESS_RECEIPT,
+         'G2D-R2CPreserved')
+    need(state.get('evidenceAdmission')
+         and state['evidenceAdmission']['commit'] == G2_PARENT
+         and state['candidateBase'] == G2_MAIN and state['unmerged']
+         and state['unmerged'][-1] == G2D_PARENT
+         and not state.get('evidenceAdmissionRepair'), 'G2D-Lineage')
+    need(git(root, 'rev-parse', commit + ':' + G2_RELAY_PATH).strip()
+         == G2_RELAY_BLOB, 'G2D-RelayGate')
+    return {'commit': commit, 'parent': G2D_PARENT, 'approval': approval,
+            'paths': G2D_ALLOW, 'rangeBytes': int(range_bytes)}
+
+
 def f_plan(source, binding, selected=None):
     """Describe every byte before any Range request; selected limits this run only."""
     need(source['artifact'] > 0 and safe_name(source['name']), 'F-SourceIdentity')
@@ -653,6 +768,9 @@ def decode_volume(path, expected_manifest):
 def validate_root_manifest(root):
     need(root['version'] == F_VERSION and root['authoritySha256'] == f_authority_sha(), 'F-RootAuthority')
     plan = root['plan']; validate_f_plan(plan)
+    if plan['binding'].get('mode') == 'qualify':
+        need(plan['source']['bytes'] == F_QUALIFICATION_ARCHIVE_BYTES,
+             'F-QualificationArchiveBytes')
     need(root['planSha256'] == sha(canonical(plan)), 'F-RootPlanPin')
     manifests = root['volumeManifests']
     present = [x['volume'] for x in manifests]
@@ -1125,19 +1243,27 @@ def inspect_f_suffix(root, head, baseline, git, field, changed, policy, data):
             g2_approval = field(message, 'FS24-G-R2-Authority')
             need(g2_approval == g2_authority_sha() and owner_approval == g2_approval,
                  'G2-Authority')
+        elif phase == G2D_PHASE:
+            g2d_approval = field(message, 'FS24-G-R2D-Authority')
+            need(field(message, 'FS24-G-R2-Authority') == g2_authority_sha()
+                 and g2d_approval == g2d_authority_sha()
+                 and owner_approval == g2d_approval, 'G2D-Authority')
         else:
             need(owner_approval == approval, 'F-Authority')
         extension = state.setdefault('evidenceVolume', {'rounds': [], 'merges': [],
             'approval': approval, 'paths': F_ALLOW, 'activations': [], 'continuations': []})
         need(extension['approval'] == approval and extension['paths'] == F_ALLOW, 'F-AuthorityChanged')
         delta = changed(root, parents[0], commit)
-        need(set(changed(root, F_CHECKPOINT, commit)) <= set(F_ALLOW), 'F-TotalScope')
+        total_allow = set(F_ALLOW)
+        if phase == G2D_PHASE or state.get('evidenceAdmissionRepair') is not None:
+            total_allow |= set(G2D_ALLOW)
+        need(set(changed(root, F_CHECKPOINT, commit)) <= total_allow, 'F-TotalScope')
         for path, blob in policy.items():
             need(git(root, 'rev-parse', commit + ':' + path).strip() == blob, 'F-PolicyFreeze')
         for path in data:
             need(git(root, 'ls-tree', F_CHECKPOINT, '--', path) == git(root, 'ls-tree', commit, '--', path), 'F-DataFreeze')
         for path in delta:
-            need(path in F_ALLOW and git(root, 'ls-tree', commit, '--', path).startswith('100644 '), 'F-ScopeMode')
+            need(path in total_allow and git(root, 'ls-tree', commit, '--', path).startswith('100644 '), 'F-ScopeMode')
         if len(parents) == 2:
             need(phase == 'evidence-volume-merge', 'F-MergePhase')
             candidate = visit(parents[1])
@@ -1213,6 +1339,10 @@ def inspect_f_suffix(root, head, baseline, git, field, changed, policy, data):
             state['relayGateBootstrap'] = json.loads(json.dumps(G2B_RECORD))
             state['candidateBase'] = G2_MAIN
             state['unmerged'].append(commit)
+        elif phase == G2D_PHASE:
+            state['evidenceAdmissionRepair'] = validate_g2d_transition(
+                root, commit, parents, delta, state, git, field, message)
+            state['unmerged'].append(commit)
         elif phase == 'evidence-volume-recover':
             need(len(parents) == 1 and not delta and not state['unmerged'] and extension['merges']
                  and not extension['activations'] and not extension['continuations'], 'F-RecoveryTree')
@@ -1242,7 +1372,8 @@ def inspect_f_suffix(root, head, baseline, git, field, changed, policy, data):
         else:
             raise ValueError('F-UnclassifiedPhase')
         state['head'] = commit
-        state['paths'] = sorted(set(baseline['paths']) | set(F_ALLOW))
+        state['paths'] = sorted(set(baseline['paths']) | set(F_ALLOW)
+                                | (set(G2D_ALLOW) if state.get('evidenceAdmissionRepair') else set()))
         need(state['epochs'] == baseline['epochs'] and state['data'] == baseline['data']
              and state['code'] == baseline['code'] and state['closure'] == baseline['closure']
              and state.get('evidenceRepair') == baseline.get('evidenceRepair'), 'F-HistoryPreserved')
@@ -1251,6 +1382,9 @@ def inspect_f_suffix(root, head, baseline, git, field, changed, policy, data):
         if previous.get('evidenceAdmissionRecovery') is not None:
             need(state.get('evidenceAdmissionRecovery') == previous['evidenceAdmissionRecovery'],
                  'G2-HistoryPreserved')
+        if previous.get('evidenceAdmissionRepair') is not None:
+            need(state.get('evidenceAdmissionRepair') == previous['evidenceAdmissionRepair'],
+                 'G2D-HistoryPreserved')
         if previous.get('relayGateBootstrap') is not None:
             need(state.get('relayGateBootstrap') == previous['relayGateBootstrap'],
                  'G2B-HistoryPreserved')
@@ -1440,7 +1574,7 @@ def f_baseline(root):
 
 
 def check_f_ledger(reader, root):
-    """Account only new runs online; all pre-207 groups stay receipt-frozen."""
+    """Account only post-210 runs online; every consumed group stays frozen."""
     pins = f_baseline(root)
     current = reader.page('/actions/runs', 'workflow_runs', 'f-ledger')
     by_id = {x['id']: x for x in current}
@@ -1453,6 +1587,7 @@ def check_f_ledger(reader, root):
         'g1': set(G2_STOP_RUNS),
         'r2a': set(G2_R2A_RUNS),
         'r2b': {G2_READINESS_RUN},
+        'r2c': set(G2C_RUNS),
     }
     frozen_ids = set().union(*frozen_groups.values())
     need(sum(len(x) for x in frozen_groups.values()) == len(frozen_ids),
@@ -1472,12 +1607,12 @@ def check_f_ledger(reader, root):
             message = pf.git(root, 'show', '-s', '--format=%B', head)
             phases = re.findall(r'^Fulcrum-Phase: (.+)$', message, re.M)
             state = pf.inspect(root, head)
-            if phases == [G2_PHASE]:
-                recovery = state.get('evidenceAdmissionRecovery')
-                phase_cache[head] = ('g2' if recovery
-                    and recovery['commit'] == head
-                    and recovery['approval'] == g2_authority_sha()
-                    and recovery['readinessRun'] == G2_READINESS_RUN else None)
+            if phases == [G2D_PHASE]:
+                repair = state.get('evidenceAdmissionRepair')
+                phase_cache[head] = ('g2d' if repair
+                    and repair['commit'] == head
+                    and repair['approval'] == g2d_authority_sha()
+                    and repair['rangeBytes'] == F_QUALIFICATION_ARCHIVE_BYTES else None)
             else:
                 volume = state.get('evidenceVolume')
                 phase_cache[head] = ('f' if volume
@@ -1497,9 +1632,10 @@ def check_f_ledger(reader, root):
     g1 = G2_AUTHORITY['consumedG1']
     r2a = G2_AUTHORITY['consumedR2A']
     r2b = G2_AUTHORITY['consumedR2B']
-    g2 = {'workflowRuns': 0, 'activeRuns': 0, 'jobsIncludingReservations': 0,
-          'wholeWorkflowSkips': 0, 'legacyRelays': 0, 'artifactObjects': 0,
-          'artifactStorageBytes': 0}
+    r2c = G2D_AUTHORITY['consumedR2C']
+    g2d = {'workflowRuns': 0, 'activeRuns': 0, 'jobsIncludingReservations': 0,
+           'wholeWorkflowSkips': 0, 'legacyRelays': 0, 'artifactObjects': 0,
+           'artifactStorageBytes': 0}
     records = [{'run': run['id'], 'frozenGroup': name}
                for name, ids in frozen_groups.items()
                for run in added if run['id'] in ids]
@@ -1524,13 +1660,13 @@ def check_f_ledger(reader, root):
             phase = head_phase(by_id[int(source_match.group(1))]['head_sha'])
         else:
             phase = head_phase(run['head_sha'])
-        need(phase in ['f', 'g2'], 'F-UnclassifiedHead')
-        target = g2 if phase == 'g2' else f_charged
-        if phase == 'g2':
-            need(run['event'] in ['push', 'pull_request'], 'G2-LegacyRelayForbidden')
+        need(phase in ['f', 'g2d'], 'F-UnclassifiedHead')
+        target = g2d if phase == 'g2d' else f_charged
+        if phase == 'g2d':
+            need(run['event'] in ['push', 'pull_request'], 'G2D-LegacyRelayForbidden')
             need(path in reserve_by_path or path in [
                 '.github/workflows/acceptance-wp000.yml',
-                '.github/workflows/review-wp000-spec.yml'], 'G2-WorkflowScope')
+                '.github/workflows/review-wp000-spec.yml'], 'G2D-WorkflowScope')
         else:
             need(run['event'] in ['push', 'pull_request', 'workflow_run'],
                  'F-LedgerEvent')
@@ -1582,15 +1718,15 @@ def check_f_ledger(reader, root):
          and f_charged['legacyRelays']
              <= 2 * (F_AUTHORITY['allocations']['candidateCommits'] + 1),
          'F-WholeCycleCap')
-    g2_caps = G2_AUTHORITY['caps']
-    need(g2['workflowRuns'] <= g2_caps['workflowRuns']
-         and g2['activeRuns'] <= g2_caps['activeRuns']
-         and g2['jobsIncludingReservations'] <= g2_caps['jobsIncludingReservations']
-         and g2['wholeWorkflowSkips'] <= g2_caps['wholeWorkflowSkips']
-         and g2['legacyRelays'] == 0
-         and g2['artifactObjects'] <= g2_caps['artifactObjects']
-         and g2['artifactStorageBytes'] <= g2_caps['newArtifactStorageBytes'],
-         'G2-WholeCycleCap')
+    g2d_caps = G2D_AUTHORITY['caps']
+    need(g2d['workflowRuns'] <= g2d_caps['workflowRuns']
+         and g2d['activeRuns'] <= g2d_caps['activeRuns']
+         and g2d['jobsIncludingReservations'] <= g2d_caps['jobsIncludingReservations']
+         and g2d['wholeWorkflowSkips'] <= g2d_caps['wholeWorkflowSkips']
+         and g2d['legacyRelays'] == 0
+         and g2d['artifactObjects'] <= g2d_caps['artifactObjects']
+         and g2d['artifactStorageBytes'] <= g2d_caps['newArtifactStorageBytes'],
+         'G2D-WholeCycleCap')
     write_new(reader.directory / 'f-ledger-summary.json', canonical({
         'baseline': {'ledger': F_BASELINE_LEDGER, 'active': 77, 'jobs': 327,
                      'wholeWorkflowSkips': 10, 'artifactObjects': 71,
@@ -1599,8 +1735,9 @@ def check_f_ledger(reader, root):
         'g1Frozen': g1,
         'r2aFrozen': r2a,
         'r2bFrozen': r2b,
-        'g2New': g2,
-        'g2Caps': g2_caps,
+        'r2cFrozen': r2c,
+        'g2dNew': g2d,
+        'g2dCaps': g2d_caps,
         'frozenArtifactStorageUnknown': r2a['artifactStorageBytes'] is None,
         'preservedClosureReserve': {'active': 6, 'jobs': 30},
         'billingActualUsd': None,
@@ -1620,9 +1757,18 @@ def f_prepare(args):
     event = ident['event']; need(event in ['push', 'workflow_run'], 'F-CollectorEvent')
     reader = Reader(pathlib.Path(args.directory)); main = reader.get('/git/ref/heads/main', 'f-main-before.json')['object']['sha']
     need(main == (state['candidateBase'] if state['unmerged'] else head), 'F-CollectorMainDelta')
-    readiness = check_g2_readiness(reader, pf, message) if phase == G2_PHASE else None
+    if phase == G2_PHASE:
+        readiness = check_g2_readiness(reader, pf, message)
+    elif phase == G2D_PHASE:
+        readiness = {'inheritedRun': G2_READINESS_RUN,
+                     'inheritedReceipt': G2_READINESS_RECEIPT,
+                     'sourceAuthority': g2_authority_sha(),
+                     'newLogReads': 0}
+    else:
+        readiness = None
     check_f_ledger(reader, root)
-    if phase in ['evidence-volume-implementation', G_PHASE, G2_PHASE, 'evidence-volume-merge']:
+    if phase in ['evidence-volume-implementation', G_PHASE, G2_PHASE, G2D_PHASE,
+                 'evidence-volume-merge']:
         mode = 'qualify'; selected = None
         target = pathlib.Path(args.directory) / 'qualification-source.bin'
         write_new(target, hashlib.shake_256(b'FS24F/1 deterministic range qualification').digest(F_QUALIFICATION_BYTES))
@@ -1659,7 +1805,8 @@ def f_prepare(args):
     write_new(pathlib.Path(args.directory) / 'prepare.json', canonical({
         'version': F_VERSION, 'authoritySha256': f_authority_sha(), 'identity': ident,
         'phase': phase, 'mode': mode, 'selectedVolumes': selected,
-        'g2AuthoritySha256': g2_authority_sha() if phase == G2_PHASE else None,
+        'g2AuthoritySha256': g2_authority_sha() if phase in [G2_PHASE, G2D_PHASE] else None,
+        'g2dAuthoritySha256': g2d_authority_sha() if phase == G2D_PHASE else None,
         'g2Readiness': readiness,
         'preserve': F_AUTHORITY['preserve'], 'billingActualUsd': None}))
 
@@ -1676,7 +1823,7 @@ def f_expected_source(reader, mode):
              and workflow.get('head_sha') == os.environ['GITHUB_SHA']
              and workflow.get('repository_id') == F_SOURCE['repositoryId']
              and workflow.get('head_repository_id') == F_SOURCE['repositoryId']
-             and F_QUALIFICATION_BYTES <= expected['bytes'] <= F_QUALIFICATION_BYTES + 1024 * 1024,
+             and expected['bytes'] == F_QUALIFICATION_ARCHIVE_BYTES,
              'F-QualificationArtifact')
     else:
         expected = F_SOURCE

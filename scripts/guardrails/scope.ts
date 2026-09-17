@@ -54,8 +54,12 @@ export function context(root: string, base: string, branch: string, title: strin
   const titles = Array.from(title.matchAll(/\b(?:WP|CP)-[0-9]{3}[a-z]?\b/g), x => x[0]);
   if (titles.some(x => x !== code)) throw new Error("branch-title-conflict");
   const found = files(root, base).filter(path => path.startsWith("engine/ops/") && (path.split("/").pop() === code + ".md" || path.split("/").pop()?.startsWith(code + "-")) && path.endsWith(".md"));
-  if (found.length !== 1) throw new Error("wp-path-missing-or-ambiguous");
-  return { kind: m[1] as "wp" | "cp", code, wpPath: found[0], patterns: parseScope(at(root, base, found[0])) };
+  // Companion records may share the WP/CP prefix, but only the authority
+  // document owns the numbered scope section.  Select that marker exactly and
+  // remain fail-closed when it is missing or duplicated.
+  const authority = found.filter(path => /^###?\s+4\.\s+Phạm vi cho phép\s*$/m.test(at(root, base, path)));
+  if (authority.length !== 1) throw new Error("wp-path-missing-or-ambiguous");
+  return { kind: m[1] as "wp" | "cp", code, wpPath: authority[0], patterns: parseScope(at(root, base, authority[0])) };
 }
 export function backlogOnly(before: string, after: string, code: string): boolean {
   const lines = before.split("\n"); let count = 0;

@@ -117,6 +117,8 @@ try {
     const r=spawnSync("python3",["-c",program],{input:JSON.stringify(cases),encoding:"utf8"});assert.equal(r.status,0,r.stderr);return {cases:4,stdout:r.stdout,source:"four pinned historical T ci.yml preflight blocks"};
   });
   test("cp-context", () => {const f=fixture();write(f.root,"engine/docs/01-architecture.md","Updated.\n");const r=cli(f.root,f.base,commit(f.root,"fixture"),"cp/001","CP-001 fixture","pull_request");assert.equal(r.result,"pass");assert.ok(r.wpPath.includes("CP-001"));});
+  test("wp-context-ignores-nonauthority-companion",()=>{const f=fixture();write(f.root,"engine/ops/work-packages/WP-001-evidence.md","# Companion only\nNo scope authority.\n");const base=commit(f.root,"fixture companion");write(f.root,"scripts/ci-report.ts","export const report = false;\n");const r=cli(f.root,base,commit(f.root,"fixture"));assert.equal(r.result,"pass");assert.equal(r.wpPath,wp);});
+  test("wp-context-rejects-duplicate-authority-marker",()=>{const f=fixture();write(f.root,"engine/ops/work-packages/WP-001-other.md","### 4. Phạm vi cho phép\n`scripts/ci-report.ts`\n");const base=commit(f.root,"fixture duplicate authority");write(f.root,"scripts/ci-report.ts","export const report = false;\n");const r=cli(f.root,base,commit(f.root,"fixture"));assert.equal(r.result,"fail");assert.ok(r.errors.some(e=>e.rule.includes("wp-path-missing-or-ambiguous")));});
   for (const [name,branch,title,event] of [["unknown-branch","other/001","WP-001","push"],["conflicting-title","wp/001","WP-002","pull_request"],["missing-wp","wp/999","WP-999","push"]]) test(name,()=>{const f=fixture();write(f.root,"scripts/ci-report.ts","changed\n");assert.equal(cli(f.root,f.base,commit(f.root,"fixture"),branch,title,event).result,"fail");});
   test("main-push-scope-only-exemption",()=>{const f=fixture();write(f.root,"outside.txt","valid\n");assert.equal(cli(f.root,f.base,commit(f.root,"fixture"),"main","","push").result,"pass");write(f.root,"engine/io/index.ts","const color = '#abcdef';\n");assert.equal(cli(f.root,f.base,commit(f.root,"fixture"),"main","","push").result,"fail");});
   test("rename-checks-both-paths",()=>{const f=fixture();git(f.root,"mv","scripts/ci-report.ts","outside.txt");const r=cli(f.root,f.base,commit(f.root,"fixture"));assert.ok(r.errors.some(e=>e.path==="outside.txt"));return r;});
@@ -229,6 +231,18 @@ try {
     assert.equal(currentLineage.evidenceVolume?.activations.length,0);
     assert.equal(currentLineage.evidenceVolume?.continuations.length,0);
   });
+  test("G2D-current-lineage-preserves-R2C-G1-and-F-accounting",()=>{
+    const currentMessage=git(actualRoot,"show","-s","--format=%B",currentHead);
+    if(!currentMessage.split("\n").includes("Fulcrum-Phase: evidence-volume-admission-repair"))return;
+    assert.ok(currentLineage.evidenceAdmissionRepair);
+    assert.equal(currentLineage.evidenceAdmissionRepair?.commit,currentHead);
+    assert.equal(currentLineage.evidenceAdmissionRepair?.parent,"96cceb58a9dac119aabffe93b11f62990ef62905");
+    assert.equal(currentLineage.evidenceAdmissionRepair?.rangeBytes,33554691);
+    assert.equal(currentLineage.evidenceAdmissionRecovery?.commit,"96cceb58a9dac119aabffe93b11f62990ef62905");
+    assert.equal(currentLineage.evidenceAdmission?.commit,"ab6560edc704d8e2901d5afc87a6ebc1712a488a");
+    assert.equal(currentLineage.candidateBase,"5ade77afe3fdfe4cb20c03f6234b7aec785f79ab");
+    assert.equal(currentLineage.evidenceVolume?.rounds.length,3);
+  });
   if(currentLineage.evidenceAdmission) {
     const gRoot=join(work,"g-history");
     const clonedG=spawnSync("git",["clone","--shared","--no-checkout",actualRoot,gRoot],{encoding:"utf8"});assert.equal(clonedG.status,0,clonedG.stderr);
@@ -249,14 +263,29 @@ try {
     const g2Paths=[".github/workflows/recover-fs24-evidence.yml",...gPaths];
     const g2Message=(authority:string,run=g2Run,receipt=g2Receipt)=>"Fixture G2 admission recovery\n\nFulcrum-Grant: FS24-D\nFulcrum-Phase: evidence-volume-admission-recovery\nFS24-F-Checkpoint: 2efe60ea7c74d301a1e2fc0ba52e1adc686f40dd\nFS24-F-Authority: "+currentLineage.evidenceVolume!.approval+"\nFS24-G-R2-Authority: "+authority+"\nOwner-Approval-Receipt: "+authority+"\nFS24-G-R2-Round: 1\nFS24-G-R2-Readiness-Run: "+run+"\nFS24-G-R2-Readiness-Receipt: "+receipt+"\n";
     const g2Commit=(parent:string,paths:string[],message:string,suffix="")=>{ggit(["read-tree",parent]);for(const path of paths){const blob=ggit(["hash-object","-w","--stdin"],readFileSync(join(actualRoot,path),"utf8")+suffix);ggit(["update-index","--add","--cacheinfo","100644,"+blob+","+path]);}return ggit(["commit-tree",ggit(["write-tree"]),"-p",parent],message);};
-    const validG2=g2Commit(currentHead,g2Paths,g2Message(g2Authority));git(gRoot,"checkout","--detach",validG2);
-    test("G2-admission-fixture-valid",()=>{const state=closureLineage(gRoot,validG2);assert.equal(state.evidenceAdmissionRecovery?.commit,validG2);assert.equal(state.evidenceAdmission?.commit,currentHead);assert.equal(state.candidateBase,"5ade77afe3fdfe4cb20c03f6234b7aec785f79ab");assert.equal(state.relayGateBootstrap?.commit,"5ade77afe3fdfe4cb20c03f6234b7aec785f79ab");assert.equal(state.evidenceVolume?.rounds.length,3);});
-    test("G2-admission-reject-wrong-authority",()=>assert.throws(()=>closureLineage(gRoot,g2Commit(currentHead,g2Paths,g2Message("0".repeat(64)))),/G2-Authority/));
+    const g2Parent=currentLineage.evidenceAdmission.commit;
+    const validG2=g2Commit(g2Parent,g2Paths,g2Message(g2Authority));git(gRoot,"checkout","--detach",validG2);
+    test("G2-admission-fixture-valid",()=>{const state=closureLineage(gRoot,validG2);assert.equal(state.evidenceAdmissionRecovery?.commit,validG2);assert.equal(state.evidenceAdmission?.commit,g2Parent);assert.equal(state.candidateBase,"5ade77afe3fdfe4cb20c03f6234b7aec785f79ab");assert.equal(state.relayGateBootstrap?.commit,"5ade77afe3fdfe4cb20c03f6234b7aec785f79ab");assert.equal(state.evidenceVolume?.rounds.length,3);});
+    test("G2-admission-reject-wrong-authority",()=>assert.throws(()=>closureLineage(gRoot,g2Commit(g2Parent,g2Paths,g2Message("0".repeat(64)))),/G2-Authority/));
     test("G2-admission-reject-wrong-parent",()=>assert.throws(()=>closureLineage(gRoot,g2Commit(currentLineage.evidenceAdmission!.parent,g2Paths,g2Message(g2Authority))),/G2-Parent/));
-    test("G2-admission-reject-incomplete-scope",()=>assert.throws(()=>closureLineage(gRoot,g2Commit(currentHead,g2Paths.slice(0,-1),g2Message(g2Authority))),/G2-Scope/));
-    test("G2-admission-reject-old-readiness",()=>assert.throws(()=>closureLineage(gRoot,g2Commit(currentHead,g2Paths,g2Message(g2Authority,"35178816801"))),/G2-ReadinessTrailer/));
-    test("G2-admission-reject-wrong-readiness-receipt",()=>assert.throws(()=>closureLineage(gRoot,g2Commit(currentHead,g2Paths,g2Message(g2Authority,g2Run,"0".repeat(64)))),/G2-ReadinessTrailer/));
+    test("G2-admission-reject-incomplete-scope",()=>assert.throws(()=>closureLineage(gRoot,g2Commit(g2Parent,g2Paths.slice(0,-1),g2Message(g2Authority))),/G2-Scope/));
+    test("G2-admission-reject-old-readiness",()=>assert.throws(()=>closureLineage(gRoot,g2Commit(g2Parent,g2Paths,g2Message(g2Authority,"35178816801"))),/G2-ReadinessTrailer/));
+    test("G2-admission-reject-wrong-readiness-receipt",()=>assert.throws(()=>closureLineage(gRoot,g2Commit(g2Parent,g2Paths,g2Message(g2Authority,g2Run,"0".repeat(64)))),/G2-ReadinessTrailer/));
     test("G2-admission-reject-repeat",()=>assert.throws(()=>closureLineage(gRoot,g2Commit(validG2,g2Paths,g2Message(g2Authority),"\nfixture repeat\n")),/G2-Parent/));
+    if(currentLineage.evidenceAdmissionRecovery) {
+      const g2dAuthority="f160bb5e58a361b21aa7015282c7142ab046430b933642403f012a124b2d2e69";
+      const g2dParent=currentLineage.evidenceAdmissionRecovery.commit;
+      const g2dPaths=["engine/ops/work-packages/WP-002-evidence-recovery.md","engine/io/evidence-transfer.py","engine/io/evidence-transfer.test.py","scripts/guardrails/index.ts","scripts/guardrails/scope.ts","scripts/guardrails/guardrails.test.ts"];
+      const g2dMessage=(authority:string,range="33554691")=>"Fixture G2D repair\n\nFulcrum-Grant: FS24-D\nFulcrum-Phase: evidence-volume-admission-repair\nFS24-F-Checkpoint: 2efe60ea7c74d301a1e2fc0ba52e1adc686f40dd\nFS24-F-Authority: "+currentLineage.evidenceVolume!.approval+"\nFS24-G-R2-Authority: "+g2Authority+"\nFS24-G-R2D-Authority: "+authority+"\nOwner-Approval-Receipt: "+authority+"\nFS24-G-R2D-Round: 1\nFS24-G-R2D-Range-Bytes: "+range+"\n";
+      const g2dCommit=(parent:string,paths:string[],message:string,suffix="")=>{ggit(["read-tree",parent]);for(const path of paths){const blob=ggit(["hash-object","-w","--stdin"],readFileSync(join(actualRoot,path),"utf8")+suffix);ggit(["update-index","--add","--cacheinfo","100644,"+blob+","+path]);}return ggit(["commit-tree",ggit(["write-tree"]),"-p",parent],message);};
+      const validG2D=g2dCommit(g2dParent,g2dPaths,g2dMessage(g2dAuthority));
+      test("G2D-repair-fixture-valid",()=>{const state=closureLineage(gRoot,validG2D);assert.equal(state.evidenceAdmissionRepair?.commit,validG2D);assert.equal(state.evidenceAdmissionRepair?.parent,g2dParent);assert.equal(state.evidenceAdmissionRepair?.rangeBytes,33554691);assert.deepEqual(state.evidenceAdmissionRecovery,currentLineage.evidenceAdmissionRecovery);assert.deepEqual(state.evidenceAdmission,currentLineage.evidenceAdmission);});
+      test("G2D-repair-reject-wrong-authority",()=>assert.throws(()=>closureLineage(gRoot,g2dCommit(g2dParent,g2dPaths,g2dMessage("0".repeat(64)))),/G2D-Authority/));
+      test("G2D-repair-reject-wrong-parent",()=>assert.throws(()=>closureLineage(gRoot,g2dCommit(currentLineage.evidenceAdmission!.commit,g2dPaths,g2dMessage(g2dAuthority))),/G2D-Parent/));
+      test("G2D-repair-reject-incomplete-scope",()=>assert.throws(()=>closureLineage(gRoot,g2dCommit(g2dParent,g2dPaths.slice(0,-1),g2dMessage(g2dAuthority))),/G2D-Scope/));
+      test("G2D-repair-reject-wrong-range-cap",()=>assert.throws(()=>closureLineage(gRoot,g2dCommit(g2dParent,g2dPaths,g2dMessage(g2dAuthority,"33554529"))),/G2D-RangeCap/));
+      test("G2D-repair-reject-repeat",()=>assert.throws(()=>closureLineage(gRoot,g2dCommit(validG2D,g2dPaths,g2dMessage(g2dAuthority),"\nfixture repeat\n")),/G2D-Parent/));
+    }
   }
   test("F-scanner-resolves-canonical-WP-at-final-E",()=>{
     if(!currentLineage.evidenceVolume)return;
