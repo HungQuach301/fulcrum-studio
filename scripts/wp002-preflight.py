@@ -51,7 +51,10 @@ def changed(root, before, after):
 def inspect(root, head):
     anchor="c4a4445e619175c015469cd33ebd427ecdd687a1"
     fanchor="2efe60ea7c74d301a1e2fc0ba52e1adc686f40dd"
-    if head!=fanchor and subprocess.run(["git","-C",str(root),"merge-base","--is-ancestor",fanchor,head],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0:
+    message=git(root,"show","-s","--format=%B",head)
+    fdeclared=bool(re.search(r"^FS24-F-Checkpoint: "+re.escape(fanchor)+r"$",message,re.M))
+    fdescendant=subprocess.run(["git","-C",str(root),"merge-base","--is-ancestor",fanchor,head],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
+    if head!=fanchor and (fdescendant or fdeclared):
         import importlib.util
         spec=importlib.util.spec_from_file_location("fs24f",root/"engine/io/evidence-transfer.py")
         helper=importlib.util.module_from_spec(spec);spec.loader.exec_module(helper)

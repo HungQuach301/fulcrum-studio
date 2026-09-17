@@ -477,7 +477,7 @@ class TransferTests(unittest.TestCase):
             self.e_lineage(ordinal='0')
 
     def f_lineage(self, delta=None, ordinal='1', authority=None):
-        anchor = e.F_CHECKPOINT; candidate = 'f' * 40
+        anchor = e.F_CHECKPOINT; branch = e.F_WP002; candidate = 'f' * 40
         repair = {'rounds': ['r1'], 'merges': [], 'approval': e.E_APPROVAL,
                   'paths': e.ALLOW, 'activations': []}
         baseline = {'head': anchor, 'code': e.SOURCE_HEAD, 'epochs': [{'code': e.SOURCE_HEAD}],
@@ -490,7 +490,7 @@ class TransferTests(unittest.TestCase):
                              'Owner-Approval-Receipt: ' + approval, 'FS24-F-Round: ' + ordinal])
         def git(root, *args):
             if args == ('rev-parse', anchor + '^{tree}'): return e.F_CHECKPOINT_TREE + '\n'
-            if args == ('rev-list', '--parents', '-n', '1', candidate): return candidate + ' ' + anchor + '\n'
+            if args == ('rev-list', '--parents', '-n', '1', candidate): return candidate + ' ' + branch + '\n'
             if args == ('show', '-s', '--format=%B', candidate): return message
             if args == ('rev-parse', candidate + ':AGENTS.md'): return 'a' * 40 + '\n'
             if args[0] == 'ls-tree': return '100644 blob ' + 'a' * 40 + '\t' + args[-1] + '\n'

@@ -919,7 +919,13 @@ def inspect_suffix(root, head, baseline, git, field, changed, policy, data):
 def inspect_f_suffix(root, head, baseline, git, field, changed, policy, data):
     """Bound FS24-F without changing or replenishing the exhausted E record."""
     need(git(root, 'rev-parse', F_CHECKPOINT + '^{tree}').strip() == F_CHECKPOINT_TREE, 'F-CheckpointTree')
-    cache = {F_CHECKPOINT: json.loads(json.dumps(baseline))}
+    # The long-lived wp/002 branch points at the second parent of the
+    # checkpoint merge, so its first F candidate is not a descendant of
+    # F_CHECKPOINT.  Both refs represent the same canonical starting state
+    # for the separately-accounted F suffix; seeding both avoids replaying the
+    # already-merged E candidate as an unmerged F ancestor.
+    cache = {F_CHECKPOINT: json.loads(json.dumps(baseline)),
+             F_WP002: json.loads(json.dumps(baseline))}
 
     def visit(commit):
         if commit in cache:
@@ -966,7 +972,11 @@ def inspect_f_suffix(root, head, baseline, git, field, changed, policy, data):
             extension['rounds'].append(commit)
             need(len(extension['rounds']) <= F_AUTHORITY['allocations']['candidateCommits'], 'F-CandidateAllocation')
             if not state['unmerged']:
-                state['candidateBase'] = parents[0]
+                # Preserve the canonical main base when publication starts
+                # from the checkpointed wp/002 tip (the merge's second
+                # parent).  Later rounds based on a merged main keep their
+                # ordinary first-parent base.
+                state['candidateBase'] = F_CHECKPOINT if parents[0] == F_WP002 else parents[0]
             state['unmerged'].append(commit)
         elif phase == 'evidence-volume-recover':
             need(len(parents) == 1 and not delta and not state['unmerged'] and extension['merges']
