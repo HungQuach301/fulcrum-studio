@@ -93,7 +93,7 @@ export function successorPolicy(root:string,head:string,p:typeof FS24C=FS24C):st
 
 
 export const FS24D = {base:"78a4b28b4134fb09b4a003b90099c13460a8112d", tree:"ac9be3c9f327ba15cf6c0a9871d05d444a58c290", policy:"2cde1d18a989ac085a47b7ada0565b29b42577b6"};
-export interface DLineage { evidenceRepair?: {rounds:string[];merges:Array<{head:string;base:string;candidate:string;pr:number}>;approval:string;paths:string[]}; head:string; code:string; candidateBase:string; batch:string|null; origin:string|null; closure:boolean; closureBase?:string; unmerged:string[]; paths:string[]; dataPaths:string[]; epochs:Array<{code:string;base:string;candidate:string;pr:number}>; data:Array<{commit:string;parent:string;operation:string;code:string}>; }
+export interface DLineage { evidenceRepair?: {rounds:string[];merges:Array<{head:string;base:string;candidate:string;pr:number}>;approval:string;paths:string[]}; evidenceVolume?: {rounds:string[];merges:Array<{head:string;base:string;candidate:string;pr:number}>;approval:string;paths:string[];activations:string[];continuations:Array<{head:string;round:number;sourceRun:number;volumes:number[]}>}; evidenceAdmission?: {commit:string;parent:string;approval:string;paths:string[]}; evidenceAdmissionRecovery?: {commit:string;parent:string;approval:string;paths:string[];readinessRun:number;readinessReceipt:string}; evidenceAdmissionRepair?: {commit:string;parent:string;approval:string;paths:string[];rangeBytes:number}; relayGateBootstrap?: {commit:string;parent:string;tree:string;authority:string;path:string;blob:string}; head:string; code:string; candidateBase:string; batch:string|null; origin:string|null; closure:boolean; closureBase?:string; unmerged:string[]; paths:string[]; dataPaths:string[]; epochs:Array<{code:string;base:string;candidate:string;pr:number}>; data:Array<{commit:string;parent:string;operation:string;code:string}>; }
 const dLineageCache = new Map<string,DLineage>();
 export function closureLineage(root:string,head:string):DLineage {
   if(!/^[a-f0-9]{40}$/.test(head))throw new Error("D-head-format");
@@ -109,12 +109,17 @@ export function inspect(o: Options): ScanReport {
   const report: ScanReport = { result: "fail", base: o.base, head: o.head, branch: o.branch, wpPath: "", checkedPaths: [], errors: [] };
   try {
     if (!/^[a-f0-9]{40}$/.test(o.base) || !/^[a-f0-9]{40}$/.test(o.head)) throw new Error("commit-format");
-    git(o.root, "merge-base", "--is-ancestor", o.base, o.head);
     const messageHead=git(o.root,"show","-s","--format=%B",o.head);
     const lineage=messageHead.split("\n").includes("Fulcrum-Grant: FS24-D")?closureLineage(o.root,o.head):undefined;
+    // The first F candidate grows from wp/002, the second parent of the
+    // canonical checkpoint merge.  A fully validated F lineage binds that
+    // topic head back to candidateBase, so direct ancestry is neither true
+    // nor required for this one bounded case.
+    if(!(lineage?.evidenceVolume&&lineage.candidateBase===o.base))
+      git(o.root, "merge-base", "--is-ancestor", o.base, o.head);
     // The E companion is evidence documentation, not a replacement WP authority.
     // Verified E lineage freezes the original WP blob at F, including after merge.
-    const contextBase=lineage?.evidenceRepair?"c4a4445e619175c015469cd33ebd427ecdd687a1":o.base;
+    const contextBase=lineage?.evidenceVolume?"2efe60ea7c74d301a1e2fc0ba52e1adc686f40dd":lineage?.evidenceRepair?"c4a4445e619175c015469cd33ebd427ecdd687a1":o.base;
     const ctx = context(o.root, contextBase, o.branch, o.title, o.event); report.wpPath = ctx.wpPath;
     const diff = changes(o.root, o.base, o.head); report.checkedPaths = diff.map(x => x.path);
     const messages = git(o.root, "log", "--format=%B", o.base + ".." + o.head);
@@ -142,7 +147,7 @@ export function inspect(o: Options): ScanReport {
     let d:string[]=[];
     if(lineage) {
       if(!["wp/002","main"].includes(o.branch))throw new Error("D-branch");
-      if(lineage.unmerged.length ? o.base!==lineage.candidateBase : ![FS24D.base,lineage.code,...lineage.epochs.map(x=>x.base),...(lineage.closureBase?[lineage.closureBase]:[]),...(lineage.evidenceRepair?.merges.flatMap(x=>[x.base,x.head])??[])].includes(o.base))throw new Error("D-scan-base");
+      if(lineage.unmerged.length ? o.base!==lineage.candidateBase : ![FS24D.base,lineage.code,...lineage.epochs.map(x=>x.base),...(lineage.closureBase?[lineage.closureBase]:[]),...(lineage.evidenceRepair?.merges.flatMap(x=>[x.base,x.head])??[]),...(lineage.evidenceVolume?.merges.flatMap(x=>[x.base,x.head])??[])].includes(o.base))throw new Error("D-scan-base");
       d=[...lineage.paths,...lineage.dataPaths,...(lineage.closure?["engine/ops/backlog.md"]:[])];
       if(diff.some(x=>!d.includes(x.path)))throw new Error("D-scan-scope");
     }

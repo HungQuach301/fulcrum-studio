@@ -1,5 +1,6 @@
-"""Draft executable regression cases. Run in approved Actions, not during PREP."""
+"""Executable network-free codec, lineage, and HTTP contract regression cases."""
 import base64
+import hashlib
 import importlib.util
 import io
 import json
@@ -188,6 +189,23 @@ class TransferTests(unittest.TestCase):
                 reader.get('/actions/runs/1', 'short.json')
         self.assertFalse(json.loads((self.raw / '0001-http.json').read_bytes())['complete'])
 
+    def test_f_reader_continues_receipts_across_commands(self):
+        import unittest.mock
+        class Response(io.BytesIO):
+            status = 200
+            headers = {'Content-Length': '2'}
+        class Opener:
+            def open(self, request):
+                return Response(b'{}')
+        env = {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': e.REPO, 'GH_TOKEN': 'fixture'}
+        with unittest.mock.patch.dict(e.os.environ, env):
+            first = e.Reader(self.raw); first.opener = Opener()
+            first.get('/actions/runs/1', 'first.json')
+            second = e.Reader(self.raw); second.opener = Opener()
+            second.get('/actions/runs/2', 'second.json')
+        self.assertTrue((self.raw / '0001-http.json').is_file())
+        self.assertTrue((self.raw / '0002-http.json').is_file())
+
     def test_denied_zip_zero_get(self):
         import unittest.mock
         with unittest.mock.patch.dict(e.os.environ, {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': e.REPO, 'GH_TOKEN': 'fixture'}):
@@ -205,6 +223,19 @@ class TransferTests(unittest.TestCase):
             reader.opener = unittest.mock.Mock()
             with self.assertRaisesRegex(ValueError, 'HistoricLogGate'):
                 reader.get('/actions/jobs/104622761595/logs', 'denied.log', binary=True)
+            reader.opener.open.assert_not_called()
+
+    def test_f_recovery_still_denies_historic_job_log_endpoints(self):
+        import unittest.mock
+        with unittest.mock.patch.dict(e.os.environ, {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': e.REPO,
+                'GH_TOKEN': 'fixture', 'FS_TRANSFER_MODE': 'recover', 'FS24_F_ACTIVE': 'true'}):
+            reader = e.Reader(self.raw); reader.opener = unittest.mock.Mock()
+            for job in [104622761595, 104628070660]:
+                with self.assertRaisesRegex(ValueError, 'HistoricLogGate'):
+                    reader.get('/actions/jobs/%d/logs' % job, 'denied-%d.log' % job, binary=True)
+            reader.opener.open.assert_not_called()
+            with self.assertRaisesRegex(ValueError, 'F-SavedArtifactFullGET'):
+                reader.get('/actions/artifacts/10459765118/zip', 'saved.zip', binary=True)
             reader.opener.open.assert_not_called()
 
     def test_trailing_bundle_bytes(self):
@@ -253,6 +284,180 @@ class TransferTests(unittest.TestCase):
         path.write_bytes(raw)
         with self.assertRaises(zipfile.BadZipFile):
             e.unpack(path, self.root / 'crc')
+
+    def f_binding(self, mode='qualify'):
+        return {'repository': e.REPO, 'run': '123', 'attempt': '1', 'head': 'f' * 40,
+                'event': 'push', 'mode': mode, 'authoritySha256': e.f_authority_sha()}
+
+    def test_f_saved_layout_is_650_parts_82_volumes(self):
+        source = {'artifact': e.F_SOURCE['artifact'], 'name': e.F_SOURCE['name'],
+                  'bytes': e.F_SOURCE['bytes'], 'sha256': e.F_SOURCE['sha256']}
+        plan = e.f_plan(source, self.f_binding('recover'))
+        self.assertEqual(len(plan['parts']), 650)
+        self.assertEqual(len(plan['volumes']), 82)
+        self.assertEqual(plan['parts'][-1]['bytes'], 1206027)
+        self.assertEqual(plan['volumes'][-1]['bytes'], 3303179)
+        self.assertEqual(plan['selectedVolumes'], list(range(82)))
+
+    def test_f_saved_artifact_metadata_is_fully_pinned(self):
+        value = {'id': e.F_SOURCE['artifact'], 'name': e.F_SOURCE['name'],
+                 'size_in_bytes': e.F_SOURCE['bytes'], 'digest': 'sha256:' + e.F_SOURCE['sha256'],
+                 'expires_at': e.F_SOURCE['expiresAtKnown'], 'expired': False,
+                 'workflow_run': {'id': e.F_SOURCE['run'], 'head_sha': e.F_SOURCE['head'],
+                                  'repository_id': e.F_SOURCE['repositoryId'],
+                                  'head_repository_id': e.F_SOURCE['repositoryId']}}
+        self.assertEqual(e.f_source_from_metadata(value, e.F_SOURCE)['artifact'], e.F_SOURCE['artifact'])
+        for mutation in [{'expires_at': '2026-09-23T16:58:16Z'},
+                         {'workflow_run': {**value['workflow_run'], 'head_sha': '0' * 40}}]:
+            with self.assertRaisesRegex(ValueError, 'F-ArtifactLineagePin'):
+                e.f_source_from_metadata({**value, **mutation}, e.F_SOURCE)
+
+    def test_f_range_requires_exact_206_and_never_forwards_auth(self):
+        import unittest.mock
+        body = b'range-bytes'
+        class Response(io.BytesIO):
+            def __init__(self, payload, status, headers):
+                super().__init__(payload); self.status = status; self.headers = headers
+        class Opener:
+            def __init__(self, status=206, content_range=None):
+                self.requests = []; self.status = status; self.content_range = content_range
+            def open(self, request):
+                self.requests.append(request)
+                return Response(body, self.status, {'Content-Length': str(len(body)),
+                    'Content-Range': self.content_range or 'bytes 10-20/100'})
+        env = {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': e.REPO, 'GH_TOKEN': 'fixture'}
+        with unittest.mock.patch.dict(e.os.environ, env):
+            reader = e.Reader(self.raw); opener = Opener(); reader.opener = opener
+            target, receipt = reader.range_get('https://fixture.blob.core.windows.net/archive?sig=secret',
+                                               10, 20, 100, self.root / 'range.bin', 'range')
+            self.assertEqual(target.read_bytes(), body)
+            self.assertEqual(receipt['status'], 206)
+            self.assertIsNone(opener.requests[0].get_header('Authorization'))
+            self.assertEqual(opener.requests[0].get_header('Range'), 'bytes=10-20')
+        for status, content_range, reason in [(200, None, 'F-HTTP206Required'),
+                                               (206, 'bytes 0-10/100', 'F-ContentRange')]:
+            with self.subTest(status=status, content_range=content_range), unittest.mock.patch.dict(e.os.environ, env):
+                reader = e.Reader(self.raw); reader.opener = Opener(status, content_range)
+                with self.assertRaisesRegex(ValueError, reason):
+                    reader.range_get('https://fixture.blob.core.windows.net/archive', 10, 20, 100,
+                                     self.root / ('bad-%d.bin' % status), 'bad-%d' % status)
+
+    def test_g2d_qualification_range_cap_is_exact_archive_not_raw_payload(self):
+        self.assertEqual(e.F_QUALIFICATION_ARCHIVE_BYTES - e.F_QUALIFICATION_BYTES, 162)
+        self.assertEqual(e.G2D_AUTHORITY['caps']['rangeBytes'],
+                         e.F_QUALIFICATION_ARCHIVE_BYTES)
+        def root_for(size):
+            source = {'artifact': 123, 'name': 'qualification', 'bytes': size,
+                      'sha256': 'a' * 64}
+            plan = e.f_plan(source, self.f_binding('qualify'))
+            return {'version': e.F_VERSION, 'authoritySha256': e.f_authority_sha(),
+                    'planSha256': e.sha(e.canonical(plan)), 'plan': plan,
+                    'volumeManifests': [],
+                    'missingVolumes': plan['selectedVolumes'],
+                    'producerResult': 'failure', 'agentReceive': 'unproven',
+                    'preserve': e.F_AUTHORITY['preserve'], 'billingActualUsd': None}
+        e.validate_root_manifest(root_for(e.F_QUALIFICATION_ARCHIVE_BYTES))
+        for size in [e.F_QUALIFICATION_BYTES,
+                     e.F_QUALIFICATION_ARCHIVE_BYTES + 1]:
+            with self.assertRaisesRegex(ValueError, 'F-QualificationArchiveBytes'):
+                e.validate_root_manifest(root_for(size))
+
+    def test_f_volume_roundtrip_large_zip_crc_and_offline_receiver(self):
+        archive = self.root / 'large-source.zip'
+        payload = hashlib.shake_256(b'FS24F test large zip').digest(e.F_VOLUME_BYTES + 97)
+        with zipfile.ZipFile(archive, 'x', compression=zipfile.ZIP_STORED, allowZip64=True) as z:
+            z.writestr('large.bin', payload)
+        source = {'artifact': 123, 'name': 'fixture-source', **e.measure(archive)}
+        plan = e.f_plan(source, self.f_binding('recover'))
+        self.assertEqual(len(plan['volumes']), 2)
+        logs = []; manifests = []
+        raw = archive.read_bytes()
+        for volume in plan['volumes']:
+            data = raw[volume['start']:volume['end'] + 1]
+            http = {'status': 206,
+                    'contentRange': 'bytes %d-%d/%d' % (volume['start'], volume['end'], source['bytes']),
+                    'contentLength': str(volume['bytes']), 'contentEncoding': None,
+                    'attempts': 1, 'authorizationForwarded': False}
+            manifest = e.f_volume_manifest(plan, volume['volume'], data, http); manifests.append(manifest)
+            stream = io.StringIO(); e.emit_volume(manifest, data, stream)
+            log = self.root / ('f-volume-%d.log' % volume['volume'])
+            log.write_text(''.join('2026-09-16T12:00:00.0000000Z ' + line + '\n'
+                                   for line in stream.getvalue().splitlines()))
+            logs.append(log)
+        root = {'version': e.F_VERSION, 'authoritySha256': e.f_authority_sha(),
+                'planSha256': e.sha(e.canonical(plan)), 'plan': plan,
+                'volumeManifests': manifests, 'missingVolumes': [], 'producerResult': 'success',
+                'agentReceive': 'unproven', 'preserve': e.F_AUTHORITY['preserve'],
+                'billingActualUsd': None}
+        root_path = self.root / 'root-manifest.json'; root_path.write_bytes(e.canonical(root))
+        old = e.urllib.request.build_opener
+        e.urllib.request.build_opener = lambda *a, **k: self.fail('F receiver attempted network')
+        try:
+            receipt = e.receive_f_volumes(list(reversed(logs)), [root_path], self.root / 'f-received')
+        finally:
+            e.urllib.request.build_opener = old
+        self.assertEqual(receipt['archive'], e.measure(archive))
+        self.assertEqual(receipt['sourceReceiptReconciliation'], 'pending')
+        self.assertEqual(receipt['B1'], 'unverified')
+        with self.assertRaisesRegex(ValueError, 'F-LogCount'):
+            e.receive_f_volumes(logs[:-1], [root_path], self.root / 'f-missing')
+        partial = {**root, 'volumeManifests': manifests[:-1],
+                   'missingVolumes': [plan['volumes'][-1]['volume']], 'producerResult': 'failure'}
+        partial_path = self.root / 'partial-root.json'; partial_path.write_bytes(e.canonical(partial))
+        e.validate_root_manifest(partial)
+        selected = [plan['volumes'][-1]['volume']]
+        continuation_plan = e.f_plan(source, self.f_binding('continue'), selected)
+        volume = continuation_plan['volumes'][selected[0]]
+        data = raw[volume['start']:volume['end'] + 1]
+        http = {'status': 206,
+                'contentRange': 'bytes %d-%d/%d' % (volume['start'], volume['end'], source['bytes']),
+                'contentLength': str(volume['bytes']), 'contentEncoding': None,
+                'attempts': 1, 'authorizationForwarded': False}
+        continuation_manifest = e.f_volume_manifest(continuation_plan, selected[0], data, http)
+        stream = io.StringIO(); e.emit_volume(continuation_manifest, data, stream)
+        continuation_log = self.root / 'continuation.log'; continuation_log.write_text(stream.getvalue())
+        continuation_root = {'version': e.F_VERSION, 'authoritySha256': e.f_authority_sha(),
+            'planSha256': e.sha(e.canonical(continuation_plan)), 'plan': continuation_plan,
+            'volumeManifests': [continuation_manifest], 'missingVolumes': [],
+            'producerResult': 'success', 'agentReceive': 'unproven',
+            'preserve': e.F_AUTHORITY['preserve'], 'billingActualUsd': None}
+        continuation_path = self.root / 'continuation-root.json'
+        continuation_path.write_bytes(e.canonical(continuation_root))
+        repaired = e.receive_f_volumes([logs[0], continuation_log],
+                                       [partial_path, continuation_path], self.root / 'f-repaired')
+        self.assertEqual(repaired['archive'], e.measure(archive))
+
+    def test_f_saved_receipt_reconciliation_keeps_semantics_unverified(self):
+        archive = self.root / 'saved-fixture.zip'
+        with zipfile.ZipFile(archive, 'x', compression=zipfile.ZIP_STORED) as z:
+            for index, job in enumerate([104622761595, 104628070660], 1):
+                name = 'raw/original-%d.log' % job; body = ('job-%d\n' % job).encode()
+                z.writestr(name, body)
+                receipt = {'body': name, 'bytes': len(body), 'sha256': e.sha(body),
+                           'complete': True, 'attempts': 1, 'contentEncoding': None,
+                           'hops': [{'status': 302}, {'status': 200}]}
+                z.writestr('raw/%04d-http.json' % index, e.canonical(receipt))
+        target = self.root / 'historic'; target.mkdir()
+        rows = e.reconcile_saved_artifact(archive, target)
+        self.assertEqual([x['job'] for x in rows], [104622761595, 104628070660])
+        self.assertTrue(all(x['savedReceiptVerified'] and x['semanticClaim'] == 'unverified' for x in rows))
+
+    def test_f_volume_rejects_manifest_or_payload_mutation(self):
+        archive = self.root / 'tiny.zip'
+        with zipfile.ZipFile(archive, 'x') as z: z.writestr('a', b'abc')
+        source = {'artifact': 123, 'name': 'tiny', **e.measure(archive)}
+        plan = e.f_plan(source, self.f_binding()); volume = plan['volumes'][0]; data = archive.read_bytes()
+        http = {'status': 206, 'contentRange': 'bytes 0-%d/%d' % (len(data)-1, len(data)),
+                'contentLength': str(len(data)), 'contentEncoding': None,
+                'attempts': 1, 'authorizationForwarded': False}
+        manifest = e.f_volume_manifest(plan, 0, data, http)
+        stream = io.StringIO(); e.emit_volume(manifest, data, stream)
+        log = self.root / 'tiny.log'; log.write_text(stream.getvalue())
+        bad = json.loads(json.dumps(manifest)); bad['parts'][0]['sha256'] = '0' * 64
+        with self.assertRaisesRegex(ValueError, 'F-ManifestPin'):
+            e.decode_volume(log, bad)
+        log.write_text(log.read_text().replace('FS24F_DATA\t0\t0\t', 'FS24F_DATA\t0\t0\t***', 1))
+        with self.assertRaises(ValueError): e.decode_volume(log, manifest)
 
     def e_lineage(self, delta=None, policy_changed=False, data_changed=False, ordinal='1'):
         anchor = e.CHECKPOINT
@@ -308,7 +513,497 @@ class TransferTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'E-RoundOrder'):
             self.e_lineage(ordinal='0')
 
+    def f_lineage(self, delta=None, ordinal='1', authority=None):
+        anchor = e.F_CHECKPOINT; branch = e.F_WP002; candidate = 'f' * 40
+        repair = {'rounds': ['r1'], 'merges': [], 'approval': e.E_APPROVAL,
+                  'paths': e.ALLOW, 'activations': []}
+        baseline = {'head': anchor, 'code': e.SOURCE_HEAD, 'epochs': [{'code': e.SOURCE_HEAD}],
+                    'data': [{'commit': 'd' * 40}], 'unmerged': [], 'candidateBase': anchor,
+                    'closure': False, 'paths': e.ALLOW, 'dataPaths': ['pipeline/state.json'],
+                    'evidenceRepair': repair}
+        approval = authority or e.f_authority_sha()
+        message = '\n'.join(['Fulcrum-Grant: FS24-D', 'Fulcrum-Phase: evidence-volume-implementation',
+                             'FS24-F-Checkpoint: ' + anchor, 'FS24-F-Authority: ' + approval,
+                             'Owner-Approval-Receipt: ' + approval, 'FS24-F-Round: ' + ordinal])
+        def git(root, *args):
+            if args == ('rev-parse', anchor + '^{tree}'): return e.F_CHECKPOINT_TREE + '\n'
+            if args == ('rev-list', '--parents', '-n', '1', candidate): return candidate + ' ' + branch + '\n'
+            if args == ('show', '-s', '--format=%B', candidate): return message
+            if args == ('rev-parse', candidate + ':AGENTS.md'): return 'a' * 40 + '\n'
+            if args[0] == 'ls-tree': return '100644 blob ' + 'a' * 40 + '\t' + args[-1] + '\n'
+            self.fail('unexpected F git request: ' + str(args))
+        def field(text, key):
+            rows = [x[len(key) + 2:] for x in text.splitlines() if x.startswith(key + ': ')]
+            e.need(len(rows) == 1, 'Trailer:' + key); return rows[0]
+        state = e.inspect_f_suffix(self.root, candidate, baseline, git, field,
+                                   lambda *a: delta if delta is not None else [e.F_ALLOW[2]],
+                                   {'AGENTS.md': 'a' * 40}, ['pipeline/state.json'])
+        return baseline, state
 
+    def test_f_suffix_separate_authority_preserves_d_and_e(self):
+        before, after = self.f_lineage()
+        self.assertEqual(after['evidenceRepair'], before['evidenceRepair'])
+        self.assertEqual(after['data'], before['data'])
+        self.assertEqual(len(after['evidenceVolume']['rounds']), 1)
+        self.assertNotEqual(after['evidenceVolume']['approval'], e.E_APPROVAL)
 
+    def test_f_suffix_rejects_scope_authority_and_round_reset(self):
+        with self.assertRaisesRegex(ValueError, 'F-TotalScope'):
+            self.f_lineage(delta=['package.json'])
+        with self.assertRaisesRegex(ValueError, 'F-Authority'):
+            self.f_lineage(authority='0' * 64)
+        with self.assertRaisesRegex(ValueError, 'F-RoundOrder'):
+            self.f_lineage(ordinal='0')
+
+    def g_lineage(self, authority=None, parent=None, delta=None, repeat=False):
+        c1 = '3ceb822b8b0f3bd69952ed7510c6dc269d92e8be'
+        c2 = '44fb08b87bf6690c2f18128b5940b0fb40c05a95'
+        c3 = e.G_PARENT
+        g1 = 'a' * 40; g2 = 'b' * 40
+        repair = {'rounds': ['r1'], 'merges': [], 'approval': e.E_APPROVAL,
+                  'paths': e.ALLOW, 'activations': []}
+        baseline = {'head': e.F_CHECKPOINT, 'code': e.SOURCE_HEAD,
+                    'epochs': [{'code': e.SOURCE_HEAD}], 'data': [{'commit': 'd' * 40}],
+                    'unmerged': [], 'candidateBase': e.F_CHECKPOINT, 'closure': False,
+                    'paths': e.ALLOW, 'dataPaths': ['pipeline/state.json'],
+                    'evidenceRepair': repair}
+        f_approval = e.f_authority_sha(); g_approval = authority or e.g_authority_sha()
+        f_message = lambda ordinal: '\n'.join([
+            'Fulcrum-Grant: FS24-D', 'Fulcrum-Phase: evidence-volume-implementation',
+            'FS24-F-Checkpoint: ' + e.F_CHECKPOINT, 'FS24-F-Authority: ' + f_approval,
+            'Owner-Approval-Receipt: ' + f_approval, 'FS24-F-Round: ' + str(ordinal)])
+        g_message = '\n'.join([
+            'Fulcrum-Grant: FS24-D', 'Fulcrum-Phase: ' + e.G_PHASE,
+            'FS24-F-Checkpoint: ' + e.F_CHECKPOINT, 'FS24-F-Authority: ' + f_approval,
+            'FS24-G-Authority: ' + g_approval, 'Owner-Approval-Receipt: ' + g_approval,
+            'FS24-G-Round: 1'])
+        parents = {c1: e.F_WP002, c2: c1, c3: c2, g1: parent or c3, g2: g1}
+        messages = {c1: f_message(1), c2: f_message(2), c3: f_message(3),
+                    g1: g_message, g2: g_message}
+        g_delta = list(e.G_ALLOW) if delta is None else delta
+
+        def git(root, *args):
+            if args == ('rev-parse', e.F_CHECKPOINT + '^{tree}'):
+                return e.F_CHECKPOINT_TREE + '\n'
+            if args[:4] == ('rev-list', '--parents', '-n', '1') and args[4] in parents:
+                return args[4] + ' ' + parents[args[4]] + '\n'
+            if args[:3] == ('show', '-s', '--format=%B') and args[3] in messages:
+                return messages[args[3]]
+            if args[0] == 'rev-parse' and args[1].endswith(':AGENTS.md'):
+                return 'a' * 40 + '\n'
+            if args[0] == 'ls-tree':
+                return '100644 blob ' + 'a' * 40 + '\t' + args[-1] + '\n'
+            self.fail('unexpected G git request: ' + str(args))
+
+        def field(text, key):
+            rows = [x[len(key) + 2:] for x in text.splitlines() if x.startswith(key + ': ')]
+            e.need(len(rows) == 1, 'Trailer:' + key); return rows[0]
+
+        def changed(root, before, after):
+            if before == e.F_CHECKPOINT:
+                return ([e.F_ALLOW[2]] if after in [c1, c2, c3]
+                        else sorted(set([e.F_ALLOW[2]] + g_delta)))
+            return g_delta if after in [g1, g2] else [e.F_ALLOW[2]]
+
+        head = g2 if repeat else g1
+        state = e.inspect_f_suffix(self.root, head, baseline, git, field, changed,
+                                   {'AGENTS.md': 'a' * 40}, ['pipeline/state.json'])
+        return baseline, state, g1
+
+    def test_g_admission_is_separate_and_does_not_replenish_f(self):
+        before, after, commit = self.g_lineage()
+        self.assertEqual(e.f_authority_sha(),
+                         'cc0187edbfd555887dc021f3f1b7ed0de6c9fd97757e32b46636bafeb96a46e8')
+        self.assertEqual(after['evidenceVolume']['rounds'][-1], e.G_PARENT)
+        self.assertEqual(len(after['evidenceVolume']['rounds']), 3)
+        self.assertEqual(after['evidenceVolume']['approval'], e.f_authority_sha())
+        self.assertEqual(after['evidenceAdmission'], {
+            'commit': commit, 'parent': e.G_PARENT, 'approval': e.g_authority_sha(),
+            'paths': e.G_ALLOW})
+        self.assertEqual(after['evidenceRepair'], before['evidenceRepair'])
+        self.assertEqual(after['unmerged'][-1], commit)
+
+    def test_g_admission_rejects_authority_parent_repeat_and_scope(self):
+        with self.assertRaisesRegex(ValueError, 'G-Authority'):
+            self.g_lineage(authority='0' * 64)
+        with self.assertRaisesRegex(ValueError, 'G-Parent'):
+            self.g_lineage(parent='44fb08b87bf6690c2f18128b5940b0fb40c05a95')
+        with self.assertRaisesRegex(ValueError, 'G-Parent'):
+            self.g_lineage(repeat=True)
+        with self.assertRaisesRegex(ValueError, 'G-Scope'):
+            self.g_lineage(delta=e.G_ALLOW[:-1])
+        with self.assertRaisesRegex(ValueError, 'F-TotalScope'):
+            self.g_lineage(delta=['package.json'])
+
+    def g2_lineage(self, authority=None, parent=None, delta=None, repeat=False,
+                   readiness_run=None, readiness_receipt=None):
+        c1 = '3ceb822b8b0f3bd69952ed7510c6dc269d92e8be'
+        c2 = '44fb08b87bf6690c2f18128b5940b0fb40c05a95'
+        c3 = e.G_PARENT; g1 = e.G2_PARENT; g2 = 'b' * 40; g3 = 'd' * 40
+        repair = {'rounds': ['r1'], 'merges': [], 'approval': e.E_APPROVAL,
+                  'paths': e.ALLOW, 'activations': []}
+        baseline = {'head': e.F_CHECKPOINT, 'code': e.SOURCE_HEAD,
+                    'epochs': [{'code': e.SOURCE_HEAD}], 'data': [{'commit': 'd' * 40}],
+                    'unmerged': [], 'candidateBase': e.F_CHECKPOINT, 'closure': False,
+                    'paths': e.ALLOW, 'dataPaths': ['pipeline/state.json'],
+                    'evidenceRepair': repair}
+        f_approval = e.f_authority_sha()
+        f_message = lambda ordinal: '\n'.join([
+            'Fulcrum-Grant: FS24-D', 'Fulcrum-Phase: evidence-volume-implementation',
+            'FS24-F-Checkpoint: ' + e.F_CHECKPOINT, 'FS24-F-Authority: ' + f_approval,
+            'Owner-Approval-Receipt: ' + f_approval, 'FS24-F-Round: ' + str(ordinal)])
+        g_message = '\n'.join([
+            'Fulcrum-Grant: FS24-D', 'Fulcrum-Phase: ' + e.G_PHASE,
+            'FS24-F-Checkpoint: ' + e.F_CHECKPOINT, 'FS24-F-Authority: ' + f_approval,
+            'FS24-G-Authority: ' + e.g_authority_sha(),
+            'Owner-Approval-Receipt: ' + e.g_authority_sha(), 'FS24-G-Round: 1'])
+        g2_approval = authority or e.g2_authority_sha()
+        readiness_run = readiness_run or str(e.G2_READINESS_RUN)
+        readiness_receipt = readiness_receipt or e.G2_READINESS_RECEIPT
+        g2_message = '\n'.join([
+            'Fulcrum-Grant: FS24-D', 'Fulcrum-Phase: ' + e.G2_PHASE,
+            'FS24-F-Checkpoint: ' + e.F_CHECKPOINT, 'FS24-F-Authority: ' + f_approval,
+            'FS24-G-R2-Authority: ' + g2_approval,
+            'Owner-Approval-Receipt: ' + g2_approval, 'FS24-G-R2-Round: 1',
+            'FS24-G-R2-Readiness-Run: ' + readiness_run,
+            'FS24-G-R2-Readiness-Receipt: ' + readiness_receipt])
+        parents = {c1: e.F_WP002, c2: c1, c3: c2, g1: c3,
+                   g2: parent or g1, g3: g2}
+        messages = {c1: f_message(1), c2: f_message(2), c3: f_message(3),
+                    g1: g_message, g2: g2_message, g3: g2_message}
+        g2_delta = list(e.G2_ALLOW) if delta is None else delta
+
+        def git(root, *args):
+            if args == ('rev-parse', e.F_CHECKPOINT + '^{tree}'):
+                return e.F_CHECKPOINT_TREE + '\n'
+            if args == ('rev-parse', e.G2_PARENT + '^{tree}'):
+                return e.G2_PARENT_TREE + '\n'
+            if args[:4] == ('rev-list', '--parents', '-n', '1') and args[4] in parents:
+                return args[4] + ' ' + parents[args[4]] + '\n'
+            if args[:3] == ('show', '-s', '--format=%B') and args[3] in messages:
+                return messages[args[3]]
+            if args[0] == 'rev-parse' and args[1] in [
+                    g2 + ':' + e.G2_RELAY_PATH, g3 + ':' + e.G2_RELAY_PATH]:
+                return e.G2_RELAY_BLOB + '\n'
+            if args[0] == 'rev-parse' and args[1].endswith(':AGENTS.md'):
+                return 'a' * 40 + '\n'
+            if args[0] == 'ls-tree':
+                return '100644 blob ' + 'a' * 40 + '\t' + args[-1] + '\n'
+            self.fail('unexpected G2 git request: ' + str(args))
+
+        def field(text, key):
+            rows = [x[len(key) + 2:] for x in text.splitlines()
+                    if x.startswith(key + ': ')]
+            e.need(len(rows) == 1, 'Trailer:' + key)
+            return rows[0]
+
+        def changed(root, before, after):
+            if before == e.F_CHECKPOINT:
+                values = [e.F_ALLOW[2]]
+                if after in [g1, g2, g3]: values += e.G_ALLOW
+                if after in [g2, g3]: values += g2_delta
+                return sorted(set(values))
+            if after == g1:
+                return list(e.G_ALLOW)
+            if after in [g2, g3]:
+                return g2_delta
+            return [e.F_ALLOW[2]]
+
+        head = g3 if repeat else g2
+        state = e.inspect_f_suffix(self.root, head, baseline, git, field, changed,
+                                   {'AGENTS.md': 'a' * 40}, ['pipeline/state.json'])
+        return baseline, state, g2
+
+    def test_g2_transition_preserves_g1_f_and_r2b(self):
+        before, after, commit = self.g2_lineage()
+        self.assertEqual(after['evidenceAdmission']['commit'], e.G2_PARENT)
+        self.assertEqual(after['evidenceVolume']['rounds'][-1], e.G_PARENT)
+        self.assertEqual(len(after['evidenceVolume']['rounds']), 3)
+        self.assertEqual(after['candidateBase'], e.G2_MAIN)
+        self.assertEqual(after['relayGateBootstrap'], e.G2B_RECORD)
+        self.assertEqual(after['evidenceAdmissionRecovery'], {
+            'commit': commit, 'parent': e.G2_PARENT, 'approval': e.g2_authority_sha(),
+            'paths': e.G2_ALLOW, 'readinessRun': e.G2_READINESS_RUN,
+            'readinessReceipt': e.G2_READINESS_RECEIPT})
+        self.assertEqual(after['evidenceRepair'], before['evidenceRepair'])
+
+    def test_g2_rejects_authority_parent_repeat_scope_and_readiness_delta(self):
+        with self.assertRaisesRegex(ValueError, 'G2-Authority'):
+            self.g2_lineage(authority='0' * 64)
+        with self.assertRaisesRegex(ValueError, 'G2-Parent'):
+            self.g2_lineage(parent=e.G_PARENT)
+        with self.assertRaisesRegex(ValueError, 'G2-Parent'):
+            self.g2_lineage(repeat=True)
+        with self.assertRaisesRegex(ValueError, 'G2-Scope'):
+            self.g2_lineage(delta=e.G2_ALLOW[:-1])
+        with self.assertRaisesRegex(ValueError, 'G2-ReadinessTrailer'):
+            self.g2_lineage(readiness_run=str(e.G2_STOP_RUNS[0]))
+        with self.assertRaisesRegex(ValueError, 'G2-ReadinessTrailer'):
+            self.g2_lineage(readiness_receipt='0' * 64)
+
+    def g2d_transition(self, authority=None, parent=None, delta=None,
+                       range_bytes=None, repeated=False, relay_blob=None):
+        commit = 'f' * 40
+        approval = authority or e.g2d_authority_sha()
+        message = '\n'.join([
+            'Fulcrum-Grant: FS24-D', 'Fulcrum-Phase: ' + e.G2D_PHASE,
+            'FS24-F-Checkpoint: ' + e.F_CHECKPOINT,
+            'FS24-F-Authority: ' + e.f_authority_sha(),
+            'FS24-G-R2-Authority: ' + e.g2_authority_sha(),
+            'FS24-G-R2D-Authority: ' + approval,
+            'Owner-Approval-Receipt: ' + approval,
+            'FS24-G-R2D-Round: 1',
+            'FS24-G-R2D-Range-Bytes: ' + (range_bytes or str(e.F_QUALIFICATION_ARCHIVE_BYTES))])
+        state = {
+            'candidateBase': e.G2_MAIN, 'unmerged': [e.G2D_PARENT],
+            'evidenceAdmission': {'commit': e.G2_PARENT},
+            'evidenceAdmissionRecovery': {
+                'commit': e.G2D_PARENT, 'parent': e.G2_PARENT,
+                'approval': e.g2_authority_sha(), 'paths': e.G2_ALLOW,
+                'readinessRun': e.G2_READINESS_RUN,
+                'readinessReceipt': e.G2_READINESS_RECEIPT}}
+        if repeated:
+            state['evidenceAdmissionRepair'] = {'commit': 'e' * 40}
+
+        def git(root, *args):
+            values = {
+                ('rev-parse', e.G2D_PARENT + '^{tree}'): e.G2D_PARENT_TREE,
+                ('rev-parse', commit + ':' + e.G2_RELAY_PATH):
+                    relay_blob or e.G2_RELAY_BLOB}
+            self.assertIn(args, values)
+            return values[args] + '\n'
+
+        def field(text, key):
+            rows = [x[len(key) + 2:] for x in text.splitlines()
+                    if x.startswith(key + ': ')]
+            e.need(len(rows) == 1, 'Trailer:' + key)
+            return rows[0]
+
+        return e.validate_g2d_transition(
+            self.root, commit, [parent or e.G2D_PARENT],
+            list(e.G2D_ALLOW) if delta is None else delta,
+            state, git, field, message)
+
+    def test_g2d_transition_is_exact_and_preserves_consumed_lineage(self):
+        self.assertEqual(self.g2d_transition(), {
+            'commit': 'f' * 40, 'parent': e.G2D_PARENT,
+            'approval': e.g2d_authority_sha(), 'paths': e.G2D_ALLOW,
+            'rangeBytes': e.F_QUALIFICATION_ARCHIVE_BYTES})
+
+    def test_g2d_rejects_authority_parent_repeat_scope_range_and_relay(self):
+        with self.assertRaisesRegex(ValueError, 'G2D-Authority'):
+            self.g2d_transition(authority='0' * 64)
+        with self.assertRaisesRegex(ValueError, 'G2D-Parent'):
+            self.g2d_transition(parent=e.G2_PARENT)
+        with self.assertRaisesRegex(ValueError, 'G2D-Lineage'):
+            self.g2d_transition(repeated=True)
+        with self.assertRaisesRegex(ValueError, 'G2D-Scope'):
+            self.g2d_transition(delta=e.G2D_ALLOW[:-1])
+        with self.assertRaisesRegex(ValueError, 'G2D-RangeCap'):
+            self.g2d_transition(range_bytes=str(e.F_QUALIFICATION_BYTES))
+        with self.assertRaisesRegex(ValueError, 'G2D-RelayGate'):
+            self.g2d_transition(relay_blob='0' * 40)
+
+    @staticmethod
+    def readiness_fixture():
+        run = {'id': e.G2_READINESS_RUN, 'head_sha': e.G2_PARENT,
+               'head_branch': 'wp/002', 'event': 'workflow_dispatch',
+               'status': 'completed', 'conclusion': 'failure', 'run_attempt': 1,
+               'path': '.github/workflows/ci.yml',
+               'created_at': '2026-09-17T14:18:42Z',
+               'run_started_at': '2026-09-17T14:18:42Z',
+               'updated_at': '2026-09-17T14:19:10Z',
+               'display_title': 'FS24-D 1707fd757f62dc7a94d964aed9ca03ffffcdd52f5837fa36a66147c6cd646919',
+               'repository': {'id': 1366804410, 'full_name': e.REPO},
+               'head_repository': {'id': 1366804410, 'full_name': e.REPO}}
+        common = [
+            (1, 'Set up job', 'success'),
+            (2, 'Initialize evidence directory', 'success'),
+            (3, 'Checkout exact candidate', 'success'),
+            (4, 'Preflight scope secret policy and checkpoint', 'failure'),
+            (5, 'Checksum-pinned runtime', 'skipped'),
+            (6, 'Set up action runtime tooling', 'skipped'),
+            (7, 'Install exact lockfile without lifecycle scripts', 'skipped'),
+            (8, None, 'skipped'),
+            (9, 'Verify source mirror and live main unchanged', 'failure'),
+            (10, 'Remove temporary execution data', 'success'),
+            (11, 'Emit complete evidence bytes', 'success'),
+            (12, 'Preserve original evidence bundle', 'skipped'),
+            (13, 'Remove final report data', 'success'),
+            (26, 'Post Checkout exact candidate', 'success'),
+            (27, 'Complete job', 'success')]
+        jobs = []
+        for name, pin in e.G2_READINESS_JOBS.items():
+            steps = [{'number': number,
+                      'name': ('Run ' + name + ' checks') if label is None else label,
+                      'status': 'completed', 'conclusion': conclusion}
+                     for number, label, conclusion in common]
+            jobs.append({'id': pin['id'], 'name': name, 'run_id': run['id'],
+                         'run_attempt': 1, 'status': 'completed',
+                         'conclusion': 'failure', 'runner_name': pin['runner'],
+                         'runner_group_name': 'GitHub Actions',
+                         'labels': ['ubuntu-24.04'], 'steps': steps})
+        return run, jobs
+
+    def test_g2_readiness_receipt_pins_exact_intentional_boundary(self):
+        run, jobs = self.readiness_fixture()
+        record = e.g2_readiness_record(run, jobs)
+        self.assertEqual(e.sha(e.canonical(record)), e.G2_READINESS_RECEIPT)
+        with self.assertRaisesRegex(ValueError, 'G2-RunnerNotReady'):
+            e.g2_readiness_record(run, [{**jobs[0], 'runner_name': ''}, *jobs[1:]])
+        bad_steps = [{**x} for x in jobs[0]['steps']]
+        bad_steps[3] = {**bad_steps[3], 'conclusion': 'success'}
+        with self.assertRaisesRegex(ValueError, 'G2-ReadinessSteps'):
+            e.g2_readiness_record(run, [{**jobs[0], 'steps': bad_steps}, *jobs[1:]])
+        with self.assertRaisesRegex(ValueError, 'G2-ReadinessRun'):
+            e.g2_readiness_record({**run, 'id': run['id'] + 1}, jobs)
+        with self.assertRaisesRegex(ValueError, 'G2-ReadinessJobs'):
+            e.g2_readiness_record(run, jobs[:-1])
+
+    def test_g2_relay_gate_is_fail_closed_and_blob_pinned(self):
+        root = pathlib.Path(__file__).resolve().parents[2]
+        raw = (root / e.G2_RELAY_PATH).read_bytes()
+        blob = hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()
+        self.assertEqual(blob, e.G2_RELAY_BLOB)
+        text = raw.decode()
+        self.assertIn('branches: [main]', text)
+        self.assertIn("github.repository == 'HungQuach301/fulcrum-studio'", text)
+        self.assertIn('github.event.workflow_run.head_branch == \'main\'', text)
+        self.assertIn('github.event.workflow_run.head_repository.full_name == github.repository', text)
+        self.assertIn('github.run_attempt == 1', text)
+
+    def test_g2b_bootstrap_lineage_is_exact_and_frozen(self):
+        baseline = {'head': e.F_CHECKPOINT, 'code': e.SOURCE_HEAD,
+                    'epochs': [], 'data': [], 'unmerged': [],
+                    'candidateBase': e.F_CHECKPOINT, 'closure': False,
+                    'paths': [], 'dataPaths': [],
+                    'evidenceRepair': {'rounds': [], 'merges': [],
+                                       'approval': e.E_APPROVAL,
+                                       'paths': e.ALLOW, 'activations': []},
+                    'evidenceVolume': {'rounds': [], 'merges': [],
+                                       'approval': e.f_authority_sha(),
+                                       'paths': e.F_ALLOW, 'activations': [],
+                                       'continuations': []}}
+        message = '\n'.join([
+            'Fulcrum-Grant: FS24-G-R2B', 'Fulcrum-Phase: ' + e.G2B_PHASE,
+            'FS24-G-R2B-Authority: ' + e.G2B_AUTHORITY,
+            'Owner-Approval-Receipt: ' + e.G2B_AUTHORITY,
+            'FS24-G-R2B-Parent: ' + e.F_CHECKPOINT,
+            'FS24-G-R2B-Patch: ' + e.G2B_PATCH,
+            'FS24-G-R2B-Target-Tree: ' + e.G2_MAIN_TREE,
+            'FS24-G-R2B-Round: 1'])
+        def git(root, *args):
+            values = {
+                ('rev-parse', e.F_CHECKPOINT + '^{tree}'): e.F_CHECKPOINT_TREE,
+                ('rev-list', '--parents', '-n', '1', e.G2_MAIN):
+                    e.G2_MAIN + ' ' + e.F_CHECKPOINT,
+                ('rev-parse', e.G2_MAIN + '^{tree}'): e.G2_MAIN_TREE,
+                ('rev-parse', e.G2_MAIN + ':' + e.G2_RELAY_PATH):
+                    e.G2B_MAIN_RELAY_BLOB,
+                ('show', '-s', '--format=%B', e.G2_MAIN): message,
+            }
+            self.assertIn(args, values)
+            return values[args] + '\n'
+        def field(text, key):
+            return [x[len(key) + 2:] for x in text.splitlines()
+                    if x.startswith(key + ': ')][0]
+        state = e.inspect_f_suffix(self.root, e.G2_MAIN, baseline, git, field,
+                                   lambda root, a, b: [e.G2_RELAY_PATH],
+                                   {'AGENTS.md': 'a' * 40}, [])
+        self.assertEqual(state['relayGateBootstrap'], e.G2B_RECORD)
+        self.assertEqual(state['candidateBase'], e.G2_MAIN)
+        self.assertEqual(state['evidenceVolume'], baseline['evidenceVolume'])
+
+    def test_g2d_ledger_freezes_through_210_without_historic_subresource_gets(self):
+        old_head = 'c' * 40
+        g2_head = 'e' * 40
+        g2d_head = 'f' * 40
+        def run(run_id, head=old_head, path='.github/workflows/ci.yml',
+                event='push', conclusion='success', title='fixture',
+                branch='wp/002', status='completed'):
+            return {'id': run_id, 'head_sha': head, 'head_branch': branch,
+                    'event': event, 'status': status, 'conclusion': conclusion,
+                    'run_attempt': 1, 'path': path, 'display_title': title,
+                    'repository': {'full_name': e.REPO},
+                    'head_repository': {'full_name': e.REPO}}
+        pin = run(1, head=e.F_CHECKPOINT, branch='main')
+        frozen = [run(x) for x in e.G_BASELINE_RUNS]
+        frozen += [run(x, head=e.G2_PARENT, conclusion='failure')
+                   for x in e.G2_STOP_RUNS]
+        frozen += [
+            run(e.G2_R2A_RUNS[0], head=e.G2_PARENT, event='workflow_dispatch',
+                conclusion='failure'),
+            run(e.G2_R2A_RUNS[1], head=e.F_CHECKPOINT,
+                path='.github/workflows/recover-fs24-evidence.yml',
+                event='workflow_run', conclusion='failure',
+                title='FS24E ' + str(e.G2_R2A_RUNS[0]), branch='main'),
+            run(e.G2_READINESS_RUN, head=e.G2_PARENT, event='workflow_dispatch',
+                conclusion='failure')]
+        frozen += [
+            run(e.G2C_RUNS[0], head=g2_head,
+                path='.github/workflows/recover-fs24-evidence.yml'),
+            run(e.G2C_RUNS[1], head=g2_head,
+                path='.github/workflows/acceptance-wp002.yml'),
+            run(e.G2C_RUNS[2], head=g2_head, conclusion='failure')]
+        direct = [
+            run(40000000001, head=g2d_head),
+            run(40000000002, head=g2d_head,
+                path='.github/workflows/acceptance-wp002.yml'),
+            run(40000000003, head=g2d_head,
+                path='.github/workflows/recover-fs24-evidence.yml')]
+        current = [pin] + frozen + direct
+        jobs = {direct[0]['id']: [{}] * 4, direct[1]['id']: [{}] * 6,
+                direct[2]['id']: [{}] * 5}
+        artifacts = {direct[0]['id']: [], direct[1]['id']: [],
+                     direct[2]['id']: [{'size_in_bytes': 1}] * 6}
+        direct_ids = set(jobs)
+
+        class Reader:
+            def __init__(self, directory): self.directory = directory
+            def page(self, path, key, label):
+                if path == '/actions/runs':
+                    return current
+                match = __import__('re').fullmatch(
+                    r'/actions/runs/(\d+)/(jobs|artifacts)', path)
+                self_outer.assertIsNotNone(match)
+                run_id = int(match.group(1))
+                self_outer.assertIn(run_id, direct_ids)
+                return jobs[run_id] if match.group(2) == 'jobs' else artifacts[run_id]
+
+        class Preflight:
+            @staticmethod
+            def git(root, *args):
+                self.assertEqual(args, ('show', '-s', '--format=%B', g2d_head))
+                return 'Fulcrum-Phase: ' + e.G2D_PHASE + '\n'
+            @staticmethod
+            def inspect(root, head):
+                self.assertEqual(head, g2d_head)
+                return {'evidenceVolume': {'approval': e.f_authority_sha()},
+                        'evidenceAdmissionRepair': {
+                            'commit': g2d_head, 'approval': e.g2d_authority_sha(),
+                            'rangeBytes': e.F_QUALIFICATION_ARCHIVE_BYTES}}
+
+        self_outer = self
+        original_baseline, original_preflight = e.f_baseline, e.load_preflight
+        e.f_baseline = lambda root: [{key: pin[key] for key in e.F_LEDGER_FIELDS}]
+        e.load_preflight = lambda root: Preflight()
+        directory = self.root / 'ledger'; directory.mkdir()
+        try:
+            e.check_f_ledger(Reader(directory), self.root)
+        finally:
+            e.f_baseline, e.load_preflight = original_baseline, original_preflight
+        summary = json.loads((directory / 'f-ledger-summary.json').read_text())
+        self.assertEqual(summary['fCharged']['workflowRuns'], 15)
+        self.assertEqual(summary['g1Frozen']['workflowRuns'], 5)
+        self.assertEqual(summary['r2aFrozen']['workflowRuns'], 2)
+        self.assertEqual(summary['r2bFrozen']['workflowRuns'], 1)
+        self.assertEqual(summary['r2cFrozen']['workflowRuns'], 3)
+        self.assertEqual(summary['r2cFrozen']['rangeDeltaBytes'], 162)
+        self.assertEqual(summary['g2dNew'], {
+            'workflowRuns': 3, 'activeRuns': 3,
+            'jobsIncludingReservations': 15, 'wholeWorkflowSkips': 0,
+            'legacyRelays': 0, 'artifactObjects': 6,
+            'artifactStorageBytes': 6})
+        self.assertTrue(summary['frozenArtifactStorageUnknown'])
 if __name__ == '__main__':
     unittest.main(verbosity=2)
