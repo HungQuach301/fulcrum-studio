@@ -1,5 +1,8 @@
 ## WP-010 · Kho ảnh chụp dữ liệu
 
+### 0. Phân loại
+- `riskClass`: `mechanical`
+
 ### 1. Mục tiêu
 Dựng kho dữ liệu có phiên bản cho 3–4 chuỗi cụ thể sẽ dùng ở những tập đầu, cùng adapter cho
 ba nhà cung cấp. **Không xây adapter tổng quát.**

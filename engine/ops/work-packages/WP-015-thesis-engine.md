@@ -1,5 +1,8 @@
 ## WP-015 · Thesis Engine
 
+### 0. Phân loại
+- `riskClass`: `architectural`
+
 ### 1. Mục tiêu
 Sinh thesis đạt chuẩn từ dữ liệu, đủ duy trì bank ≥15 mục khả dụng ở nhịp mục tiêu. Đây là
 điều kiện tiên quyết của quyết định D-08 và là cổng chặn Mốc 3.

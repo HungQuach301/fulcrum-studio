@@ -1,0 +1,30 @@
+name: PR Budget
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pr-budget:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout pull request head
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node 20
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "20"
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Check pull request budget
+        run: >-
+          npx tsx scripts/guardrails/budget.ts
+          --base "${{ github.event.pull_request.base.sha }}"
+          --head "${{ github.event.pull_request.head.sha }}"

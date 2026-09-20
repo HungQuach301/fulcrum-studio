@@ -14,7 +14,7 @@ báo cáo 5 mục. Loại bỏ vòng lặp "push, chờ CI, copy log, dán lại
 `engine/docs/02-decisions.md` D-09, D-11, D-13, D-14 · `.github/workflows/ci.yml`
 
 ### 2b. Checkpoint trước khi bắt đầu
-- WP-002 ở trạng thái `done`, CI của `main` xanh
+- WP-001 ở trạng thái `done`, CI của `main` xanh
 - `main` có branch protection yêu cầu PR
 - Secret của công cụ agent đã có trong Actions Secrets. Thiếu thì **DỪNG và báo tên secret**
 
