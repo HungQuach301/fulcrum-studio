@@ -28,8 +28,10 @@ pack không còn ghi đè repo đã tiến hoá.
 1. `PROJECT.md`
 2. `AGENTS.md`
 3. `engine/ops/guardrails.md`
-4. WP hoặc CP được giao
-5. Các file liệt kê ở mục Input của WP/CP đó
+4. `engine/ops/operating-rules.md`
+5. `engine/ops/review-rubrics.md`
+6. WP hoặc CP được giao
+7. Các file liệt kê ở mục Input của WP/CP đó
 
 ## Vai trò
 
@@ -79,6 +81,11 @@ Mặc định khi WP không khai: `architectural`.
 
 ## Quy ước code
 
+- Vòng kiểm cục bộ bắt buộc. Trước khi ghi lên GitHub, clone repo về container và chạy
+  npm ci, npx tsc --noEmit, và kiểm parse mọi file JSON đã chạm. Chỉ ghi khi cục bộ xanh.
+  Cục bộ xanh không bảo đảm CI xanh: container Node 24, CI Node 20. CI vẫn là nơi kiểm có
+  thẩm quyền. Ghi bằng GitHub plugin, không dùng git push. Đọc log CI bằng plugin, không
+  dùng gh.
 - TypeScript. Không `any` trừ khi có comment giải thích.
 - Mọi stage đọc/ghi artifact qua interface trong `engine/io/`, không gọi thẳng GitHub API.
 - Mọi lời gọi provider qua interface trong `engine/providers/`. Lựa chọn provider cụ thể nằm

@@ -1490,3 +1490,26 @@ Chỉ sau các bước này mới báo WP002 done. Không khởi động WP004/0
 
 Không phải mọi blocker đều giải bằng thêm tiền/quyền. Đặc biệt chứng cứ mất không thể được thay bằng một câu phê duyệt. Không có auto-review rejection trong lượt lập kế hoạch này.
 
+---
+
+## D-29 · Vòng kiểm cục bộ và bằng chứng tối giản
+
+### Bối cảnh
+
+Chuỗi FS24 xây 804 KB cơ chế bằng chứng vì cho rằng không đọc được kết quả CI. Thăm dò bằng
+hành động chứng minh điều đó sai: container chạy `npm ci` và `tsc` trong 21 giây, GitHub
+plugin đọc 284 dòng log của một job trong 4,6 giây.
+
+### Quyết định
+
+Vòng kiểm cục bộ bắt buộc; đọc và ghi bằng plugin; guardrail 28; ba loại bằng chứng hợp lệ.
+
+### Phương án bị loại
+
+Giữ CI là nơi kiểm duy nhất — bị loại vì mỗi lỗi biên dịch tốn một vòng CI, và đó là động
+cơ sinh ra FS24.
+
+### Hệ quả
+
+WP-004 builder không còn là điều kiện để agent chạy được code; mục đích còn lại là chạy
+theo lịch mà không cần người gõ. WP-004 chuyển xuống sau WP-002.

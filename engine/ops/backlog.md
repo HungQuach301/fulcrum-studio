@@ -1,6 +1,6 @@
 # Backlog
 
-Trạng thái: `todo` · `doing` · `blocked` · `done`.
+Trạng thái: `todo` · `doing` · `blocked` · `cancelled` · `done`.
 Thứ tự trong bảng là thứ tự thực hiện. Không nhảy cóc.
 
 Đây là bản đánh số duy nhất có hiệu lực.
@@ -56,9 +56,12 @@ Thứ tự trong bảng là thứ tự thực hiện. Không nhảy cóc.
 |---|---|---|---|---|
 | WP-000 | Scaffold repo, TypeScript, validator hai tầng | architectural | — | done |
 | WP-001 | CI trên push: validate, typecheck, guardrails, ci-report | architectural | WP-000 | done |
-| WP-001b | Bootstrap expander — chỉ nếu connector không ghi được repo | mechanical | WP-000 | blocked |
-| WP-002 | Interface state store + interface provider | architectural | WP-001 | todo |
-| **WP-004** | **Builder — agent chạy trong Actions** | architectural | WP-002 | todo |
+| WP-007 | Dọn dẹp và khôi phục CI | <CẦN QUYẾT ĐỊNH: riskClass của WP-007> | WP-001 | todo |
+| WP-002a | Interfaces state store và provider | mechanical | WP-001 | todo |
+| WP-002b | Hàng đợi ghi D-15 và reindex | architectural | WP-002a | todo |
+| **WP-004** | **Builder — agent chạy trong Actions** | architectural | WP-001 | todo |
+
+WP-001b — `cancelled`: GitHub plugin ghi được repo, nên không cần Bootstrap expander.
 
 ## Mốc 2 — Xác nhận kiến trúc hình ảnh
 
@@ -71,7 +74,7 @@ Thứ tự trong bảng là thứ tự thực hiện. Không nhảy cóc.
 | WP | Tên | `riskClass` | Phụ thuộc | TT |
 |---|---|---|---|---|
 | **WP-009** | **Bản đồ đề tài × nguồn dữ liệu — làm TRƯỚC WP-010** | mechanical | WP-002 | todo |
-| WP-010 | Kho ảnh chụp + adapter, gồm kho vintage và ảnh chụp biên tập | architectural | WP-009 | todo |
+| WP-010 | Kho ảnh chụp + adapter, gồm kho vintage và ảnh chụp biên tập | mechanical | WP-009 | todo |
 | WP-011 | Phát hiện thay đổi chuỗi và đính chính, tự mở issue | mechanical | WP-010 | todo |
 | WP-012 | Thư viện mô hình: runner + kiểm bốn cấp (công cụ, không phải nội dung) | architectural | WP-010 | todo |
 | **WP-008** | **Tám mô hình đầu tiên + ca kiểm tay — phần lớn là việc của người** | architectural | WP-010, WP-012 | todo |

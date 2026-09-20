@@ -1,5 +1,8 @@
 ## WP-003 · Spike canvas liên tục
 
+### 0. Phân loại
+- `riskClass`: `architectural`
+
 ### 1. Mục tiêu
 Trả lời bằng số đo thật: kiến trúc canvas liên tục với máy quay di chuyển có khả thi trên
 runner của Actions không, và ở cấu hình nào thì chuyển động chấp nhận được.

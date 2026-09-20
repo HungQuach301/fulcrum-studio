@@ -38,6 +38,11 @@ bằng cách khác.
 17. Không tự sửa checkpoint không khớp. Dừng và báo cáo.
 18. Không viết logic nghiệp vụ trong WP hạ tầng.
 19. Không commit thẳng `main`. Mỗi WP một nhánh, kết thúc bằng PR.
+28. Agent không được tạo khái niệm quy trình mới không có trong repo: không authority,
+    không ledger, không receipt, không candidate, không sequence, không phase, không
+    evidence framing. Cần một cơ chế chưa tồn tại thì dừng theo D-14 và đề xuất, không tự
+    xây. Bằng chứng hợp lệ chỉ có ba loại: log của một Actions run, nội dung file trong
+    repo, và kết quả lệnh chạy trong container hoặc runner.
 
 ## Nhóm 4 — Chất lượng và nội dung
 

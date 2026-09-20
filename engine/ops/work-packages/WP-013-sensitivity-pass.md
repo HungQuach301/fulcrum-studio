@@ -1,5 +1,8 @@
 ## WP-013 · Sensitivity Pass
 
+### 0. Phân loại
+- `riskClass`: `mechanical`
+
 ### 1. Mục tiêu
 Cho một mô hình và một tập tham số, quét toàn bộ khoảng giá trị hợp lệ và tìm mọi **điểm đảo
 chiều**. Đây là chữ ký khác biệt của kênh và là cơ chế bù hiểu biết bản địa.
