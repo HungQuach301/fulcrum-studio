@@ -56,7 +56,7 @@ Thứ tự trong bảng là thứ tự thực hiện. Không nhảy cóc.
 |---|---|---|---|---|
 | WP-000 | Scaffold repo, TypeScript, validator hai tầng | architectural | — | done |
 | WP-001 | CI trên push: validate, typecheck, guardrails, ci-report | architectural | WP-000 | done |
-| WP-007 | Dọn dẹp và khôi phục CI | <CẦN QUYẾT ĐỊNH: riskClass của WP-007> | WP-001 | todo |
+| WP-007 | Dọn dẹp và khôi phục CI | architectural | WP-001 | doing |
 | WP-002a | Interfaces state store và provider | mechanical | WP-001 | todo |
 | WP-002b | Hàng đợi ghi D-15 và reindex | architectural | WP-002a | todo |
 | **WP-004** | **Builder — agent chạy trong Actions** | architectural | WP-001 | todo |
