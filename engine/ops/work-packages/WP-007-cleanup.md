@@ -19,6 +19,11 @@ PR-A đã merge; `engine/ops/operating-rules.md` tồn tại trên main; guardra
 
 ### 3. Output
 
+Theo D-30, WP-007 tách thành hai PR: PR tài liệu có nhãn `[wp-change]` chỉ sửa file WP
+này và `engine/docs/02-decisions.md`; sau khi PR tài liệu được merge mới thực hiện PR
+cleanup theo phạm vi đã có trên main. PR tài liệu giữ đầy đủ D-22 đến D-27 và chưa thực
+hiện các thay đổi runtime bên dưới.
+
 **XOÁ:** `engine/io/evidence-transfer.py`, `evidence-transfer.test.py`,
 `scripts/wp002-preflight.py`, `engine/io/wp002-integration.ts` và test,
 `WP-002-evidence-recovery.md`, `.github/workflows/recover-fs24-evidence.yml`,
@@ -29,14 +34,30 @@ PR-A đã merge; `engine/ops/operating-rules.md` tồn tại trên main; guardra
 hoạt trên push mọi nhánh và pull_request, dưới 8 KB. `acceptance-wp002.yml` viết lại dưới
 WP-002a/002b, dưới 8 KB.
 
+**GIỮ VÀ SỬA:** `engine/io/github-git.ts`, `engine/io/github-git.test.ts`,
+`engine/io/github-transport.ts`, `engine/io/github-writer.ts`. Gỡ phụ thuộc FS24 để xoá
+`engine/io/wp002-integration.ts` và `engine/io/wp002-integration.test.ts` mà không làm
+hỏng biên dịch. Sửa `.github/workflows/commit-artifacts.yml` và
+`.github/workflows/reindex.yml` để bỏ các lời gọi tới file bị xoá, theo D-15 và WP-002b.
+
+**GIỮ NGUYÊN:** `.github/workflows/acceptance-wp000.yml` và
+`scripts/acceptance-wp000.ts` trong WP-007.
+
 **DỌN:** chạy lại reindex, xác nhận `state.json` không còn `fs24`; xoá 50 dòng
 `runs.jsonl`.
 
-**TÁCH QUYẾT ĐỊNH:** giữ D-01 đến D-29; chuyển D-22 đến D-27 sang
+**TÁCH QUYẾT ĐỊNH TRONG PR CLEANUP:** giữ D-01 đến D-30; chuyển D-22 đến D-27 sang
 `engine/docs/decisions/archive-fs2x.md`, để lại một dòng mỗi quyết định.
 
 **THÊM QUYẾT ĐỊNH:** viết D-28 vào `engine/docs/02-decisions.md`, đặt ngay sau D-27 và
-trước D-29.
+trước D-29. Thêm D-30 ghi nhận điều chỉnh phạm vi, hai nhóm giữ lại và việc tách hai PR.
+Hai quyết định được thêm trong PR tài liệu; không sửa D-29.
+
+**CẬP NHẬT TRONG PR CLEANUP:** thêm vào mục 1 của `engine/ops/operating-rules.md`, sau
+đoạn nói về tsx, đúng đoạn VIỆC 0c đã giao:
+
+> Cách chạy validate tại container đã kiểm chứng: biên dịch bằng tsc với --noEmit false rồi
+> chạy bằng node với NODE_PATH trỏ tới thư mục output. Ba cách dùng tsx đều lỗi listen EPERM.
 
 **THÊM:** `.github/pull_request_template.md` theo bảy dòng báo cáo. Không thêm
 `CODEOWNERS`.
@@ -54,6 +75,8 @@ trước D-29.
 - `episodes/us-personal-finance/2026-09-fs24-right/**`
 - `.github/workflows/ci.yml`
 - `.github/workflows/acceptance-wp002.yml`
+- `.github/workflows/commit-artifacts.yml`
+- `.github/workflows/reindex.yml`
 - `engine/io/github-git.ts`
 - `engine/io/github-transport.ts`
 - `engine/io/github-writer.ts`
@@ -68,18 +91,25 @@ trước D-29.
   `engine/io/github-git.ts`, `engine/io/github-transport.ts`, `engine/io/github-writer.ts`.
   Một đồ thị import, một quyết định cho cả bốn file.
 - `engine/ops/backlog.md` — WP-007 được sửa đúng một dòng của chính nó.
+- `engine/ops/operating-rules.md` — chỉ đoạn VIỆC 0c nêu ở mục 3.
 
 ### 5. Ràng buộc
 
 **GIỮ:** 106 file đặc tả, năm file io core, `registry.ts`, `scripts/validate.ts`,
-`log-run.ts`, `ci-report.ts`, `scripts/guardrails/**`, `reindex.yml`,
-`commit-artifacts.yml`, `package.json`, lockfile, `tsconfig.json`.
+`log-run.ts`, `ci-report.ts`, `scripts/guardrails/**`, `package.json`, lockfile,
+`tsconfig.json`.
+
+Theo D-30, giữ bốn file `github-*` và hai workflow `commit-artifacts.yml`, `reindex.yml`,
+được sửa đúng nội dung ở mục 3. Cặp `acceptance-wp000.yml` và
+`scripts/acceptance-wp000.ts` giữ nguyên. Một quyết định giữ và sửa áp dụng cho cả bốn
+file `github-*` theo cùng đồ thị import.
 
 Không thêm `CODEOWNERS`.
 
 ### 5b. Điều kiện dừng
-- **QUYẾT ĐỊNH TRƯỚC KHI XOÁ, báo cáo rồi chờ:** bốn file `github-*` theo đồ thị import;
-  `acceptance-wp000.yml` và `scripts/acceptance-wp000.ts`.
+Hai mục chờ quyết định về bốn file `github-*` và cặp acceptance-wp000 đã được chủ dự án
+chốt theo D-30; thực hiện quyết định giữ/sửa ở mục 3 và 5.
+
 - `main` bị đổi bởi nguồn khác giữa chừng
 - Cần chạm file ngoài "Phạm vi cho phép"
 - Cần thêm dependency ngoài danh sách ở mục 5

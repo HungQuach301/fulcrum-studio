@@ -1,0 +1,636 @@
+name: Review WP-000 specification
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: wp000-fs22-spec
+  cancel-in-progress: false
+
+jobs:
+  spec-review:
+    if: >-
+      github.event_name == 'pull_request' && github.event.action == 'synchronize' &&
+      github.repository == 'HungQuach301/fulcrum-studio' &&
+      github.event.pull_request.number == 10 && github.event.pull_request.draft == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'wp/000' && github.event.pull_request.base.ref == 'main' &&
+      startsWith(github.event.pull_request.title, '[FS22-20260914:spec]') && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    # No project deadline; mandatory platform limits still apply.
+    env:
+      FS_GRANT: FS22-20260914
+      FS_PHASE: spec
+      FS_START: 900833d041486643540ea794bbe0bbad80f557bb
+      FS_START_TREE: 12564c79d2cae7437d021e81f6bec6301e76c629
+      FS_MAIN: a7fecd4f8a614d10687b471f70f71a5d5e08685f
+      FS_MAIN_TREE: ddb16f67fbf246e669dc28fc50718de75a365f11
+      FS_HEAD: ${{ github.event.pull_request.head.sha }}
+      FS_SPEC_COMMIT: '0000000000000000000000000000000000000000'
+      FS_SPEC_RUN: '0'
+      SPEC_BASE: 900833d041486643540ea794bbe0bbad80f557bb
+      SPEC_BASE_TREE: 12564c79d2cae7437d021e81f6bec6301e76c629
+      SPEC_PREVIOUS: 900833d041486643540ea794bbe0bbad80f557bb
+      SPEC_PREVIOUS_TREE: 12564c79d2cae7437d021e81f6bec6301e76c629
+      SPEC_HEAD: ${{ github.event.pull_request.head.sha }}
+      SPEC_EVENT_SHA: ${{ github.sha }}
+      SPEC_PR_TITLE: ${{ github.event.pull_request.title }}
+    steps:
+      - name: Initialize evidence
+        id: evidence
+        env:
+          SPEC_ROOT: ${{ runner.temp }}/wp000-spec
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$SPEC_ROOT/report" "$SPEC_ROOT/downloads" "$SPEC_ROOT/node_modules"
+          {
+            printf 'scope: FS22 policy specification only\n'
+            printf 'run_id: %s\nrun_number: %s\nattempt: %s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_ATTEMPT"
+            printf 'head: %s\nevent_sha: %s\n' "$SPEC_HEAD" "$SPEC_EVENT_SHA"
+            printf 'base: %s\nbase_tree: %s\nprevious_head: %s\nprevious_tree: %s\n' "$SPEC_BASE" "$SPEC_BASE_TREE" "$SPEC_PREVIOUS" "$SPEC_PREVIOUS_TREE"
+            printf 'wp000Acceptance: blocked\nruntimeTier2: not_run\nwp000Fixtures: not_run\ntypecheck: not_run\nfiveBriefRegression: not_run\n'
+            printf 'state-current: not_run (admitted C bytes preserved; see observed result below)\n'
+            printf 'package_budget_proposed_usd: 20.00;owner-approval-required\nproject_deadline: none\nevidence: framed-job-log-bytes\n'
+            date -u '+started_at: %Y-%m-%dT%H:%M:%SZ'
+            printf 'runner_image: %s\nrunner_image_version: %s\n' "$ImageOS" "$ImageVersion"
+            printf 'checkout: 34e114876b0b11c390a56381ad16ebd13914f8d5\nhistorical-upload-artifact-not-invoked: ea165f8d65b6e75b540449e92b4886f43607fa02\n'
+          } > "$SPEC_ROOT/report/ci-report.txt"
+
+      - name: Checkout the candidate head
+        id: checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+          lfs: false
+
+      - name: Check immutable baselines and live refs before tools
+        id: preflight
+        env:
+          SPEC_ROOT: ${{ runner.temp }}/wp000-spec
+          READ_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          FS_REPORT="$SPEC_ROOT/report"
+
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = HungQuach301/fulcrum-studio
+          test "$GITHUB_EVENT_NAME" = pull_request
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          jq -e --arg h "$FS_HEAD" --arg b "$FS_MAIN" --arg title "[$FS_GRANT:$FS_PHASE]" '
+            .action == "synchronize" and .pull_request.number == 10 and .pull_request.draft == true and
+            .pull_request.head.repo.full_name == "HungQuach301/fulcrum-studio" and
+            .pull_request.base.repo.full_name == "HungQuach301/fulcrum-studio" and
+            .pull_request.head.ref == "wp/000" and .pull_request.base.ref == "main" and
+            .pull_request.head.sha == $h and .pull_request.base.sha == $b and
+            (.pull_request.title | startswith($title))' "$GITHUB_EVENT_PATH" >/dev/null
+          test "$(git rev-parse HEAD)" = "$FS_HEAD"
+          test "$(git rev-parse "$FS_MAIN^{tree}")" = "$FS_MAIN_TREE"
+          test "$(git rev-parse "$FS_START^{tree}")" = "$FS_START_TREE"
+          git merge-base --is-ancestor "$FS_START" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          allowed=(AGENTS.md engine/ops/guardrails.md engine/docs/02-decisions.md engine/ops/work-packages/WP-000-scaffold.md engine/ops/definition-of-done.md .github/workflows/acceptance-wp000.yml scripts/acceptance-wp000.ts .github/workflows/review-wp000-spec.yml)
+          mapfile -t lineage < <(git rev-list --reverse "$FS_START..HEAD")
+          test "${#lineage[@]}" -ge 1
+          test "${#lineage[@]}" -le 3
+          previous="$FS_START"
+          slot=0
+          for revision in "${lineage[@]}"; do
+            slot=$((slot+1))
+            test "$(git show -s --format=%P "$revision")" = "$previous"
+            message="$(git show -s --format=%B "$revision")"
+            test "$(printf '%s\n' "$message" | grep -cx "Fulcrum-Grant: $FS_GRANT")" -eq 1
+            test "$(printf '%s\n' "$message" | grep -cx "Fulcrum-Slot: $slot")" -eq 1
+            test "$(printf '%s\n' "$message" | grep -Ec '^Fulcrum-Phase: (spec|acceptance)$')" -eq 1
+            test "$(printf '%s\n' "$message" | grep -c '^Fulcrum-Grant:')" -eq 1
+            test "$(printf '%s\n' "$message" | grep -c '^Fulcrum-Slot:')" -eq 1
+            test "$(printf '%s\n' "$message" | grep -c '^Fulcrum-Phase:')" -eq 1
+            while IFS= read -r -d '' file; do
+              permitted=false
+              for a in "${allowed[@]}"; do if test "$file" = "$a"; then permitted=true; fi; done
+              test "$permitted" = true
+              test "$(git ls-tree "$revision" -- "$file" | awk '{print $1 " " $2}')" = '100644 blob'
+            done < <(git diff --no-renames --name-only -z "$previous" "$revision")
+            previous="$revision"
+          done
+          test "$(printf '%s\n' "$message" | grep -cx "Fulcrum-Phase: $FS_PHASE")" -eq 1
+          test "$(git ls-tree -r HEAD | wc -l)" -eq 123
+          # Unlisted files, including dependency manifests, state, backlog and contracts, retain C bytes/modes.
+          exclude=()
+          for a in "${allowed[@]}"; do exclude+=(":(exclude)$a"); done
+          git diff --exit-code "$FS_START" HEAD -- . "${exclude[@]}"
+          for a in "${allowed[@]}"; do
+            test "$(git ls-tree HEAD -- "$a" | awk '{print $1 " " $2}')" = '100644 blob'
+          done
+          auth="$(printf 'x-access-token:%s' "$READ_TOKEN" | base64 -w0)"
+          refs="$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" GIT_TERMINAL_PROMPT=0 git ls-remote --refs https://github.com/HungQuach301/fulcrum-studio.git refs/heads/main refs/heads/wp/000)"
+          unset auth
+          test "$(printf '%s\n' "$refs" | awk '$2=="refs/heads/main" {print $1}')" = "$FS_MAIN"
+          test "$(printf '%s\n' "$refs" | awk '$2=="refs/heads/wp/000" {print $1}')" = "$FS_HEAD"
+          printf 'grant=%s\nphase=%s\nslot=%s\ncheckoutSha=%s\ncheckoutTree=%s\nrunId=%s\nattempt=%s\n' "$FS_GRANT" "$FS_PHASE" "$slot" "$FS_HEAD" "$(git rev-parse HEAD^{tree})" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$FS_REPORT/ci-report.txt"
+          printf 'FS_SLOT=%s\n' "$slot" >> "$GITHUB_ENV"
+
+          cat > "$SPEC_ROOT/checkpoint.sh" <<'SH'
+
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = HungQuach301/fulcrum-studio
+          test "$GITHUB_EVENT_NAME" = pull_request
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          jq -e --arg h "$FS_HEAD" --arg b "$FS_MAIN" --arg title "[$FS_GRANT:$FS_PHASE]" '
+            .action == "synchronize" and .pull_request.number == 10 and .pull_request.draft == true and
+            .pull_request.head.repo.full_name == "HungQuach301/fulcrum-studio" and
+            .pull_request.base.repo.full_name == "HungQuach301/fulcrum-studio" and
+            .pull_request.head.ref == "wp/000" and .pull_request.base.ref == "main" and
+            .pull_request.head.sha == $h and .pull_request.base.sha == $b and
+            (.pull_request.title | startswith($title))' "$GITHUB_EVENT_PATH" >/dev/null
+          test "$(git rev-parse HEAD)" = "$FS_HEAD"
+          test "$(git rev-parse "$FS_MAIN^{tree}")" = "$FS_MAIN_TREE"
+          test "$(git rev-parse "$FS_START^{tree}")" = "$FS_START_TREE"
+          git merge-base --is-ancestor "$FS_START" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          allowed=(AGENTS.md engine/ops/guardrails.md engine/docs/02-decisions.md engine/ops/work-packages/WP-000-scaffold.md engine/ops/definition-of-done.md .github/workflows/acceptance-wp000.yml scripts/acceptance-wp000.ts .github/workflows/review-wp000-spec.yml)
+          mapfile -t lineage < <(git rev-list --reverse "$FS_START..HEAD")
+          test "${#lineage[@]}" -ge 1
+          test "${#lineage[@]}" -le 3
+          previous="$FS_START"
+          slot=0
+          for revision in "${lineage[@]}"; do
+            slot=$((slot+1))
+            test "$(git show -s --format=%P "$revision")" = "$previous"
+            message="$(git show -s --format=%B "$revision")"
+            test "$(printf '%s\n' "$message" | grep -cx "Fulcrum-Grant: $FS_GRANT")" -eq 1
+            test "$(printf '%s\n' "$message" | grep -cx "Fulcrum-Slot: $slot")" -eq 1
+            test "$(printf '%s\n' "$message" | grep -Ec '^Fulcrum-Phase: (spec|acceptance)$')" -eq 1
+            test "$(printf '%s\n' "$message" | grep -c '^Fulcrum-Grant:')" -eq 1
+            test "$(printf '%s\n' "$message" | grep -c '^Fulcrum-Slot:')" -eq 1
+            test "$(printf '%s\n' "$message" | grep -c '^Fulcrum-Phase:')" -eq 1
+            while IFS= read -r -d '' file; do
+              permitted=false
+              for a in "${allowed[@]}"; do if test "$file" = "$a"; then permitted=true; fi; done
+              test "$permitted" = true
+              test "$(git ls-tree "$revision" -- "$file" | awk '{print $1 " " $2}')" = '100644 blob'
+            done < <(git diff --no-renames --name-only -z "$previous" "$revision")
+            previous="$revision"
+          done
+          test "$(printf '%s\n' "$message" | grep -cx "Fulcrum-Phase: $FS_PHASE")" -eq 1
+          test "$(git ls-tree -r HEAD | wc -l)" -eq 123
+          # Unlisted files, including dependency manifests, state, backlog and contracts, retain C bytes/modes.
+          exclude=()
+          for a in "${allowed[@]}"; do exclude+=(":(exclude)$a"); done
+          git diff --exit-code "$FS_START" HEAD -- . "${exclude[@]}"
+          for a in "${allowed[@]}"; do
+            test "$(git ls-tree HEAD -- "$a" | awk '{print $1 " " $2}')" = '100644 blob'
+          done
+          auth="$(printf 'x-access-token:%s' "$READ_TOKEN" | base64 -w0)"
+          refs="$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" GIT_TERMINAL_PROMPT=0 git ls-remote --refs https://github.com/HungQuach301/fulcrum-studio.git refs/heads/main refs/heads/wp/000)"
+          unset auth
+          test "$(printf '%s\n' "$refs" | awk '$2=="refs/heads/main" {print $1}')" = "$FS_MAIN"
+          test "$(printf '%s\n' "$refs" | awk '$2=="refs/heads/wp/000" {print $1}')" = "$FS_HEAD"
+          printf 'grant=%s\nphase=%s\nslot=%s\ncheckoutSha=%s\ncheckoutTree=%s\nrunId=%s\nattempt=%s\n' "$FS_GRANT" "$FS_PHASE" "$slot" "$FS_HEAD" "$(git rev-parse HEAD^{tree})" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$FS_REPORT/ci-report.txt"
+          printf 'FS_SLOT=%s\n' "$slot" >> "$GITHUB_ENV"
+
+          SH
+
+      - name: Install only the approved temporary tools
+        id: tools
+        env:
+          SPEC_ROOT: ${{ runner.temp }}/wp000-spec
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --retry 0 \
+            https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz \
+            --output "$SPEC_ROOT/downloads/node.tar.xz"
+          printf '%s  %s\n' df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d "$SPEC_ROOT/downloads/node.tar.xz" | sha256sum --check --status
+          mkdir -p "$SPEC_ROOT/node"
+          tar -xJf "$SPEC_ROOT/downloads/node.tar.xz" --strip-components=1 -C "$SPEC_ROOT/node"
+          SPEC_NODE_VERSION=$("$SPEC_ROOT/node/bin/node" --version)
+          SPEC_NPM_VERSION=$("$SPEC_ROOT/node/bin/node" "$SPEC_ROOT/node/lib/node_modules/npm/bin/npm-cli.js" --version)
+          test "$SPEC_NODE_VERSION" = v20.20.2
+          test "$SPEC_NPM_VERSION" = 10.8.2
+          {
+            printf 'node: %s\nnpm_bundled: %s\n' "$SPEC_NODE_VERSION" "$SPEC_NPM_VERSION"
+            printf 'node_archive_sha256: df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d\n'
+            printf 'node20_eol: FS22-package-only-when-owner-approved;action-patch-unproven\n'
+          } >> "$SPEC_ROOT/report/ci-report.txt"
+          while read -r SPEC_PACKAGE SPEC_VERSION SPEC_SRI SPEC_URL; do
+            SPEC_ARCHIVE="$SPEC_ROOT/downloads/$SPEC_PACKAGE.tgz"
+            curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --retry 0 \
+              "$SPEC_URL" --output "$SPEC_ARCHIVE"
+            SPEC_ACTUAL_SRI=$("$SPEC_ROOT/node/bin/node" -e "const f=require('node:fs'),c=require('node:crypto');process.stdout.write('sha512-'+c.createHash('sha512').update(f.readFileSync(process.argv[1])).digest('base64'))" "$SPEC_ARCHIVE")
+            test "$SPEC_ACTUAL_SRI" = "$SPEC_SRI"
+            tar -tzf "$SPEC_ARCHIVE" | while read -r SPEC_ENTRY; do
+              case "$SPEC_ENTRY" in package/*) ;; *) exit 1 ;; esac
+              case "/$SPEC_ENTRY/" in *"/../"*|*"/./"*) exit 1 ;; esac
+            done
+            mkdir -p "$SPEC_ROOT/node_modules/$SPEC_PACKAGE"
+            tar -xzf "$SPEC_ARCHIVE" --strip-components=1 -C "$SPEC_ROOT/node_modules/$SPEC_PACKAGE"
+            "$SPEC_ROOT/node/bin/node" -e "const p=JSON.parse(require('node:fs').readFileSync(process.argv[1],'utf8'));if(p.name!==process.argv[2]||p.version!==process.argv[3])process.exit(1)" \
+              "$SPEC_ROOT/node_modules/$SPEC_PACKAGE/package.json" "$SPEC_PACKAGE" "$SPEC_VERSION"
+            printf 'tool: %s@%s %s\n' "$SPEC_PACKAGE" "$SPEC_VERSION" "$SPEC_SRI" >> "$SPEC_ROOT/report/ci-report.txt"
+          done <<'PINS'
+          ajv 8.12.0 sha512-sRu1kpcO9yLtYxBKvqfTeh9KzZEwO3STyX1HT+4CaDzC6HpTGYhIhPIzj9XuKU7KYDwnaeh5hcOwjy1QuJzBPA== https://registry.npmjs.org/ajv/-/ajv-8.12.0.tgz
+          ajv-formats 2.1.1 sha512-Wx0Kx52hxE7C18hkMEggYlEifqWZtYaRgouJor+WMdPnQyEK13vgEWyVNup7SoeeoLMsr4kf5h6dOW11I15MUA== https://registry.npmjs.org/ajv-formats/-/ajv-formats-2.1.1.tgz
+          fast-deep-equal 3.1.3 sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q== https://registry.npmjs.org/fast-deep-equal/-/fast-deep-equal-3.1.3.tgz
+          json-schema-traverse 1.0.0 sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug== https://registry.npmjs.org/json-schema-traverse/-/json-schema-traverse-1.0.0.tgz
+          require-from-string 2.0.2 sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw== https://registry.npmjs.org/require-from-string/-/require-from-string-2.0.2.tgz
+          uri-js 4.4.1 sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg== https://registry.npmjs.org/uri-js/-/uri-js-4.4.1.tgz
+          punycode 2.3.1 sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg== https://registry.npmjs.org/punycode/-/punycode-2.3.1.tgz
+          PINS
+
+      - name: Review specification scope and schema contracts
+        id: review
+        env:
+          SPEC_ROOT: ${{ runner.temp }}/wp000-spec
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$SPEC_ROOT/review.cjs" <<'JS'
+          'use strict';
+          // D-22: temporary specification checker; no acceptance or state mutation.
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const cp = require('node:child_process');
+          const specRoot = process.env.SPEC_ROOT;
+          const reportPath = path.join(specRoot, 'report', 'ci-report.txt');
+          const base = process.env.SPEC_BASE;
+          const previous = process.env.SPEC_PREVIOUS;
+          const head = process.env.SPEC_HEAD;
+          const docs = ["AGENTS.md", "engine/ops/guardrails.md", "engine/docs/02-decisions.md", "engine/ops/work-packages/WP-000-scaffold.md", "engine/ops/definition-of-done.md"];
+          const workflow = ".github/workflows/review-wp000-spec.yml";
+          const approved = ["AGENTS.md", "engine/ops/guardrails.md", "engine/docs/02-decisions.md", "engine/ops/work-packages/WP-000-scaffold.md", "engine/ops/definition-of-done.md", ".github/workflows/acceptance-wp000.yml", "scripts/acceptance-wp000.ts", ".github/workflows/review-wp000-spec.yml"];
+          const allowlistSchema = 'engine/contracts/publish-allowlist.schema.json';
+          const statePath = 'pipeline/state.json';
+          function record(label, data) {
+            fs.appendFileSync(reportPath, label + ': ' + JSON.stringify(data) + '\n');
+          }
+          function check(label, condition, detail) {
+            record(label, {result: condition ? 'pass' : 'failure', detail});
+            if (!condition) throw new Error(label);
+          }
+          function git(...args) {
+            return cp.execFileSync('git', args, {maxBuffer: 8 * 1024 * 1024});
+          }
+          function source(ref, filename) {
+            return git('show', ref + ':' + filename);
+          }
+          function tree(ref) {
+            const entries = git('ls-tree', '-rz', '--full-tree', ref).toString('utf8').split('\0').filter(Boolean);
+            return new Map(entries.map(entry => {
+              const tab = entry.indexOf('\t');
+              const [mode, type, sha] = entry.slice(0, tab).split(' ');
+              return [entry.slice(tab + 1), {mode, type, sha}];
+            }));
+          }
+          function equalEntry(a, b) {
+            return !!a && !!b && a.mode === b.mode && a.type === b.type && a.sha === b.sha;
+          }
+          function changes(a, b) {
+            return [...new Set([...a.keys(), ...b.keys()])].filter(name => !equalEntry(a.get(name), b.get(name))).sort();
+          }
+          function exactDelta(a, b, wanted) {
+            return JSON.stringify(changes(a, b)) === JSON.stringify([...wanted].sort());
+          }
+          function preservedPrefix(oldBytes, newBytes) {
+            return newBytes.length >= oldBytes.length && newBytes.subarray(0, oldBytes.length).equals(oldBytes);
+          }
+          function markers(text) {
+            return text.includes('Fulcrum-Grant: FS22-20260914') && text.includes('Fulcrum-Phase: spec');
+          }
+          function secretKinds(text) {
+            const patterns = [
+              ['github-token', /\bgh[pousr]_[A-Za-z0-9]{20,}\b/],
+              ['github-fine-grained-token', /\bgithub_pat_[A-Za-z0-9_]{20,}\b/],
+              ['provider-token', /\bsk-(?:ant-)?[A-Za-z0-9_-]{16,}\b/],
+              ['private-key', /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/],
+              ['literal-credential', /\b[A-Za-z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD)[A-Za-z0-9_]*\s*[:=]\s*["'][A-Za-z0-9_+\/=.-]{12,}["']/i]
+            ];
+            return patterns.filter(([, pattern]) => pattern.test(text)).map(([kind]) => kind);
+          }
+          function contentConstant(filename, text) {
+            if (!filename.startsWith('engine/') || !/\.(?:json|[cm]?[jt]sx?)$/.test(filename)) return false;
+            return /["']?\b(?:beatCount|sceneCount|scriptWordCount|targetDurationMin|sceneMinDurationMs|ttsVoiceId|pillar|layout|color|fps)["']?\s*[:=]\s*(?:\[\s*\d|\d|["'](?:#[0-9a-f]{6}|[a-z][a-z0-9-]*)["'])/i.test(text);
+          }
+          function addedLines(diff) {
+            let filename = '';
+            let lineNumber = 0;
+            const result = [];
+            for (const line of diff.split('\n')) {
+              if (line.startsWith('+++ b/')) filename = line.slice(6);
+              else if (line.startsWith('@@ ')) {
+                const match = line.match(/\+(\d+)(?:,\d+)? @@/);
+                if (!match) throw new Error('Cannot read diff location');
+                lineNumber = Number(match[1]);
+              } else if (line.startsWith('+') && !line.startsWith('+++')) {
+                result.push({filename, lineNumber, text: line.slice(1)});
+                lineNumber += 1;
+              } else if (line.startsWith(' ')) lineNumber += 1;
+            }
+            return result;
+          }
+          const mappings = new Map([
+            ['channels/us-personal-finance/channel.json', 'channel.schema.json'],
+            ['channels/us-personal-finance/visual-tokens.json', 'visual-tokens.schema.json'],
+            ['genres/data-explainer/format-spec.json', 'format-spec.schema.json'],
+            ['genres/data-explainer/layouts.json', 'layouts.schema.json'],
+            ['genres/data-explainer/asset-policy.json', 'asset-policy.schema.json'],
+            ['pipeline/automation-tiers.json', 'automation-tiers.schema.json'],
+            ['pipeline/state.json', 'pipeline-state.schema.json'],
+            ['config/publish-allowlist.json', 'publish-allowlist.schema.json']
+          ]);
+          function category(filename) {
+            if (/^engine\/contracts\/[^/]+\.schema\.json$/.test(filename)) return 'schema';
+            if (['package.json', 'package-lock.json', 'tsconfig.json'].includes(filename)) return 'tooling';
+            return mappings.has(filename) ? 'domain-config' : null;
+          }
+          function simplifiedErrors(errors) {
+            return (errors || []).map(error => ({
+              instancePath: error.instancePath,
+              keyword: error.keyword,
+              params: error.params,
+              schemaPath: error.schemaPath,
+              message: error.message
+            }));
+          }
+          function main() {
+            const baseTree = tree(base), oldTree = tree(previous), candidateTree = tree(head);
+            check('source-inventory', oldTree.size === 123 && candidateTree.size === 123, {previous: oldTree.size, candidate: candidateTree.size});
+            check('incremental-scope', exactDelta(oldTree, candidateTree, approved), changes(oldTree, candidateTree));
+            const outside = [...oldTree.keys()].filter(filename => !approved.includes(filename));
+            check('preserve-outside-approved-scope', outside.every(filename => equalEntry(oldTree.get(filename), candidateTree.get(filename))), {count: outside.length});
+            check('file-modes', approved.every(filename => candidateTree.get(filename)?.mode === '100644' && candidateTree.get(filename)?.type === 'blob'));
+            check('pinned-allowlist-schema', candidateTree.get(allowlistSchema).sha === 'a0de2c89a18bbe20e751dec69e5b508ee1a9efb9');
+            check('pinned-state', candidateTree.get(statePath).sha === 'aa4b01b8d13db6dbff451a1404d5e5464369bc62');
+            for (const doc of docs) check('document-history:' + doc, preservedPrefix(source(base, doc), source(head, doc)));
+            const oldDecisions = source(base, 'engine/docs/02-decisions.md'), candidateDecisions = source(head, 'engine/docs/02-decisions.md');
+            check('D01-D21-verbatim', preservedPrefix(oldDecisions, candidateDecisions), {baseline: base});
+            const tail = candidateDecisions.subarray(oldDecisions.length).toString('utf8');
+            check('only-new-D22', JSON.stringify(tail.match(/^## D-[0-9]+/gm)) === JSON.stringify(['## D-22']));
+            check('D22-package-identity', tail.includes('FS22-20260914') && tail.includes('Không đặt deadline'));
+            check('commit-grant', markers(git('show', '-s', '--format=%B', head).toString('utf8')));
+            check('PR-title-grant', process.env.SPEC_PR_TITLE.startsWith('[FS22-20260914:spec]'));
+            check('backlog-unchanged', source(base, 'engine/ops/backlog.md').equals(source(head, 'engine/ops/backlog.md')));
+            const additions = addedLines(git('diff', '--no-ext-diff', '--no-color', '--unified=0', base, head).toString('utf8'));
+            const secretHits = additions.flatMap(line => secretKinds(line.text)
+              .map(kind => ({filename: line.filename, line: line.lineNumber, kind})));
+            check('diff-secret-scan', secretHits.length === 0, {coverage: 'GitHub/provider token, private key, quoted literal credential', findings: secretHits});
+            const constantHits = additions.filter(line => contentConstant(line.filename, line.text))
+              .map(line => ({filename: line.filename, line: line.lineNumber}));
+            check('engine-code-schema-content-constants', constantHits.length === 0,
+              {coverage: 'new Engine code/schema literals; documentation reviewed separately', findings: constantHits});
+
+            let guardFixtures = 0;
+            function guardCase(name, result) {
+              check('guard-fixture:' + name, result);
+              guardFixtures += 1;
+            }
+            guardCase('valid-scope', exactDelta(oldTree, candidateTree, approved));
+            const extraFile = new Map(candidateTree);
+            extraFile.set('UNAPPROVED.md', {mode: '100644', type: 'blob', sha: '0'.repeat(40)});
+            guardCase('outside-scope', !exactDelta(oldTree, extraFile, approved));
+            for (const filename of [statePath, 'engine/ops/backlog.md', allowlistSchema]) {
+              const altered = new Map(candidateTree);
+              altered.set(filename, {...altered.get(filename), sha: '0'.repeat(40)});
+              guardCase('preserved-file:' + filename, !exactDelta(oldTree, altered, approved));
+            }
+            const alteredMode = new Map(candidateTree);
+            alteredMode.set(statePath, {...alteredMode.get(statePath), mode: '100755'});
+            guardCase('preserved-mode', !exactDelta(oldTree, alteredMode, approved));
+            guardCase('valid-decision-prefix', preservedPrefix(oldDecisions, candidateDecisions));
+            const alteredDecisions = Buffer.from(candidateDecisions);
+            alteredDecisions[0] ^= 1;
+            guardCase('changed-D01-D21', !preservedPrefix(oldDecisions, alteredDecisions));
+            guardCase('valid-markers', markers('Fulcrum-Grant: FS22-20260914\nFulcrum-Phase: spec'));
+            guardCase('missing-phase-marker', !markers('Fulcrum-Grant: FS22-20260914'));
+            guardCase('missing-grant-marker', !markers('Fulcrum-Phase: spec'));
+            guardCase('valid-no-secret', secretKinds('Documentation references an environment variable.').length === 0);
+            const fakeSecrets = [
+              'gh' + 'p_' + 'A'.repeat(36),
+              'github_' + 'pat_' + 'B'.repeat(40),
+              's' + 'k-' + 'C'.repeat(32),
+              's' + 'k-ant-' + 'D'.repeat(32),
+              '-----BEGIN ' + 'PRIVATE KEY-----',
+              'API_' + 'KEY = "' + 'E'.repeat(24) + '"'
+            ];
+            fakeSecrets.forEach((value, index) => guardCase('fake-secret-' + index, secretKinds(value).length > 0));
+            guardCase('valid-no-content-literal', !contentConstant('engine/example.ts', 'const value = config.limits;'));
+            guardCase('content-literal', contentConstant('engine/example.ts', 'const beatCount = 7;'));
+            guardCase('unknown-JSON', category('unclassified.json') === null);
+            guardCase('known-JSON', category('config/publish-allowlist.json') === 'domain-config');
+            record('guard-fixtures-total', guardFixtures);
+
+            const filenames = [...candidateTree.keys()].filter(filename => filename.endsWith('.json')).sort();
+            const schemaFiles = filenames.filter(filename => category(filename) === 'schema');
+            const domainFiles = filenames.filter(filename => category(filename) === 'domain-config');
+            check('JSON-classification', filenames.length === 49 && schemaFiles.length === 38 &&
+              domainFiles.length === 8 && filenames.every(filename => category(filename) !== null),
+              {json: filenames.length, schema: schemaFiles.length, domainConfig: domainFiles.length, toolingSyntaxOnly: 3});
+            const documentMap = new Map();
+            for (const filename of filenames) {
+              try {
+                documentMap.set(filename, JSON.parse(fs.readFileSync(filename, 'utf8')));
+              } catch (error) {
+                record('JSON-parse', {filename, result: 'failure', message: error.message});
+                throw error;
+              }
+            }
+            record('JSON-parse', {result: 'pass', files: filenames.length});
+            const Ajv = require(path.join(specRoot, 'node_modules', 'ajv'));
+            const addFormats = require(path.join(specRoot, 'node_modules', 'ajv-formats'));
+            const options = {
+              allErrors: true, validateFormats: true,
+              strictSchema: true, strictTypes: true, strictTuples: true, strictNumbers: true,
+              allowUnionTypes: true, strictRequired: false,
+              coerceTypes: false, useDefaults: false, removeAdditional: false
+            };
+            record('Ajv-options', options);
+            const ajv = new Ajv(options);
+            addFormats(ajv);
+            const ids = new Set();
+            for (const filename of schemaFiles) {
+              const schema = documentMap.get(filename);
+              check('schema-identity:' + filename,
+                schema.$schema === 'http://json-schema.org/draft-07/schema#' &&
+                typeof schema.$id === 'string' && schema.$id === path.basename(filename) && !ids.has(schema.$id));
+              ids.add(schema.$id);
+              check('meta-schema:' + filename, ajv.validateSchema(schema), simplifiedErrors(ajv.errors));
+              ajv.addSchema(schema);
+            }
+            for (const filename of schemaFiles) {
+              try {
+                check('compile:' + filename, typeof ajv.getSchema(documentMap.get(filename).$id) === 'function');
+              } catch (error) {
+                record('schema-compile-error', {filename, message: error.message});
+                throw error;
+              }
+            }
+            let validConfigCount = 0;
+            for (const filename of domainFiles) {
+              const validate = ajv.getSchema(mappings.get(filename));
+              const data = documentMap.get(filename);
+              const before = JSON.stringify(data);
+              const valid = validate(data);
+              const errors = simplifiedErrors(validate.errors);
+              check('read-only-data:' + filename, JSON.stringify(data) === before);
+              if (filename === statePath) {
+                record('state-current', valid ? 'valid-at-tier1' : 'invalid');
+                check('admitted-state-valid-tier1', valid, errors);
+                const baselineState = JSON.parse(source(process.env.FS_MAIN, statePath).toString('utf8'));
+                check('historical-state-negative-control', validate(baselineState) === false);
+                const observed = simplifiedErrors(validate.errors).map(error => [error.instancePath, error.keyword,
+                  error.params.missingProperty ?? error.params.additionalProperty ?? error.params.type ?? ''].join('|')).sort();
+                const expected = ['|required|sourceCommit','|additionalProperties|engineVersion','|additionalProperties|aggregates','/rebuiltAt|type|string'].sort();
+                check('historical-state-exact-errors', JSON.stringify(observed) === JSON.stringify(expected), {observed,expected});
+              } else {
+                check('real-config:' + filename, valid, errors);
+                validConfigCount += 1;
+              }
+                          }
+            check('seven-other-configs', validConfigCount === 7);
+
+            const validateAllowlist = ajv.getSchema('publish-allowlist.schema.json');
+            const original = documentMap.get('config/publish-allowlist.json');
+            const clone = () => JSON.parse(JSON.stringify(original));
+            let allowlistFixtures = 0;
+            function allowlistCase(name, data, expectedValid, expectedError) {
+              const before = JSON.stringify(data);
+              const valid = validateAllowlist(data);
+              const errors = simplifiedErrors(validateAllowlist.errors);
+              const correctError = expectedValid ? errors.length === 0 :
+                errors.length === 1 && errors[0].keyword === expectedError.keyword &&
+                errors[0].instancePath === expectedError.instancePath &&
+                Object.entries(expectedError.params).every(([key, value]) => errors[0].params[key] === value);
+              check('allowlist-fixture:' + name,
+                valid === expectedValid && correctError && JSON.stringify(data) === before,
+                {expectedValid, valid, errors});
+              allowlistFixtures += 1;
+            }
+            allowlistCase('valid-with-note', clone(), true);
+            const withoutNote = clone();
+            delete withoutNote.note;
+            allowlistCase('valid-without-note', withoutNote, true);
+            for (const key of ['version', 'targetRepo', 'allow', 'deny', 'requireCalculatorParity']) {
+              const data = clone();
+              delete data[key];
+              allowlistCase('missing-' + key, data, false,
+                {keyword: 'required', instancePath: '', params: {missingProperty: key}});
+            }
+            for (const [key, wrongValue, type] of [
+              ['note', 0, 'string'], ['version', 0, 'string'], ['targetRepo', 0, 'string'],
+              ['allow', 'wrong', 'array'], ['deny', 'wrong', 'array'], ['requireCalculatorParity', 'true', 'boolean']
+            ]) {
+              const data = clone();
+              data[key] = wrongValue;
+              allowlistCase('wrong-type-' + key, data, false,
+                {keyword: 'type', instancePath: '/' + key, params: {type}});
+            }
+            for (const key of ['allow', 'deny']) {
+              const data = clone();
+              data[key] = [0];
+              allowlistCase('wrong-item-' + key, data, false,
+                {keyword: 'type', instancePath: '/' + key + '/0', params: {type: 'string'}});
+            }
+            const extra = clone();
+            extra.unexpected = true;
+            allowlistCase('extra-property', extra, false,
+              {keyword: 'additionalProperties', instancePath: '', params: {additionalProperty: 'unexpected'}});
+            record('allowlist-fixtures-total', allowlistFixtures);
+            record('coverage', {
+              schemas: schemaFiles.length, realConfigFiles: domainFiles.length,
+              validRealConfigs: validConfigCount + 1, invalidRealConfigs: 0,
+              artifactJSON: 0, frontMatter: 0, jsonlLines: 0, toolingJSON: 3, toolingCheck: 'syntax-only; npm-and-TypeScript-require-acceptance',
+              tier2RealArtifacts: 0, runtimeTier2: 'not_run', wp000Acceptance: 'blocked'
+            });
+            check('source-tree-clean', git('status', '--porcelain', '--untracked-files=all').toString('utf8') === '');
+            record('spec-review', 'pass; pending final checkpoint and complete evidence');
+          }
+          try {
+            main();
+          } catch (error) {
+            record('spec-review', {result: 'failure', message: error.message});
+            process.exitCode = 1;
+          }
+          JS
+          "$SPEC_ROOT/node/bin/node" "$SPEC_ROOT/review.cjs"
+
+      - name: Read back live refs and the unchanged checkout
+        id: postflight
+        env:
+          SPEC_ROOT: ${{ runner.temp }}/wp000-spec
+          READ_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FS_REPORT="$SPEC_ROOT/report"
+          bash "$SPEC_ROOT/checkpoint.sh"
+
+      - name: Complete and print the evidence report
+        id: report
+        if: always()
+        env:
+          SPEC_ROOT: ${{ runner.temp }}/wp000-spec
+          SPEC_INIT_OUTCOME: ${{ steps.evidence.outcome }}
+          SPEC_CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          SPEC_PREFLIGHT_OUTCOME: ${{ steps.preflight.outcome }}
+          SPEC_TOOLS_OUTCOME: ${{ steps.tools.outcome }}
+          SPEC_REVIEW_OUTCOME: ${{ steps.review.outcome }}
+          SPEC_POSTFLIGHT_OUTCOME: ${{ steps.postflight.outcome }}
+          SPEC_JOB_STATUS: ${{ job.status }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$SPEC_ROOT/report"
+          {
+            printf '\nstep_outcomes:\n'
+            printf 'initialize: %s\ncheckout: %s\npreflight: %s\ntools: %s\nreview: %s\npostflight: %s\n' \
+              "$SPEC_INIT_OUTCOME" "$SPEC_CHECKOUT_OUTCOME" "$SPEC_PREFLIGHT_OUTCOME" "$SPEC_TOOLS_OUTCOME" "$SPEC_REVIEW_OUTCOME" "$SPEC_POSTFLIGHT_OUTCOME"
+            printf 'job_status_at_report: %s\n' "$SPEC_JOB_STATUS"
+            printf 'evidence_transport: pending; framed log integrity and final job conclusion must be read separately\n'
+            printf 'wp000Acceptance: blocked\nstate_normalization: not_performed\nprovider_calls: 0\n'
+            printf 'budget_note: proposed package 20 USD only when approved; invoice remains unknown\n'
+            date -u '+report_completed_at: %Y-%m-%dT%H:%M:%SZ'
+          } >> "$SPEC_ROOT/report/ci-report.txt"
+          cat "$SPEC_ROOT/report/ci-report.txt"
+
+      - name: Emit complete specification evidence bytes
+        id: transport
+        if: always()
+        shell: bash
+        run: |
+          FS_REPORT="$RUNNER_TEMP/wp000-spec/report"
+
+          set -euo pipefail
+          test -d "$FS_REPORT"
+          printf 'FS22_BEGIN\t%s\t%s\t%s\t%s\n' "$FS_GRANT" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$FS_HEAD"
+          count=0
+          while IFS= read -r -d '' file; do
+            test -f "$file" && test ! -L "$file"
+            name="${file#"$FS_REPORT"/}"
+            encoded="$(printf '%s' "$name" | base64 -w0)"
+            bytes="$(wc -c < "$file")"
+            digest="$(sha256sum "$file" | awk '{print $1}')"
+            printf 'FS22_FILE\t%s\t%s\t%s\n' "$encoded" "$bytes" "$digest"
+            base64 -w 2048 "$file" | awk '{printf "FS22_DATA\t%d\t%s\n", NR, $0}'
+            printf 'FS22_END\t%s\n' "$encoded"
+            count=$((count+1))
+          done < <(find "$FS_REPORT" -type f -print0 | sort -z)
+          printf 'FS22_COMPLETE\t%s\n' "$count"
+
+      - name: Clean temporary specification data
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf -- "$RUNNER_TEMP/wp000-spec"
+          test ! -e "$RUNNER_TEMP/wp000-spec"
+          printf 'finalTemporaryCleanup=pass\n'

@@ -16,9 +16,6 @@ thứ tự: `TSX_TMPDIR=/tmp/tsxrun npx tsx ...`; rồi `node scripts/validate.t
 bằng `tsc --outDir` rồi chạy `node`. Cách nào chạy được thì ghi vào báo cáo và dùng cho
 mọi task sau.
 
-Cách chạy validate tại container đã kiểm chứng: biên dịch bằng tsc với --noEmit false rồi
-chạy bằng node với NODE_PATH trỏ tới thư mục output. Ba cách dùng tsx đều lỗi listen EPERM.
-
 **Cục bộ xanh không bảo đảm CI xanh.** Container chạy Node 24, CI chạy Node 20. Vòng kiểm
 cục bộ là bộ lọc trước, rẻ và nhanh; **CI vẫn là nơi kiểm có thẩm quyền**. Không được
 tuyên bố một WP đã done dựa trên kết quả cục bộ.

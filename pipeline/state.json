@@ -1,5 +1,22 @@
 {
-  "rebuiltAt": "2026-09-22T01:33:37.506Z",
-  "sourceCommit": "2d17739d37b16745787938434d96b39ed52f2c7c",
-  "episodes": []
+  "rebuiltAt": "2026-09-16T01:40:17.513Z",
+  "sourceCommit": "2f3dc737ce4772d1ce92f71f1261c457e13614e2",
+  "episodes": [
+    {
+      "episodeId": "us-personal-finance/2026-09-fs24-left",
+      "channel": "us-personal-finance",
+      "currentStage": "integration-fixture",
+      "stageStatus": "pending",
+      "updatedAt": "2026-09-15T16:03:10.000Z",
+      "spendUsd": 0
+    },
+    {
+      "episodeId": "us-personal-finance/2026-09-fs24-right",
+      "channel": "us-personal-finance",
+      "currentStage": "integration-fixture",
+      "stageStatus": "pending",
+      "updatedAt": "2026-09-15T16:03:10.000Z",
+      "spendUsd": 0
+    }
+  ]
 }
