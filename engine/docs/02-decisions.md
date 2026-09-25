@@ -1492,6 +1492,31 @@ Không phải mọi blocker đều giải bằng thêm tiền/quyền. Đặc bi
 
 ---
 
+## D-28 · Gỡ bộ máy bằng chứng tự chế
+
+### Bối cảnh
+D-22 đến D-27 hợp thức hoá một chuỗi cơ chế bằng chứng — receipt, authority, ledger,
+candidate, Range cap — tổng cộng khoảng 804 KB, gồm ba file Python trong một dự án khai
+TypeScript. Cơ chế này được xây vì cho rằng agent không đọc được kết quả CI. Thăm dò bằng
+hành động sau đó chứng minh giả định đó sai (xem D-29). Đồng thời ci.yml bị gắn cứng vào
+FS_GRANT FS24-D và gọi scripts/wp002-preflight.py ở bước đầu của cả bốn job, làm CI đỏ trên
+main sau khi merge PR #19.
+
+### Quyết định
+Gỡ toàn bộ cơ chế đó theo WP-007. Viết lại ci.yml theo đúng WP-001 mục 3 và 3b. Chuyển nội
+dung D-22 đến D-27 sang engine/docs/decisions/archive-fs2x.md, giữ lại một dòng mỗi quyết
+định trong file này. Bằng chứng hợp lệ từ nay chỉ gồm ba loại theo guardrail 28.
+
+### Phương án bị loại
+Giữ cơ chế và sửa từng chỗ hỏng — bị loại vì đó là chữa triệu chứng của một giả định chưa
+kiểm, và mỗi lần sửa trước đây đều mở ra bề mặt lỗi mới.
+
+### Hệ quả
+pipeline/runs.jsonl được làm rỗng vì 50 dòng hiện có đều là fixture, costUsd bằng 0. Ba mốc
+chi phí trong 04-nfr.md vì vậy chưa có cơ chế nào đọc cho tới khi WP-004 ghi chi phí thật.
+
+---
+
 ## D-29 · Vòng kiểm cục bộ và bằng chứng tối giản
 
 ### Bối cảnh
@@ -1513,3 +1538,49 @@ cơ sinh ra FS24.
 
 WP-004 builder không còn là điều kiện để agent chạy được code; mục đích còn lại là chạy
 theo lịch mà không cần người gõ. WP-004 chuyển xuống sau WP-002.
+
+---
+
+## D-30 · Điều chỉnh phạm vi và tách hai PR của WP-007
+
+### Bối cảnh
+
+PR #21 vừa sửa WP-007 vừa triển khai cleanup, trong khi WP-001 mục 3b đọc phạm vi từ WP
+trên main và chỉ cho phép sửa chính WP trong PR chỉ có tài liệu với nhãn `[wp-change]`.
+`github-writer.ts` còn phụ thuộc `wp002-integration.ts`; hai workflow ghi và reindex còn
+gọi các file Python nằm trong danh sách xoá. Xoá riêng các file đó để lại phụ thuộc hỏng.
+
+### Quyết định
+
+Riêng WP-007, thay yêu cầu một PR bằng hai PR nối tiếp: PR tài liệu `[wp-change]` chỉ sửa
+`engine/ops/work-packages/WP-007-cleanup.md` và `engine/docs/02-decisions.md`; sau khi PR
+này được merge mới thực hiện PR cleanup theo phạm vi đã có trên main. Trong PR tài liệu,
+giữ đầy đủ D-22 đến D-27, thêm nguyên văn D-28 trước D-29 và giữ nguyên D-29. Việc chuyển
+D-22 đến D-27 sang file lưu trữ thuộc PR cleanup.
+
+Giữ bốn file `engine/io/github-git.ts`, `engine/io/github-git.test.ts`,
+`engine/io/github-transport.ts`, `engine/io/github-writer.ts`; gỡ phụ thuộc FS24 để xoá
+`engine/io/wp002-integration.ts` và test mà không làm hỏng biên dịch. Đây là quyết định
+chung cho cả bốn file theo đồ thị import. Giữ nguyên `.github/workflows/acceptance-wp000.yml`
+và `scripts/acceptance-wp000.ts` trong WP-007.
+
+Bổ sung `.github/workflows/commit-artifacts.yml` và `.github/workflows/reindex.yml` vào
+phạm vi WP-007 để bỏ các lời gọi tới file bị xoá, theo D-15 và WP-002b; thay yêu cầu giữ
+nguyên hai workflow ở mục 5 của WP-007 bằng giữ file và sửa đúng nội dung này. Bổ sung
+`engine/ops/operating-rules.md` chỉ cho đoạn VIỆC 0c về cách chạy validate đã được giao.
+Hai mục chờ quyết định giữ/xoá ở mục 5b của WP-007 được thay bằng các quyết định trên.
+Giữ các kiểm tra của WP-001 và guardrail 28; không thêm cơ chế kiểm mới.
+
+### Phương án bị loại
+
+Tiếp tục gộp sửa WP và cleanup trong một PR — trái điều kiện `[wp-change]` của WP-001.
+Xoá các file phụ thuộc mà giữ nguyên nơi gọi — làm hỏng biên dịch hoặc workflow.
+Xoá cặp acceptance-wp000 ngay trong WP-007 — để lại tham chiếu trong package và tài liệu.
+
+### Hệ quả
+
+PR tài liệu chưa thực hiện cleanup và chưa nghiệm thu WP-007. CI cũ và bốn fixture FS24
+được giữ theo main; kết quả lỗi phải được báo đúng, không sửa validator để che lỗi nền.
+Giữ commit cleanup cũ trong lịch sử để tái sử dụng. Việc chuẩn bị PR tài liệu không cấp
+quyền merge, refactor runtime hoặc đổi branch protection/settings. PR cleanup vẫn phải
+đạt các bài kiểm WP-007, gồm bốn job CI xanh trên một push vào main.
