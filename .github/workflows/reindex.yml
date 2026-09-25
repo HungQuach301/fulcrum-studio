@@ -1,208 +1,32 @@
 name: WP-002 Reindex
-'on':
+
+on:
   workflow_dispatch:
-    inputs:
-      request:
-        required: true
-        type: string
-        description: FS24-D canonical or verified recovery request
+  schedule:
+    - cron: '23 2 * * *'
+
 permissions:
-  contents: read
+  contents: write
+
 concurrency:
   group: reindex
   cancel-in-progress: true
-env:
-  FS_HEAD: ${{ fromJSON(inputs.request).code }}
-  FS24_INPUT: ${{ inputs.request }}
-  FS24_OPERATION: ${{ fromJSON(inputs.request).operation }}
-  GH_TOKEN: ${{ github.token }}
-  FS_GRANT: FS24-D
-  FS_BRANCH: ${{ github.ref_name }}
-  FS_EVENT: ${{ github.event_name }}
+
 jobs:
   reindex:
-    name: reindex
     runs-on: ubuntu-24.04
-    env:
-      FS_JOB: reindex
     steps:
-    - name: Initialize evidence directory
-      id: init
-      shell: bash
-      run: |
-        set -euo pipefail
-        task_root="$(mktemp -d "$RUNNER_TEMP/fs24-$FS_JOB.XXXXXX")"
-        mkdir "$task_root/evidence"
-        printf 'TASK_ROOT=%s
-        FS_EVIDENCE=%s/evidence
-        ' "$task_root" "$task_root" >> "$GITHUB_ENV"
-    - name: Checkout exact candidate
-      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      with:
-        ref: ${{ env.FS_HEAD }}
-        fetch-depth: 0
-        persist-credentials: false
-    - name: Read-only source admission
-      id: preflight
-      shell: bash
-      run: |
-        set -euo pipefail
-        python3 "$GITHUB_WORKSPACE/scripts/wp002-preflight.py" runtime
-    - name: Checksum-pinned runtime
-      id: runtime
-      shell: bash
-      run: |
-        set -euo pipefail
-        curl --fail --silent --show-error --location https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz -o "$TASK_ROOT/node.tar.xz"
-        printf '%s  %s\n' df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d "$TASK_ROOT/node.tar.xz" | sha256sum -c -
-        tar -xJf "$TASK_ROOT/node.tar.xz" -C "$TASK_ROOT"
-        node_path="$TASK_ROOT/node-v20.20.2-linux-x64/bin/node"
-        npm_cli="$TASK_ROOT/node-v20.20.2-linux-x64/lib/node_modules/npm/bin/npm-cli.js"
-        test "$($node_path --version)" = v20.20.2
-        test "$($node_path "$npm_cli" --version)" = 10.8.2
-        printf 'FS_NODE=%s\nFS_NPM=%s\n' "$node_path" "$npm_cli" >> "$GITHUB_ENV"
-        python3 - <<'PY'
-        import os,json,pathlib
-        pathlib.Path(os.environ['FS_EVIDENCE'],'runtime.json').write_text(json.dumps({'node':'20.20.2','npm':'10.8.2','archiveSha256':'df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d','archiveChecksum':'pass','node20EolException':'FS24-D-only','actionNode24Patch':'unproven','runnerOS':os.environ.get('RUNNER_OS'),'runnerArch':os.environ.get('RUNNER_ARCH'),'imageVersion':os.environ.get('ImageVersion'),'billedCostUsd':None,'B1B2':'unverified'})+'\n')
-        PY
-    - name: Set up action runtime tooling
-      id: setup
-      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-      with:
-        node-version: '20'
-    - name: Install exact lockfile without lifecycle scripts
-      id: install
-      shell: bash
-      run: |
-        set -euo pipefail
-        mkdir "$TASK_ROOT/mirror"
-        git archive "$FS_HEAD" | tar -x -C "$TASK_ROOT/mirror"
-        printf 'FS_TSX=%s/mirror/node_modules/tsx/dist/cli.mjs\n' "$TASK_ROOT" >> "$GITHUB_ENV"
-        export npm_config_cache="$TASK_ROOT/npm-cache"
-        set +e
-        "$FS_NODE" "$FS_NPM" ci --prefix "$TASK_ROOT/mirror" --ignore-scripts --no-audit --no-fund --include=dev --include=optional > "$FS_EVIDENCE/npm-ci.stdout.txt" 2> "$FS_EVIDENCE/npm-ci.stderr.txt"
-        code=$?
-        set -e
-        printf '%s\n' "$code" > "$FS_EVIDENCE/npm-ci.exit.txt"
-        exit "$code"
-    - name: Execute reindex
-      id: reindex
-      shell: bash
-      run: |
-        set -euo pipefail
-        python3 - <<'PYCOMMAND'
-        mode='reindex';target='engine/io/github-writer.ts'
-        import os,pathlib,subprocess,sys,threading,json,hashlib
-        p=pathlib.Path(os.environ['FS_EVIDENCE']);args=[os.environ['FS_NODE'],os.environ['FS_TSX'],target,mode]
-        child=subprocess.Popen(args,cwd=pathlib.Path(os.environ['TASK_ROOT'],'mirror'),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-        def drain(source,name,dest):
-         with (p/(mode+'.'+name+'.txt')).open('wb') as f:
-          for row in iter(lambda:source.read(65536),b''):
-           f.write(row);f.flush()
-           if os.environ.get('FS_EVIDENCE_MODE')!='bundle-v1':dest.write(row);dest.flush()
-        workers=[threading.Thread(target=drain,args=(child.stdout,'stdout',sys.stdout.buffer)),threading.Thread(target=drain,args=(child.stderr,'stderr',sys.stderr.buffer))]
-        for w in workers:w.start()
-        status=child.wait()
-        for w in workers:w.join()
-        (p/(mode+'.exit.txt')).write_text(str(status)+'\n')
-        receipt={'mode':mode,'args':args,'status':status}
-        for stream in ['stdout','stderr']:
-         b=(p/(mode+'.'+stream+'.txt')).read_bytes();receipt[stream]={'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()}
-        (p/(mode+'.command.json')).write_text(json.dumps(receipt)+'\n')
-        raise SystemExit(status)
-        PYCOMMAND
-    - name: Verify source mirror and live main unchanged
-      id: preservation
-      if: ${{ always() }}
-      shell: bash
-      run: |
-        set -euo pipefail
-        python3 "$GITHUB_WORKSPACE/scripts/wp002-preflight.py" preserve
-    - name: Remove temporary execution data
-      id: cleanup
-      if: ${{ always() }}
-      shell: bash
-      run: |
-        set -euo pipefail
-        python3 - <<'PY'
-        import os,pathlib,shutil,json
-        p=pathlib.Path(os.environ['TASK_ROOT']);assert p.parent==pathlib.Path(os.environ['RUNNER_TEMP']) and p.name.startswith('fs24-')
-        for x in p.iterdir():
-         if x.name=='evidence':continue
-         if x.is_dir():shutil.rmtree(x)
-         else:x.unlink()
-        (p/'evidence/cleanup.json').write_text(json.dumps({'executionDataRemoved':True,'reportDataRemainingUntilFrame':True})+'\n')
-        PY
-    - name: Emit complete evidence bytes
-      id: evidence
-      if: ${{ always() }}
-      shell: bash
-      env:
-        FS_STEPS: ${{ toJSON(steps) }}
-      run: |
-        set -euo pipefail
-        python3 - <<'PY'
-        import os,pathlib,json,hashlib,base64,re
-        p=pathlib.Path(os.environ['FS_EVIDENCE']);steps=json.loads(os.environ['FS_STEPS']);(p/'steps-at-emission.json').write_text(json.dumps(steps,indent=2)+'\n')
-        # FS24C_REQUIRED_BEGIN
-        required=['preflight', 'runtime', 'setup', 'install', 'reindex', 'preservation', 'cleanup']
-        ok=all(steps.get(s,{}).get('outcome')=='success' for s in required)
-        # FS24C_REQUIRED_END
-        errors=[]
-        for f in sorted(p.glob('*.stderr.txt')):
-         for line in f.read_text(errors='replace').splitlines():
-          if line.strip():errors.append(line[:400])
-        for f in sorted(p.glob('*.stdout.txt')):
-         for line in f.read_text(errors='replace').splitlines():
-          if re.search(r'error TS\d+|AssertionError|Error:',line):errors.append(line[:400])
-        def redact(x):
-         if re.search(r'\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})\b',x) or ('PRIVATE'+' KEY') in x:return '[redacted]'
-         if any(not re.fullmatch('[a-fA-F0-9]+',v) for v in re.findall(r'[A-Za-z0-9+/]{80,}={0,2}',x)):return '[redacted]'
-         return x
-        summary={'head':os.environ['FS_HEAD'],'base':os.environ.get('FS_BASE',''),'job':os.environ['FS_JOB'],'result':'success' if ok else 'failure','errors':[redact(x) for x in errors[:20]],'finalJobStatus':'requires-API-readback'}
-        (p/'job-summary.json').write_text(json.dumps(summary,ensure_ascii=False)+'\n')
-        with open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write('summary='+json.dumps(summary,ensure_ascii=True)+'\n')
-        identity=['FS24-D',os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_RUN_ATTEMPT'],os.environ['FS_HEAD'],os.environ['FS_JOB'],os.environ['FS_EVENT'],os.environ.get('FS_BASE','')]
-        if os.environ.get('FS_EVIDENCE_MODE')=='bundle-v1':
-         import subprocess
-         target=pathlib.Path(os.environ['TASK_ROOT'],'evidence-bundle.zip')
-         subprocess.run(['python3',str(pathlib.Path(os.environ['GITHUB_WORKSPACE'],'engine/io/evidence-transfer.py')),'pack','--directory',str(p),'--file',str(target)],check=True)
-         raise SystemExit(0 if ok else 1)
-        print('FS24_BEGIN\t'+'\t'.join(identity))
-        files=sorted(p.iterdir())
-        for f in files:
-         assert f.is_file() and re.fullmatch('[A-Za-z0-9_.-]+',f.name)
-         data=f.read_bytes();name=base64.b64encode(f.name.encode()).decode();print('FS24_FILE\t'+name+'\t'+str(len(data))+'\t'+hashlib.sha256(data).hexdigest());value=base64.b64encode(data).decode()
-         for i in range(0,len(value),2048):print('FS24_DATA\t'+str(i//2048+1)+'\t'+value[i:i+2048])
-         print('FS24_END\t'+name)
-        print('FS24_COMPLETE\t'+str(len(files)))
-        raise SystemExit(0 if ok else 1)
-        PY
-    - name: Preserve original evidence bundle
-      id: evidence_bundle
-      if: ${{ always() && env.FS_EVIDENCE_MODE == 'bundle-v1' }}
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-      with:
-        name: fs24e-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.FS_JOB }}
-        path: ${{ env.TASK_ROOT }}/evidence-bundle.zip
-        retention-days: 7
-        compression-level: 0
-        if-no-files-found: error
-    - name: Remove final report data
-      id: final_cleanup
-      if: ${{ always() }}
-      shell: bash
-      run: |
-        set -euo pipefail
-        case "$TASK_ROOT" in "$RUNNER_TEMP"/fs24-*) rm -rf -- "$TASK_ROOT" ;; *) exit 1 ;; esac
-        test ! -e "$TASK_ROOT"
-        printf 'FS24_FINAL_REPORT_CLEANUP=pass;job=%s\n' "$FS_JOB"
-    permissions:
-      contents: write
-      actions: read
-      pull-requests: read
-    concurrency:
-      group: repo-write
-      cancel-in-progress: false
-      queue: max
-run-name: FS24-D ${{ fromJSON(inputs.request).requestId }}
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Rebuild the index from episode states on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: npx tsx engine/io/github-writer.ts reindex

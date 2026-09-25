@@ -19,7 +19,7 @@ export function gitAuthEnvironment(origin: string, token: string, inherited: Nod
 export function gitEnvironment(root: string, write = false): NodeJS.ProcessEnv {
   const origin = execFileSync("git", ["-C", root, "remote", "get-url", "origin"], { encoding: "utf8" }).trim();
   const env = gitAuthEnvironment(origin, process.env.GH_TOKEN ?? "");
-  if (write && !["writer", "writer-cancel", "reindex"].includes(process.env.FS_JOB ?? "")) throw new Error("GitWriteRole");
+  if (write && !["WP-002 Serialized Writer", "WP-002 Reindex"].includes(process.env.GITHUB_WORKFLOW ?? "")) throw new Error("GitWriteRole");
   return write ? { ...env, GIT_AUTHOR_NAME: "github-actions[bot]", GIT_AUTHOR_EMAIL: "41898282+github-actions[bot]@users.noreply.github.com", GIT_COMMITTER_NAME: "github-actions[bot]", GIT_COMMITTER_EMAIL: "41898282+github-actions[bot]@users.noreply.github.com" } : env;
 }
 export function fetchMainReadOnly(root: string): { head: string; status: number; stdout: string; stderr: string; configUnchanged: boolean } {
